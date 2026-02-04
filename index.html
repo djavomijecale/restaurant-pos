@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Restaurant POS - Sa Stolovima</title>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -169,35 +174,207 @@
     </div>
 
     <script>
-        const DB = {
-            menu: JSON.parse(localStorage.getItem('menu')) || [
-                {id:1,name:'Ćevapi',desc:'Domaće ćevapčići',price:650,cat:'Hrana'},
-                {id:2,name:'Pileća šnicla',desc:'Sa krompirom',price:780,cat:'Hrana'},
-                {id:3,name:'Šiš Kebab',desc:'Meso sa povrćem',price:920,cat:'Hrana'},
-                {id:4,name:'Ayran',desc:'Domaći',price:220,cat:'Piće'},
-                {id:5,name:'Coca-Cola',desc:'330ml',price:180,cat:'Piće'},
-                {id:6,name:'Pivo 0.5L',desc:'Domaće',price:320,cat:'Piće'},
-                {id:7,name:'Baklava',desc:'Sa medom',price:350,cat:'Dezert'},
-                {id:8,name:'Tulumba',desc:'Sa sirupom',price:300,cat:'Dezert'}
-            ],
-            tables: JSON.parse(localStorage.getItem('tables')) || Array.from({length:10}, (_,i) => ({num:i+1, name:`Sto ${i+1}`, order:[], discount:0, discountPercent:0, discountedItems:[]})),
-            orders: JSON.parse(localStorage.getItem('orders')) || [],
-            removedItems: JSON.parse(localStorage.getItem('removedItems')) || [],
-            settings: JSON.parse(localStorage.getItem('settings')) || {name:'MY RESTAURANT',addr:'Adresa',phone:'+381 XX XXX',ip:'192.168.1.100',email:''},
-            users: JSON.parse(localStorage.getItem('users')) || [
-                {username:'admin',password:'admin',role:'admin'},
-                {username:'konobar1',password:'konobar1',role:'konobar'},
-                {username:'konobar2',password:'konobar2',role:'konobar'}
-            ],
-            currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
-            konobarName: localStorage.getItem('konobarName') || null,
-            workday: JSON.parse(localStorage.getItem('workday')) || null,
-            workdayHistory: JSON.parse(localStorage.getItem('workdayHistory')) || [],
-            selectedCat: 'Sve',
-            selectedTable: null
+        // ============================================
+        // FIREBASE CONFIGURATION & INITIALIZATION
+        // ============================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyC1bcysO7v34xhqLTJlTNXpK_XtCS372aE",
+            authDomain: "restaurant-pos-5ecf4.firebaseapp.com",
+            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "restaurant-pos-5ecf4",
+            storageBucket: "restaurant-pos-5ecf4.firebasestorage.app",
+            messagingSenderId: "801519264430",
+            appId: "1:801519264430:web:b911a638be9d6e6fdc433f",
+            measurementId: "G-M0FYFT2QC9"
         };
-
-        let page = DB.currentUser ? (DB.currentUser.role === 'konobar' && !DB.workday ? 'workday' : 'tables') : 'login', payMethod = '';
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        // ============================================
+        // DATABASE OBJECT
+        // ============================================
+        const DB = {
+            menu: [],
+            tables: [],
+            orders: [],
+            removedItems: [],
+            settings: {},
+            users: [],
+            currentUser: null,
+            selectedTable: null,
+            konobarName: null,
+            workday: null,
+            workdayHistory: []
+        };
+        
+        // ============================================
+        // FIREBASE SYNC FUNCTIONS
+        // ============================================
+        let isInitialLoad = true;
+        
+        // Load data from Firebase
+        function loadFromFirebase() {
+            console.log('🔄 Loading data from Firebase...');
+            
+            return Promise.all([
+                database.ref('menu').once('value'),
+                database.ref('tables').once('value'),
+                database.ref('orders').once('value'),
+                database.ref('removedItems').once('value'),
+                database.ref('settings').once('value'),
+                database.ref('users').once('value'),
+                database.ref('workdayHistory').once('value')
+            ]).then(([menuSnap, tablesSnap, ordersSnap, removedSnap, settingsSnap, usersSnap, historySnap]) => {
+                
+                // Menu
+                if(menuSnap.exists()) {
+                    DB.menu = menuSnap.val();
+                } else {
+                    // Default menu ako ne postoji
+                    DB.menu = [
+                        {id:1,name:'Ćevapi',desc:'Domaće ćevapčići',price:650,cat:'Hrana'},
+                        {id:2,name:'Pileća šnicla',desc:'Sa krompirom',price:780,cat:'Hrana'},
+                        {id:3,name:'Šiš Kebab',desc:'Meso sa povrćem',price:920,cat:'Hrana'},
+                        {id:4,name:'Ayran',desc:'Domaći',price:220,cat:'Piće'},
+                        {id:5,name:'Coca-Cola',desc:'330ml',price:180,cat:'Piće'},
+                        {id:6,name:'Pivo 0.5L',desc:'Domaće',price:320,cat:'Piće'},
+                        {id:7,name:'Baklava',desc:'Sa medom',price:350,cat:'Dezert'},
+                        {id:8,name:'Tulumba',desc:'Sa sirupom',price:300,cat:'Dezert'}
+                    ];
+                    database.ref('menu').set(DB.menu);
+                }
+                
+                // Tables
+                if(tablesSnap.exists()) {
+                    DB.tables = tablesSnap.val();
+                } else {
+                    DB.tables = Array.from({length:10}, (_,i) => ({
+                        num:i+1, 
+                        name:`Sto ${i+1}`, 
+                        order:[], 
+                        discount:0, 
+                        discountPercent:0, 
+                        discountedItems:[]
+                    }));
+                    database.ref('tables').set(DB.tables);
+                }
+                
+                // Orders
+                DB.orders = ordersSnap.exists() ? ordersSnap.val() : [];
+                
+                // Removed Items
+                DB.removedItems = removedSnap.exists() ? removedSnap.val() : [];
+                
+                // Settings
+                if(settingsSnap.exists()) {
+                    DB.settings = settingsSnap.val();
+                } else {
+                    DB.settings = {
+                        name:'MY RESTAURANT',
+                        addr:'Adresa',
+                        phone:'+381 XX XXX',
+                        ip:'192.168.1.100',
+                        email:''
+                    };
+                    database.ref('settings').set(DB.settings);
+                }
+                
+                // Users
+                if(usersSnap.exists()) {
+                    DB.users = usersSnap.val();
+                } else {
+                    DB.users = [
+                        {username:'admin',password:'admin',role:'admin'},
+                        {username:'konobar1',password:'konobar1',role:'konobar'},
+                        {username:'konobar2',password:'konobar2',role:'konobar'}
+                    ];
+                    database.ref('users').set(DB.users);
+                }
+                
+                // Workday History
+                DB.workdayHistory = historySnap.exists() ? historySnap.val() : [];
+                
+                // Load local session data (not synced)
+                DB.currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
+                DB.konobarName = localStorage.getItem('konobarName') || null;
+                DB.workday = JSON.parse(localStorage.getItem('workday')) || null;
+                
+                console.log('✅ Data loaded from Firebase');
+                isInitialLoad = false;
+                
+            }).catch(error => {
+                console.error('❌ Error loading from Firebase:', error);
+                alert('Greška prilikom učitavanja podataka. Proverite internet konekciju.');
+            });
+        }
+        
+        // Save to Firebase
+        function save() {
+            if(isInitialLoad) return; // Don't save during initial load
+            
+            console.log('💾 Saving to Firebase...');
+            
+            const updates = {
+                'menu': DB.menu,
+                'tables': DB.tables,
+                'orders': DB.orders,
+                'removedItems': DB.removedItems,
+                'settings': DB.settings,
+                'users': DB.users,
+                'workdayHistory': DB.workdayHistory
+            };
+            
+            database.ref().update(updates)
+                .then(() => {
+                    console.log('✅ Saved to Firebase');
+                })
+                .catch(error => {
+                    console.error('❌ Error saving to Firebase:', error);
+                });
+            
+            // Save local session data
+            localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
+            localStorage.setItem('konobarName', DB.konobarName);
+            localStorage.setItem('workday', JSON.stringify(DB.workday));
+        }
+        
+        // Listen for real-time updates
+        function setupRealtimeListeners() {
+            database.ref('menu').on('value', (snapshot) => {
+                if(!isInitialLoad && snapshot.exists()) {
+                    DB.menu = snapshot.val();
+                    if(page === 'menu') render();
+                }
+            });
+            
+            database.ref('tables').on('value', (snapshot) => {
+                if(!isInitialLoad && snapshot.exists()) {
+                    DB.tables = snapshot.val();
+                    if(page === 'tables' || page === 'tableorder') render();
+                }
+            });
+            
+            database.ref('orders').on('value', (snapshot) => {
+                if(!isInitialLoad && snapshot.exists()) {
+                    DB.orders = snapshot.val();
+                    if(page === 'report') render();
+                }
+            });
+            
+            database.ref('users').on('value', (snapshot) => {
+                if(!isInitialLoad && snapshot.exists()) {
+                    DB.users = snapshot.val();
+                    if(page === 'users') render();
+                }
+            });
+        }
+        
+        // ============================================
+        // GLOBAL VARIABLES
+        // ============================================
+        let page = 'login', payMethod = '';
         let editingTableNum = null;
         let confirmCallback = null;
         let editingWaiterUsername = null;
@@ -300,19 +477,6 @@
                 render();
                 showAlert(`✅ Konobar "${username}" je dodat!`);
             }
-        }
-
-        function save() {
-            localStorage.setItem('menu', JSON.stringify(DB.menu));
-            localStorage.setItem('tables', JSON.stringify(DB.tables));
-            localStorage.setItem('orders', JSON.stringify(DB.orders));
-            localStorage.setItem('removedItems', JSON.stringify(DB.removedItems));
-            localStorage.setItem('settings', JSON.stringify(DB.settings));
-            localStorage.setItem('users', JSON.stringify(DB.users));
-            localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
-            localStorage.setItem('konobarName', DB.konobarName);
-            localStorage.setItem('workday', JSON.stringify(DB.workday));
-            localStorage.setItem('workdayHistory', JSON.stringify(DB.workdayHistory));
         }
 
         function nav(p) {
@@ -638,17 +802,16 @@ ${'='.repeat(60)}
             const modal = document.createElement('div');
             modal.className = 'modal show';
             modal.innerHTML = `
-                <div class="modal-content" style="max-width:900px;max-height:90vh">
-                    <h2 style="color:#E94560;margin-bottom:16px">📋 Dnevni Izveštaj</h2>
-                    <p style="color:#B0B0B0;margin-bottom:12px">
+                <div class="modal-content" style="max-width:900px;max-height:90vh;display:flex;flex-direction:column">
+                    <h2 style="color:#E94560;margin-bottom:12px;flex-shrink:0">📋 Dnevni Izveštaj</h2>
+                    <p style="color:#B0B0B0;margin-bottom:12px;font-size:13px;flex-shrink:0">
                         <strong style="color:#FFD700">Kako koristiti:</strong><br>
-                        1. Klikni bilo gde u tekstu ispod<br>
-                        2. Pritisni <kbd style="background:#0F3460;padding:2px 6px;border-radius:4px">Ctrl+A</kbd> (selektuj sve)<br>
-                        3. Pritisni <kbd style="background:#0F3460;padding:2px 6px;border-radius:4px">Ctrl+C</kbd> (kopiraj)<br>
-                        4. Nalepite bilo gde (Email, WhatsApp, Word...)
+                        Klikni u tekst → <kbd style="background:#0F3460;padding:2px 6px;border-radius:4px">Ctrl+A</kbd> → <kbd style="background:#0F3460;padding:2px 6px;border-radius:4px">Ctrl+C</kbd>
                     </p>
-                    <textarea readonly style="width:100%;height:500px;font-family:monospace;font-size:13px;padding:16px;background:#16213E;color:#FFF;border:2px solid #2A2A4A;border-radius:8px;resize:vertical;line-height:1.5" id="reportTextarea" onclick="this.select()">${reportText}</textarea>
-                    <div style="display:flex;gap:12px;margin-top:16px">
+                    <div style="flex:1;overflow-y:auto;margin-bottom:12px;min-height:0">
+                        <textarea readonly style="width:100%;height:100%;min-height:300px;font-family:monospace;font-size:13px;padding:16px;background:#16213E;color:#FFF;border:2px solid #2A2A4A;border-radius:8px;resize:none;line-height:1.5" id="reportTextarea" onclick="this.select()">${reportText}</textarea>
+                    </div>
+                    <div style="display:flex;gap:12px;flex-shrink:0">
                         <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Zatvori</button>
                         <button class="btn" onclick="copyFromTextarea()">📋 Kopiraj</button>
                     </div>
@@ -2295,7 +2458,53 @@ ${'='.repeat(60)}
             showAlert('✅ Sačuvano!');
         }
 
-        render();
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Starting Restaurant POS with Firebase...');
+            
+            // Show loading indicator
+            document.getElementById('content').innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                    <div style="font-size:64px;margin-bottom:20px">🔄</div>
+                    <h2 style="color:#E94560">Učitavanje...</h2>
+                    <p style="color:#B0B0B0">Povezivanje sa serverom...</p>
+                </div>
+            `;
+            
+            // Load data from Firebase
+            loadFromFirebase().then(() => {
+                // Set initial page based on user state
+                if(DB.currentUser) {
+                    if(DB.currentUser.role === 'konobar' && !DB.workday) {
+                        page = 'workday';
+                    } else {
+                        page = 'tables';
+                    }
+                } else {
+                    page = 'login';
+                }
+                
+                // Setup real-time listeners
+                setupRealtimeListeners();
+                
+                // Initial render
+                render();
+                
+                console.log('✅ Restaurant POS ready!');
+            }).catch(error => {
+                console.error('❌ Initialization failed:', error);
+                document.getElementById('content').innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                        <div style="font-size:64px;margin-bottom:20px">❌</div>
+                        <h2 style="color:#E94560">Greška</h2>
+                        <p style="color:#B0B0B0">Nije moguće povezati se sa serverom.</p>
+                        <button class="btn" onclick="location.reload()" style="max-width:300px;margin-top:20px">Pokušaj ponovo</button>
+                    </div>
+                `;
+            });
+        });
     </script>
 </body>
 </html>
