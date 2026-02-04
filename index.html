@@ -4,11 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Restaurant POS - Sa Stolovima</title>
-    
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-    
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -175,22 +170,12 @@
 
     <script>
         // ============================================
-        // FIREBASE CONFIGURATION & INITIALIZATION
+        // FIREBASE REST API CONFIGURATION
         // ============================================
-        const firebaseConfig = {
+        const FIREBASE_CONFIG = {
             apiKey: "AIzaSyC1bcysO7v34xhqLTJlTNXpK_XtCS372aE",
-            authDomain: "restaurant-pos-5ecf4.firebaseapp.com",
-            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "restaurant-pos-5ecf4",
-            storageBucket: "restaurant-pos-5ecf4.firebasestorage.app",
-            messagingSenderId: "801519264430",
-            appId: "1:801519264430:web:b911a638be9d6e6fdc433f",
-            measurementId: "G-M0FYFT2QC9"
+            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app"
         };
-        
-        // Initialize Firebase
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
         
         // ============================================
         // DATABASE OBJECT
@@ -202,38 +187,48 @@
             removedItems: [],
             settings: {},
             users: [],
-            currentUser: null,
+            currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
             selectedTable: null,
-            konobarName: null,
-            workday: null,
+            konobarName: localStorage.getItem('konobarName') || null,
+            workday: JSON.parse(localStorage.getItem('workday')) || null,
             workdayHistory: []
         };
         
+        let isLoading = false;
+        
         // ============================================
-        // FIREBASE SYNC FUNCTIONS
+        // FIREBASE REST API FUNCTIONS WITH AUTH
         // ============================================
-        let isInitialLoad = true;
         
         // Load data from Firebase
-        function loadFromFirebase() {
+        async function loadFromFirebase() {
             console.log('🔄 Loading data from Firebase...');
+            isLoading = true;
             
-            return Promise.all([
-                database.ref('menu').once('value'),
-                database.ref('tables').once('value'),
-                database.ref('orders').once('value'),
-                database.ref('removedItems').once('value'),
-                database.ref('settings').once('value'),
-                database.ref('users').once('value'),
-                database.ref('workdayHistory').once('value')
-            ]).then(([menuSnap, tablesSnap, ordersSnap, removedSnap, settingsSnap, usersSnap, historySnap]) => {
+            try {
+                // Add auth parameter to URL
+                const url = `${FIREBASE_CONFIG.databaseURL}/.json?auth=${FIREBASE_CONFIG.apiKey}`;
                 
-                // Menu
-                if(menuSnap.exists()) {
-                    DB.menu = menuSnap.val();
-                } else {
-                    // Default menu ako ne postoji
-                    DB.menu = [
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Response error:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('📦 Received data:', data);
+                
+                if (data && typeof data === 'object') {
+                    // Load data or use defaults
+                    DB.menu = data.menu || [
                         {id:1,name:'Ćevapi',desc:'Domaće ćevapčići',price:650,cat:'Hrana'},
                         {id:2,name:'Pileća šnicla',desc:'Sa krompirom',price:780,cat:'Hrana'},
                         {id:3,name:'Šiš Kebab',desc:'Meso sa povrćem',price:920,cat:'Hrana'},
@@ -243,14 +238,8 @@
                         {id:7,name:'Baklava',desc:'Sa medom',price:350,cat:'Dezert'},
                         {id:8,name:'Tulumba',desc:'Sa sirupom',price:300,cat:'Dezert'}
                     ];
-                    database.ref('menu').set(DB.menu);
-                }
-                
-                // Tables
-                if(tablesSnap.exists()) {
-                    DB.tables = tablesSnap.val();
-                } else {
-                    DB.tables = Array.from({length:10}, (_,i) => ({
+                    
+                    DB.tables = data.tables || Array.from({length:10}, (_,i) => ({
                         num:i+1, 
                         name:`Sto ${i+1}`, 
                         order:[], 
@@ -258,117 +247,127 @@
                         discountPercent:0, 
                         discountedItems:[]
                     }));
-                    database.ref('tables').set(DB.tables);
-                }
-                
-                // Orders
-                DB.orders = ordersSnap.exists() ? ordersSnap.val() : [];
-                
-                // Removed Items
-                DB.removedItems = removedSnap.exists() ? removedSnap.val() : [];
-                
-                // Settings
-                if(settingsSnap.exists()) {
-                    DB.settings = settingsSnap.val();
-                } else {
-                    DB.settings = {
+                    
+                    DB.orders = data.orders || [];
+                    DB.removedItems = data.removedItems || [];
+                    
+                    DB.settings = data.settings || {
                         name:'MY RESTAURANT',
                         addr:'Adresa',
                         phone:'+381 XX XXX',
                         ip:'192.168.1.100',
                         email:''
                     };
-                    database.ref('settings').set(DB.settings);
-                }
-                
-                // Users
-                if(usersSnap.exists()) {
-                    DB.users = usersSnap.val();
-                } else {
-                    DB.users = [
+                    
+                    DB.users = data.users || [
                         {username:'admin',password:'admin',role:'admin'},
                         {username:'konobar1',password:'konobar1',role:'konobar'},
                         {username:'konobar2',password:'konobar2',role:'konobar'}
                     ];
-                    database.ref('users').set(DB.users);
+                    
+                    DB.workdayHistory = data.workdayHistory || [];
+                    
+                    // If no data exists, initialize with defaults
+                    if (!data || Object.keys(data).length === 0) {
+                        console.log('📝 Initializing with default data...');
+                        await saveToFirebase();
+                    }
+                } else {
+                    console.log('📝 No data found, using defaults');
                 }
                 
-                // Workday History
-                DB.workdayHistory = historySnap.exists() ? historySnap.val() : [];
-                
-                // Load local session data (not synced)
-                DB.currentUser = JSON.parse(localStorage.getItem('currentUser')) || null;
-                DB.konobarName = localStorage.getItem('konobarName') || null;
-                DB.workday = JSON.parse(localStorage.getItem('workday')) || null;
-                
                 console.log('✅ Data loaded from Firebase');
-                isInitialLoad = false;
+                isLoading = false;
+                return true;
                 
-            }).catch(error => {
+            } catch (error) {
                 console.error('❌ Error loading from Firebase:', error);
-                alert('Greška prilikom učitavanja podataka. Proverite internet konekciju.');
-            });
+                console.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack
+                });
+                isLoading = false;
+                throw error;
+            }
         }
         
         // Save to Firebase
-        function save() {
-            if(isInitialLoad) return; // Don't save during initial load
+        async function saveToFirebase() {
+            if (isLoading) return;
             
             console.log('💾 Saving to Firebase...');
             
-            const updates = {
-                'menu': DB.menu,
-                'tables': DB.tables,
-                'orders': DB.orders,
-                'removedItems': DB.removedItems,
-                'settings': DB.settings,
-                'users': DB.users,
-                'workdayHistory': DB.workdayHistory
+            const dataToSave = {
+                menu: DB.menu,
+                tables: DB.tables,
+                orders: DB.orders,
+                removedItems: DB.removedItems,
+                settings: DB.settings,
+                users: DB.users,
+                workdayHistory: DB.workdayHistory,
+                lastUpdated: new Date().toISOString()
             };
             
-            database.ref().update(updates)
-                .then(() => {
-                    console.log('✅ Saved to Firebase');
-                })
-                .catch(error => {
-                    console.error('❌ Error saving to Firebase:', error);
+            try {
+                // Add auth parameter to URL
+                const url = `${FIREBASE_CONFIG.databaseURL}/.json?auth=${FIREBASE_CONFIG.apiKey}`;
+                
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors',
+                    body: JSON.stringify(dataToSave)
                 });
-            
-            // Save local session data
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Save error:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                console.log('✅ Saved to Firebase');
+                
+            } catch (error) {
+                console.error('❌ Error saving to Firebase:', error);
+                alert('Greška pri čuvanju na server: ' + error.message);
+            }
+        }
+        
+        // Main save function
+        function save() {
             localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
             localStorage.setItem('konobarName', DB.konobarName);
             localStorage.setItem('workday', JSON.stringify(DB.workday));
+            saveToFirebase();
         }
         
-        // Listen for real-time updates
-        function setupRealtimeListeners() {
-            database.ref('menu').on('value', (snapshot) => {
-                if(!isInitialLoad && snapshot.exists()) {
-                    DB.menu = snapshot.val();
-                    if(page === 'menu') render();
+        // Check for updates
+        let lastUpdate = null;
+        
+        async function checkForUpdates() {
+            try {
+                const url = `${FIREBASE_CONFIG.databaseURL}/lastUpdated.json?auth=${FIREBASE_CONFIG.apiKey}`;
+                const response = await fetch(url, { mode: 'cors' });
+                
+                if (response.ok) {
+                    const serverLastUpdate = await response.json();
+                    
+                    if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
+                        console.log('🔄 Updates detected, reloading...');
+                        lastUpdate = serverLastUpdate;
+                        await loadFromFirebase();
+                        render();
+                    }
                 }
-            });
-            
-            database.ref('tables').on('value', (snapshot) => {
-                if(!isInitialLoad && snapshot.exists()) {
-                    DB.tables = snapshot.val();
-                    if(page === 'tables' || page === 'tableorder') render();
-                }
-            });
-            
-            database.ref('orders').on('value', (snapshot) => {
-                if(!isInitialLoad && snapshot.exists()) {
-                    DB.orders = snapshot.val();
-                    if(page === 'report') render();
-                }
-            });
-            
-            database.ref('users').on('value', (snapshot) => {
-                if(!isInitialLoad && snapshot.exists()) {
-                    DB.users = snapshot.val();
-                    if(page === 'users') render();
-                }
-            });
+            } catch (error) {
+                console.error('❌ Error checking updates:', error);
+            }
+        }
+        
+        function startAutoRefresh() {
+            setInterval(checkForUpdates, 5000);
         }
         
         // ============================================
@@ -1070,8 +1069,12 @@ ${'='.repeat(60)}
         }
 
         function updateBadge() {
-            const occupied = DB.tables.filter(t=>t.order.length>0).length;
-            document.getElementById('badge').textContent = `${occupied} stolova`;
+            if (!DB.tables || !Array.isArray(DB.tables)) return;
+            const occupied = DB.tables.filter(t => t && t.order && t.order.length > 0).length;
+            const badgeEl = document.getElementById('badge');
+            if (badgeEl) {
+                badgeEl.textContent = `${occupied} stolova`;
+            }
         }
 
         function renderTableSelect(c) {
@@ -2432,19 +2435,31 @@ ${'='.repeat(60)}
                     <input type="text" id="sphone" value="${DB.settings.phone}">
                     
                     <div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                        <h3 style="color:#4CAF50;margin-bottom:16px">🔥 Firebase Sinhronizacija</h3>
+                        <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #4CAF50">
+                            <p style="color:#FFD700;font-weight:bold;margin-bottom:8px">✅ Aktivna</p>
+                            <p style="color:#B0B0B0;font-size:13px;line-height:1.6">
+                                • Podaci se automatski sinhronizuju između svih uređaja<br>
+                                • Promena na telefonu se odmah vidi na računaru<br>
+                                • Auto-refresh svaka 5 sekundi<br>
+                                • Bez potrebe za ručnim exportom/importom
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
                         <h3 style="color:#FFD700;margin-bottom:16px">📧 Email Izveštaji</h3>
                         <label style="color:#E94560;font-weight:bold">Email za izveštaje</label>
                         <input type="email" id="semail" value="${DB.settings.email || ''}" placeholder="vas@email.com">
                         <p style="color:#B0B0B0;font-size:13px;margin-top:8px;line-height:1.6">
-                            💡 Kada konobari zatvore radni dan, moći će da preuzmu kompletan izveštaj koji mogu poslati na ovaj email.<br>
-                            Izveštaj će biti automatski pripremljen - samo treba da ga pošalju.
+                            💡 Kada konobari zatvore radni dan, moći će da preuzmu kompletan izveštaj.
                         </p>
                     </div>
                     
                     <label style="color:#E94560;font-weight:bold">IP Adresa štampača</label>
                     <input type="text" id="sip" value="${DB.settings.ip}">
                     <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Štampanje dostupno samo u Android verziji</p>
-                    <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj</button>
+                    <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
                 </div>`;
         }
 
@@ -2461,21 +2476,23 @@ ${'='.repeat(60)}
         // ============================================
         // INITIALIZATION
         // ============================================
-        document.addEventListener('DOMContentLoaded', function() {
+        async function initApp() {
             console.log('🚀 Starting Restaurant POS with Firebase...');
             
-            // Show loading indicator
+            // Show loading
             document.getElementById('content').innerHTML = `
                 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
                     <div style="font-size:64px;margin-bottom:20px">🔄</div>
                     <h2 style="color:#E94560">Učitavanje...</h2>
-                    <p style="color:#B0B0B0">Povezivanje sa serverom...</p>
+                    <p style="color:#B0B0B0">Povezivanje sa Firebase serverom...</p>
                 </div>
             `;
             
-            // Load data from Firebase
-            loadFromFirebase().then(() => {
-                // Set initial page based on user state
+            try {
+                // Load data from Firebase
+                await loadFromFirebase();
+                
+                // Set initial page
                 if(DB.currentUser) {
                     if(DB.currentUser.role === 'konobar' && !DB.workday) {
                         page = 'workday';
@@ -2486,25 +2503,33 @@ ${'='.repeat(60)}
                     page = 'login';
                 }
                 
-                // Setup real-time listeners
-                setupRealtimeListeners();
+                // Start auto-refresh
+                startAutoRefresh();
                 
                 // Initial render
                 render();
                 
                 console.log('✅ Restaurant POS ready!');
-            }).catch(error => {
+                
+            } catch (error) {
                 console.error('❌ Initialization failed:', error);
                 document.getElementById('content').innerHTML = `
-                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;padding:20px">
                         <div style="font-size:64px;margin-bottom:20px">❌</div>
-                        <h2 style="color:#E94560">Greška</h2>
-                        <p style="color:#B0B0B0">Nije moguće povezati se sa serverom.</p>
-                        <button class="btn" onclick="location.reload()" style="max-width:300px;margin-top:20px">Pokušaj ponovo</button>
+                        <h2 style="color:#E94560">Greška povezivanja</h2>
+                        <p style="color:#B0B0B0;text-align:center;max-width:500px;line-height:1.6">
+                            Nije moguće povezati se sa Firebase serverom.<br><br>
+                            Proverite internet konekciju i pokušajte ponovo.
+                        </p>
+                        <p style="color:#B0B0B0;font-size:12px;margin-top:8px">${error.message}</p>
+                        <button class="btn" onclick="initApp()" style="max-width:300px;margin-top:20px">🔄 Pokušaj ponovo</button>
                     </div>
                 `;
-            });
-        });
+            }
+        }
+        
+        // Start app when page loads
+        initApp();
     </script>
 </body>
 </html>
