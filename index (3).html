@@ -1,0 +1,2531 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restaurant POS - Sa Stolovima</title>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1A1A2E; color: #FFFFFF; }
+        .app { max-width: 1200px; margin: 0 auto; height: 100vh; display: flex; flex-direction: column; }
+        .header { background: #16213E; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 10px rgba(0,0,0,0.3); flex-wrap: wrap; gap: 8px; }
+        .header h1 { font-size: clamp(18px, 5vw, 24px); color: #E94560; }
+        .user-info { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .user-badge { background: #0F3460; padding: 6px 12px; border-radius: 8px; font-size: clamp(11px, 3vw, 13px); white-space: nowrap; }
+        .workday-badge { background: #4CAF50; padding: 6px 12px; border-radius: 8px; font-size: clamp(11px, 3vw, 13px); font-weight: bold; white-space: nowrap; }
+        .logout-btn { background: #E94560; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: clamp(11px, 3vw, 13px); border: none; color: white; white-space: nowrap; }
+        .badge { background: #E94560; padding: 8px 16px; border-radius: 20px; font-weight: bold; }
+        .content { flex: 1; overflow-y: auto; padding: 16px; }
+        .nav { background: #16213E; display: none; padding: 8px 0; box-shadow: 0 -2px 10px rgba(0,0,0,0.3); }
+        .nav.show { display: flex; }
+        .nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; padding: 10px 4px; color: #B0B0B0; transition: all 0.3s; min-height: 60px; justify-content: center; }
+        .nav-item:hover { background: rgba(233, 69, 96, 0.1); }
+        .nav-item.active { color: #E94560; background: rgba(233, 69, 96, 0.2); }
+        .nav-item span:first-child { font-size: clamp(20px, 5vw, 24px); }
+        .nav-item span:last-child { font-size: clamp(9px, 2.5vw, 11px); }
+        .card { background: #0F3460; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.3s; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3); }
+        .btn { background: #E94560; color: #FFF; border: none; padding: 14px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; transition: all 0.3s; }
+        .btn:hover { background: #D63051; transform: translateY(-2px); }
+        .btn:disabled { background: #555; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: #0F3460; }
+        .chip { background: #0F3460; color: #B0B0B0; padding: 8px 16px; border-radius: 20px; cursor: pointer; border: 2px solid transparent; display: inline-block; margin: 4px; }
+        .chip.active { background: #E94560; color: #FFF; }
+        input, select { background: #16213E; border: 2px solid #2A2A4A; color: #FFF; padding: 10px; border-radius: 8px; width: 100%; font-size: 16px; margin: 8px 0; }
+        input:focus { outline: none; border-color: #E94560; }
+        .table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
+        .table-card { background: #0F3460; border-radius: 12px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.3s; border: 3px solid transparent; }
+        .table-card:hover { border-color: #E94560; transform: translateY(-4px); }
+        .table-card.occupied { background: #E94560; }
+        .table-card .table-icon { font-size: 48px; margin-bottom: 8px; }
+        .table-card .table-number { font-size: 24px; font-weight: bold; }
+        .table-card .table-status { font-size: 12px; color: #B0B0B0; margin-top: 8px; }
+        .table-card.occupied .table-status { color: #FFF; }
+        .stat-card { background: #0F3460; padding: 16px; border-radius: 12px; text-align: center; }
+        .stat-label { color: #B0B0B0; font-size: 12px; }
+        .stat-value { color: #FFD700; font-size: 24px; font-weight: bold; margin: 8px 0; }
+        .empty { text-align: center; padding: 60px 20px; color: #B0B0B0; }
+        .payment-option { flex: 1; background: #0F3460; border: 3px solid transparent; padding: 24px; border-radius: 12px; cursor: pointer; text-align: center; transition: all 0.3s; }
+        .payment-option:hover { border-color: #E94560; }
+        .payment-option.selected { background: #E94560; }
+        .success { text-align: center; padding: 40px; }
+        .success-icon { font-size: 80px; margin-bottom: 20px; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.show { display: flex; }
+        .modal-content { background: #0F3460; padding: 32px; border-radius: 16px; max-width: 500px; width: 90%; }
+        
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            .header { padding: 10px 12px; }
+            .header h1 { font-size: 18px; }
+            .content { padding: 12px; }
+            .table-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+            .table-card { padding: 16px; }
+            .table-card .table-icon { font-size: 36px; }
+            .table-card .table-number { font-size: 18px; }
+            .btn { padding: 12px 20px; font-size: 15px; min-height: 48px; }
+            input, select { font-size: 16px; padding: 12px; min-height: 48px; }
+            .stat-card { padding: 14px; }
+            .stat-value { font-size: 20px; }
+            .nav-item { padding: 8px 2px; min-height: 55px; }
+            .modal-content { padding: 20px; max-width: 95%; }
+            .card { padding: 12px; }
+            .payment-option { padding: 20px; }
+        }
+        
+        @media (max-width: 480px) {
+            .header { padding: 8px 10px; }
+            .header h1 { font-size: 16px; }
+            .user-info { gap: 6px; font-size: 11px; }
+            .user-badge, .workday-badge, .logout-btn { padding: 5px 10px; font-size: 11px; }
+            .content { padding: 10px; }
+            .table-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .table-card { padding: 14px; }
+            .table-card .table-icon { font-size: 32px; }
+            .table-card .table-number { font-size: 16px; }
+            .table-card .table-status { font-size: 10px; }
+            .btn { padding: 11px 16px; font-size: 14px; }
+            .nav-item span:first-child { font-size: 20px; }
+            .nav-item span:last-child { font-size: 9px; }
+            .modal-content { padding: 16px; }
+            .chip { padding: 6px 12px; font-size: 13px; }
+        }
+        
+        /* Touch improvements */
+        @media (hover: none) and (pointer: coarse) {
+            .btn, .card, .table-card, .nav-item, .payment-option { 
+                -webkit-tap-highlight-color: rgba(233, 69, 96, 0.2);
+            }
+            .btn:active, .card:active, .table-card:active {
+                transform: scale(0.98);
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Modal za promenu imena stola -->
+    <div class="modal" id="tableNameModal">
+        <div class="modal-content">
+            <h2 style="color:#E94560;margin-bottom:16px">✏️ Promeni Ime Stola</h2>
+            <p style="color:#B0B0B0;margin-bottom:16px" id="tableNameLabel">Unesite novo ime:</p>
+            <input type="text" id="tableNameInput" style="margin-bottom:20px">
+            <div style="display:flex;gap:12px">
+                <button class="btn btn-secondary" onclick="closeTableNameModal()">Odustani</button>
+                <button class="btn" onclick="saveTableName()">Sačuvaj</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal za potvrdu -->
+    <div class="modal" id="confirmModal">
+        <div class="modal-content">
+            <h2 style="color:#E94560;margin-bottom:16px" id="confirmTitle">Potvrda</h2>
+            <p style="color:#FFF;margin-bottom:24px;font-size:16px" id="confirmMessage">Da li ste sigurni?</p>
+            <div style="display:flex;gap:12px">
+                <button class="btn btn-secondary" onclick="closeConfirmModal(false)">Ne</button>
+                <button class="btn" onclick="closeConfirmModal(true)">Da</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal za dodavanje/izmenu konobara -->
+    <div class="modal" id="waiterModal">
+        <div class="modal-content">
+            <h2 style="color:#E94560;margin-bottom:16px" id="waiterModalTitle">Dodaj Konobara</h2>
+            <div style="margin-bottom:16px">
+                <label style="color:#B0B0B0;display:block;margin-bottom:8px">Ime konobara</label>
+                <input type="text" id="waiterNameInput" placeholder="Npr: Marko Marković">
+            </div>
+            <div style="margin-bottom:24px">
+                <label style="color:#B0B0B0;display:block;margin-bottom:8px">Šifra</label>
+                <input type="text" id="waiterPasswordInput" placeholder="Šifra za prijavu">
+                <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Konobar će koristiti ovu šifru za prijavu</p>
+            </div>
+            <div style="display:flex;gap:12px">
+                <button class="btn btn-secondary" onclick="closeWaiterModal()">Odustani</button>
+                <button class="btn" onclick="saveWaiter()">Sačuvaj</button>
+            </div>
+        </div>
+    </div>
+    <div class="app">
+        <div class="header">
+            <h1>🍽️ Restaurant POS</h1>
+            <div style="display:flex;align-items:center;gap:12px">
+                <div class="badge" id="badge">0 stolova</div>
+                <div class="user-info" id="userInfo"></div>
+            </div>
+        </div>
+        <div class="content" id="content"></div>
+        <div class="nav">
+            <div class="nav-item active" onclick="nav('menu')"><span style="font-size:24px">🍕</span><span style="font-size:11px">Menu</span></div>
+            <div class="nav-item" onclick="nav('tables')"><span style="font-size:24px">🪑</span><span style="font-size:11px">Stolovi</span></div>
+            <div class="nav-item" id="navReport" onclick="nav('report')"><span style="font-size:24px">📊</span><span style="font-size:11px">Izveštaj</span></div>
+            <div class="nav-item" id="navRemoved" onclick="nav('removed')"><span style="font-size:24px">🗑️</span><span style="font-size:11px">Uklonjeno</span></div>
+            <div class="nav-item" id="navUsers" onclick="nav('users')"><span style="font-size:24px">👥</span><span style="font-size:11px">Konobari</span></div>
+            <div class="nav-item" id="navEdit" onclick="nav('edit')"><span style="font-size:24px">✏️</span><span style="font-size:11px">Izmeni</span></div>
+            <div class="nav-item" id="navSettings" onclick="nav('settings')"><span style="font-size:24px">⚙️</span><span style="font-size:11px">Postavke</span></div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // FIREBASE REST API CONFIGURATION
+        // ============================================
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyC1bcysO7v34xhqLTJlTNXpK_XtCS372aE",
+            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app"
+        };
+        
+        // ============================================
+        // DATABASE OBJECT
+        // ============================================
+        const DB = {
+            menu: [],
+            tables: [],
+            orders: [],
+            removedItems: [],
+            settings: {},
+            users: [],
+            currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
+            selectedTable: null,
+            konobarName: localStorage.getItem('konobarName') || null,
+            workday: JSON.parse(localStorage.getItem('workday')) || null,
+            workdayHistory: []
+        };
+        
+        let isLoading = false;
+        
+        // ============================================
+        // FIREBASE REST API FUNCTIONS WITH AUTH
+        // ============================================
+        
+        // Load data from Firebase
+        async function loadFromFirebase() {
+            console.log('🔄 Loading data from Firebase...');
+            isLoading = true;
+            
+            try {
+                // Add auth parameter to URL
+                const url = `${FIREBASE_CONFIG.databaseURL}/.json?auth=${FIREBASE_CONFIG.apiKey}`;
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors'
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Response error:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const data = await response.json();
+                console.log('📦 Received data:', data);
+                
+                if (data && typeof data === 'object') {
+                    // Load data or use defaults
+                    DB.menu = data.menu || [
+                        {id:1,name:'Ćevapi',desc:'Domaće ćevapčići',price:650,cat:'Hrana'},
+                        {id:2,name:'Pileća šnicla',desc:'Sa krompirom',price:780,cat:'Hrana'},
+                        {id:3,name:'Šiš Kebab',desc:'Meso sa povrćem',price:920,cat:'Hrana'},
+                        {id:4,name:'Ayran',desc:'Domaći',price:220,cat:'Piće'},
+                        {id:5,name:'Coca-Cola',desc:'330ml',price:180,cat:'Piće'},
+                        {id:6,name:'Pivo 0.5L',desc:'Domaće',price:320,cat:'Piće'},
+                        {id:7,name:'Baklava',desc:'Sa medom',price:350,cat:'Dezert'},
+                        {id:8,name:'Tulumba',desc:'Sa sirupom',price:300,cat:'Dezert'}
+                    ];
+                    
+                    DB.tables = data.tables || Array.from({length:10}, (_,i) => ({
+                        num:i+1, 
+                        name:`Sto ${i+1}`, 
+                        order:[], 
+                        discount:0, 
+                        discountPercent:0, 
+                        discountedItems:[]
+                    }));
+                    
+                    DB.orders = data.orders || [];
+                    DB.removedItems = data.removedItems || [];
+                    
+                    DB.settings = data.settings || {
+                        name:'MY RESTAURANT',
+                        addr:'Adresa',
+                        phone:'+381 XX XXX',
+                        ip:'192.168.1.100',
+                        email:''
+                    };
+                    
+                    DB.users = data.users || [
+                        {username:'admin',password:'admin',role:'admin'},
+                        {username:'konobar1',password:'konobar1',role:'konobar'},
+                        {username:'konobar2',password:'konobar2',role:'konobar'}
+                    ];
+                    
+                    DB.workdayHistory = data.workdayHistory || [];
+                    
+                    // If no data exists, initialize with defaults
+                    if (!data || Object.keys(data).length === 0) {
+                        console.log('📝 Initializing with default data...');
+                        await saveToFirebase();
+                    }
+                } else {
+                    console.log('📝 No data found, using defaults');
+                }
+                
+                console.log('✅ Data loaded from Firebase');
+                isLoading = false;
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Error loading from Firebase:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack
+                });
+                isLoading = false;
+                throw error;
+            }
+        }
+        
+        // Save to Firebase
+        async function saveToFirebase() {
+            if (isLoading) return;
+            
+            console.log('💾 Saving to Firebase...');
+            
+            const dataToSave = {
+                menu: DB.menu,
+                tables: DB.tables,
+                orders: DB.orders,
+                removedItems: DB.removedItems,
+                settings: DB.settings,
+                users: DB.users,
+                workdayHistory: DB.workdayHistory,
+                lastUpdated: new Date().toISOString()
+            };
+            
+            try {
+                // Add auth parameter to URL
+                const url = `${FIREBASE_CONFIG.databaseURL}/.json?auth=${FIREBASE_CONFIG.apiKey}`;
+                
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors',
+                    body: JSON.stringify(dataToSave)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('Save error:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                console.log('✅ Saved to Firebase');
+                
+            } catch (error) {
+                console.error('❌ Error saving to Firebase:', error);
+                alert('Greška pri čuvanju na server: ' + error.message);
+            }
+        }
+        
+        // Main save function
+        function save() {
+            localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
+            localStorage.setItem('konobarName', DB.konobarName);
+            localStorage.setItem('workday', JSON.stringify(DB.workday));
+            saveToFirebase();
+        }
+        
+        // Check for updates
+        let lastUpdate = null;
+        
+        async function checkForUpdates() {
+            try {
+                const url = `${FIREBASE_CONFIG.databaseURL}/lastUpdated.json?auth=${FIREBASE_CONFIG.apiKey}`;
+                const response = await fetch(url, { mode: 'cors' });
+                
+                if (response.ok) {
+                    const serverLastUpdate = await response.json();
+                    
+                    if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
+                        console.log('🔄 Updates detected, reloading...');
+                        lastUpdate = serverLastUpdate;
+                        await loadFromFirebase();
+                        render();
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Error checking updates:', error);
+            }
+        }
+        
+        function startAutoRefresh() {
+            setInterval(checkForUpdates, 5000);
+        }
+        
+        // ============================================
+        // GLOBAL VARIABLES
+        // ============================================
+        let page = 'login', payMethod = '';
+        let editingTableNum = null;
+        let confirmCallback = null;
+        let editingWaiterUsername = null;
+
+        function showConfirm(title, message, callback) {
+            document.getElementById('confirmTitle').textContent = title;
+            document.getElementById('confirmMessage').textContent = message;
+            confirmCallback = callback;
+            document.getElementById('confirmModal').classList.add('show');
+        }
+
+        function closeConfirmModal(confirmed) {
+            document.getElementById('confirmModal').classList.remove('show');
+            if(confirmCallback) {
+                confirmCallback(confirmed);
+                confirmCallback = null;
+            }
+        }
+
+        function showAlert(message) {
+            showConfirm('⚠️ Obaveštenje', message, () => {});
+        }
+        
+        function openWaiterModal(mode, username = null) {
+            editingWaiterUsername = username;
+            const modal = document.getElementById('waiterModal');
+            const title = document.getElementById('waiterModalTitle');
+            const nameInput = document.getElementById('waiterNameInput');
+            const passwordInput = document.getElementById('waiterPasswordInput');
+            
+            if(mode === 'add') {
+                title.textContent = '+ Dodaj Konobara';
+                nameInput.value = '';
+                passwordInput.value = '';
+            } else if(mode === 'edit' && username) {
+                const waiter = DB.users.find(u => u.username === username);
+                if(waiter) {
+                    title.textContent = '✏️ Izmeni Konobara';
+                    nameInput.value = waiter.username;
+                    passwordInput.value = waiter.password;
+                }
+            }
+            
+            modal.classList.add('show');
+            nameInput.focus();
+        }
+        
+        function closeWaiterModal() {
+            document.getElementById('waiterModal').classList.remove('show');
+            editingWaiterUsername = null;
+        }
+        
+        function saveWaiter() {
+            const username = document.getElementById('waiterNameInput').value.trim();
+            const password = document.getElementById('waiterPasswordInput').value.trim();
+            
+            if(!username) {
+                showAlert('Molimo unesite ime konobara');
+                return;
+            }
+            
+            if(!password) {
+                showAlert('Molimo unesite šifru');
+                return;
+            }
+            
+            if(editingWaiterUsername) {
+                // Editing existing waiter
+                const waiter = DB.users.find(u => u.username === editingWaiterUsername);
+                
+                // Check if new username already exists (unless it's the same)
+                if(username !== editingWaiterUsername && DB.users.find(u => u.username === username)) {
+                    showAlert('Konobar sa tim imenom već postoji');
+                    return;
+                }
+                
+                if(waiter) {
+                    waiter.username = username;
+                    waiter.password = password;
+                    save();
+                    closeWaiterModal();
+                    render();
+                    showAlert('✅ Konobar je ažuriran!');
+                }
+            } else {
+                // Adding new waiter
+                if(DB.users.find(u => u.username === username)) {
+                    showAlert('Konobar sa tim imenom već postoji');
+                    return;
+                }
+                
+                DB.users.push({
+                    username: username,
+                    password: password,
+                    role: 'konobar'
+                });
+                
+                save();
+                closeWaiterModal();
+                render();
+                showAlert(`✅ Konobar "${username}" je dodat!`);
+            }
+        }
+
+        function nav(p) {
+            if(DB.currentUser && DB.currentUser.role === 'konobar' && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users')) {
+                showAlert('Nemate pristup ovoj stranici');
+                return;
+            }
+            page = p;
+            DB.selectedTable = null;
+            document.querySelectorAll('.nav-item').forEach((el,i) => {
+                el.classList.toggle('active', ['menu','tables','report','removed','users','edit','settings'][i] === p);
+            });
+            render();
+        }
+
+        function render() {
+            const c = document.getElementById('content');
+            
+            if(page==='login') renderLogin(c);
+            else if(page==='workday') renderWorkday(c);
+            else if(page==='finalreport') renderFinalReport(c);
+            else if(page==='menu') renderMenu(c);
+            else if(page==='edittables') renderEditTables(c);
+            else if(page==='tables' && DB.selectedTable===null) renderTableSelect(c);
+            else if(page==='tables' && DB.selectedTable!==null) renderTableMenu(c);
+            else if(page==='tableorder') renderTableOrder(c);
+            else if(page==='report') renderReport(c);
+            else if(page==='removed') renderRemoved(c);
+            else if(page==='users') renderUsers(c);
+            else if(page==='edit') renderEdit(c);
+            else if(page==='settings') renderSettings(c);
+            else if(page==='payment') renderPayment(c);
+            else if(page==='receipt') renderReceipt(c);
+            
+            updateBadge();
+            setTimeout(() => updateUserInfo(), 0);
+        }
+
+        function updateUserInfo() {
+            const userInfo = document.getElementById('userInfo');
+            const navBar = document.querySelector('.nav');
+            
+            if(DB.currentUser) {
+                // Prikaži navigaciju samo kada je korisnik ulogovan
+                if(navBar) navBar.classList.add('show');
+                
+                const roleIcon = DB.currentUser.role === 'admin' ? '👑' : '👨‍🍳';
+                const displayName = DB.currentUser.role === 'konobar' && DB.konobarName ? DB.konobarName : DB.currentUser.username;
+                let html = `<div class="user-badge">${roleIcon} ${displayName}</div>`;
+                
+                if(DB.currentUser.role === 'konobar' && DB.workday) {
+                    html += `<div class="workday-badge">📅 Radni dan otvoren</div>`;
+                }
+                
+                if(DB.currentUser.role === 'konobar' && DB.workday) {
+                    html += `<button class="logout-btn" id="closeDayBtn" style="background:#FF9800">Zatvori dan</button>`;
+                }
+                
+                html += `<button class="logout-btn" id="logoutBtn">Odjavi se</button>`;
+                userInfo.innerHTML = html;
+                
+                const logoutBtn = document.getElementById('logoutBtn');
+                if(logoutBtn) {
+                    logoutBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        DB.currentUser = null;
+                        DB.selectedTable = null;
+                        DB.workday = null;
+                        DB.konobarName = null;
+                        localStorage.removeItem('currentUser');
+                        localStorage.removeItem('workday');
+                        localStorage.removeItem('konobarName');
+                        page = 'login';
+                        render();
+                    });
+                }
+                
+                const closeDayBtn = document.getElementById('closeDayBtn');
+                if(closeDayBtn) {
+                    closeDayBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        page = 'workday';
+                        render();
+                    });
+                }
+                
+                const navReport = document.getElementById('navReport');
+                const navRemoved = document.getElementById('navRemoved');
+                const navUsers = document.getElementById('navUsers');
+                const navEdit = document.getElementById('navEdit');
+                const navSettings = document.getElementById('navSettings');
+                
+                if(navReport && navRemoved && navUsers && navEdit && navSettings) {
+                    if(DB.currentUser.role === 'konobar') {
+                        navReport.style.display = 'flex';
+                        navRemoved.style.display = 'none';
+                        navUsers.style.display = 'none';
+                        navEdit.style.display = 'none';
+                        navSettings.style.display = 'none';
+                    } else {
+                        navReport.style.display = 'flex';
+                        navRemoved.style.display = 'flex';
+                        navUsers.style.display = 'flex';
+                        navEdit.style.display = 'flex';
+                        navSettings.style.display = 'flex';
+                    }
+                }
+            } else {
+                // Sakrij navigaciju kada korisnik nije ulogovan
+                if(navBar) navBar.classList.remove('show');
+                userInfo.innerHTML = '';
+            }
+        }
+
+        function renderFinalReport(c) {
+            const report = JSON.parse(localStorage.getItem('lastWorkdayReport'));
+            if(!report) {
+                c.innerHTML = '<div class="empty"><p>Nema izveštaja</p></div>';
+                return;
+            }
+            
+            const startDate = new Date(report.startTime);
+            const endDate = new Date(report.endTime);
+            const duration = Math.floor((endDate - startDate) / 1000 / 60);
+            const hours = Math.floor(duration / 60);
+            const mins = duration % 60;
+            
+            const itemCounts = {};
+            report.orders.forEach(order => {
+                order.items.forEach(item => {
+                    if(!itemCounts[item.name]) itemCounts[item.name] = {qty: 0, revenue: 0};
+                    itemCounts[item.name].qty += item.qty;
+                    itemCounts[item.name].revenue += item.price * item.qty;
+                });
+            });
+            const topItems = Object.entries(itemCounts)
+                .map(([name, data]) => ({name, ...data}))
+                .sort((a,b) => b.qty - a.qty)
+                .slice(0, 5);
+            
+            let h = `
+                <div style="max-width:800px;margin:0 auto;padding:20px">
+                    <div style="text-align:center;margin-bottom:32px">
+                        <div style="font-size:64px;margin-bottom:16px">📊</div>
+                        <h2 style="color:#E94560;margin-bottom:8px">Završni Izveštaj Radnog Dana</h2>
+                        <p style="color:#B0B0B0">Radni dan je zatvoren - svi podaci su sačuvani</p>
+                    </div>
+                    
+                    <div style="background:#0F3460;padding:24px;border-radius:12px;margin-bottom:20px">
+                        <h3 style="color:#E94560;margin-bottom:16px">📅 Osnovni Podaci</h3>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                            <div>
+                                <div style="color:#B0B0B0;font-size:13px">Konobar</div>
+                                <div style="color:#FFD700;font-weight:bold;font-size:18px">${report.user}</div>
+                            </div>
+                            <div>
+                                <div style="color:#B0B0B0;font-size:13px">Trajanje</div>
+                                <div style="color:#FFF;font-weight:bold;font-size:18px">${hours}h ${mins}min</div>
+                            </div>
+                            <div>
+                                <div style="color:#B0B0B0;font-size:13px">Početak</div>
+                                <div style="color:#FFF">${startDate.toLocaleString('sr-RS')}</div>
+                            </div>
+                            <div>
+                                <div style="color:#B0B0B0;font-size:13px">Kraj</div>
+                                <div style="color:#FFF">${endDate.toLocaleString('sr-RS')}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px">
+                        <div class="stat-card">
+                            <div class="stat-label">Ukupan prihod</div>
+                            <div class="stat-value">${report.totalRevenue.toFixed(0)}</div>
+                            <div class="stat-label">din.</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Broj narudžbi</div>
+                            <div class="stat-value" style="color:#E94560">${report.orderCount}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Prosečna narudžba</div>
+                            <div class="stat-value" style="color:#4CAF50">${report.orderCount > 0 ? (report.totalRevenue/report.orderCount).toFixed(0) : 0}</div>
+                            <div class="stat-label">din.</div>
+                        </div>
+                    </div>
+                    
+                    <div style="background:#0F3460;padding:24px;border-radius:12px;margin-bottom:20px">
+                        <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
+                        <div style="display:flex;gap:16px">
+                            <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                                <div style="font-size:32px">💵</div>
+                                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${report.cashRevenue.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:12px">Cash (${report.totalRevenue > 0 ? Math.round(report.cashRevenue/report.totalRevenue*100) : 0}%)</div>
+                            </div>
+                            <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                                <div style="font-size:32px">💳</div>
+                                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${report.cardRevenue.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:12px">Card (${report.totalRevenue > 0 ? Math.round(report.cardRevenue/report.totalRevenue*100) : 0}%)</div>
+                            </div>
+                        </div>
+                    </div>`;
+            
+            if(topItems.length > 0) {
+                h += `<div style="background:#0F3460;padding:24px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">🏆 Top 5 Prodatih Jela</h3>`;
+                topItems.forEach((item, idx) => {
+                    const maxQty = topItems[0].qty;
+                    const pct = (item.qty / maxQty * 100).toFixed(0);
+                    h += `<div style="margin-bottom:16px">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                            <span style="color:#FFF"><strong>${idx+1}.</strong> ${item.name}</span>
+                            <span style="color:#B0B0B0">${item.qty} kom · ${item.revenue.toFixed(0)} din.</span>
+                        </div>
+                        <div style="background:#2A2A4A;height:8px;border-radius:4px;overflow:hidden">
+                            <div style="background:#E94560;height:100%;width:${pct}%;border-radius:4px"></div>
+                        </div>
+                    </div>`;
+                });
+                h += `</div>`;
+            }
+            
+            h += `<div style="display:flex;gap:12px;margin-top:24px">
+                    <button class="btn btn-secondary" onclick="window.print()">🖨️ Štampaj Izveštaj</button>
+                    <button class="btn btn-secondary" onclick="showReportModal()">📋 Prikaži Izveštaj</button>
+                    <button class="btn" onclick="page='workday';render()">✅ Završi</button>
+                </div>
+            </div>`;
+            
+            c.innerHTML = h;
+        }
+        
+        function showReportModal() {
+            const report = JSON.parse(localStorage.getItem('lastWorkdayReport'));
+            if(!report) {
+                showAlert('Nema izveštaja');
+                return;
+            }
+            
+            const startDate = new Date(report.startTime);
+            const endDate = new Date(report.endTime);
+            const duration = Math.floor((endDate - startDate) / 1000 / 60);
+            const hours = Math.floor(duration / 60);
+            const mins = duration % 60;
+            
+            // Top items
+            const itemCounts = {};
+            report.orders.forEach(order => {
+                order.items.forEach(item => {
+                    if(!itemCounts[item.name]) itemCounts[item.name] = {qty: 0, revenue: 0};
+                    itemCounts[item.name].qty += item.qty;
+                    itemCounts[item.name].revenue += item.price * item.qty;
+                });
+            });
+            const topItems = Object.entries(itemCounts)
+                .map(([name, data]) => ({name, ...data}))
+                .sort((a,b) => b.qty - a.qty)
+                .slice(0, 10);
+            
+            // Kreiraj izveštaj
+            let reportText = `DNEVNI IZVEŠTAJ - ${DB.settings.name}
+${'='.repeat(60)}
+
+📅 OSNOVNI PODACI
+Konobar: ${report.user}
+Datum: ${startDate.toLocaleDateString('sr-RS')}
+Početak: ${startDate.toLocaleTimeString('sr-RS')}
+Kraj: ${endDate.toLocaleTimeString('sr-RS')}
+Trajanje: ${hours}h ${mins}min
+
+💰 FINANSIJSKI PREGLED
+Ukupan prihod: ${report.totalRevenue.toFixed(2)} RSD
+Broj narudžbi: ${report.orderCount}
+Prosečna narudžba: ${report.orderCount > 0 ? (report.totalRevenue/report.orderCount).toFixed(2) : 0} RSD
+
+💳 NAČINI PLAĆANJA
+Cash: ${report.cashRevenue.toFixed(2)} RSD (${report.totalRevenue > 0 ? Math.round(report.cashRevenue/report.totalRevenue*100) : 0}%)
+Card: ${report.cardRevenue.toFixed(2)} RSD (${report.totalRevenue > 0 ? Math.round(report.cardRevenue/report.totalRevenue*100) : 0}%)
+`;
+
+            if(topItems.length > 0) {
+                reportText += `
+🏆 TOP ${topItems.length} PRODATIH JELA
+${'='.repeat(60)}
+`;
+                topItems.forEach((item, idx) => {
+                    reportText += `${idx+1}. ${item.name.padEnd(30)} ${item.qty} kom  ${item.revenue.toFixed(2)} RSD
+`;
+                });
+            }
+            
+            // Detaljna lista narudžbina
+            if(report.orders.length > 0) {
+                reportText += `
+
+📋 DETALJNA LISTA NARUDŽBINA
+${'='.repeat(60)}
+`;
+                report.orders.forEach((order, idx) => {
+                    const orderTime = new Date(order.time).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    reportText += `
+Narudžbina #${idx+1} - ${orderTime} - ${order.method}
+`;
+                    order.items.forEach(item => {
+                        reportText += `  • ${item.name} x${item.qty} = ${(item.price * item.qty).toFixed(2)} RSD
+`;
+                    });
+                    reportText += `  UKUPNO: ${order.tot.toFixed(2)} RSD
+`;
+                });
+            }
+            
+            reportText += `
+
+${'='.repeat(60)}
+Generisano: ${new Date().toLocaleString('sr-RS')}
+${'='.repeat(60)}
+`;
+            
+            // Prikaži modal sa tekstom
+            const modal = document.createElement('div');
+            modal.className = 'modal show';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width:900px;max-height:90vh;display:flex;flex-direction:column">
+                    <h2 style="color:#E94560;margin-bottom:12px;flex-shrink:0">📋 Dnevni Izveštaj</h2>
+                    <p style="color:#B0B0B0;margin-bottom:12px;font-size:13px;flex-shrink:0">
+                        <strong style="color:#FFD700">Kako koristiti:</strong><br>
+                        Klikni u tekst → <kbd style="background:#0F3460;padding:2px 6px;border-radius:4px">Ctrl+A</kbd> → <kbd style="background:#0F3460;padding:2px 6px;border-radius:4px">Ctrl+C</kbd>
+                    </p>
+                    <div style="flex:1;overflow-y:auto;margin-bottom:12px;min-height:0">
+                        <textarea readonly style="width:100%;height:100%;min-height:300px;font-family:monospace;font-size:13px;padding:16px;background:#16213E;color:#FFF;border:2px solid #2A2A4A;border-radius:8px;resize:none;line-height:1.5" id="reportTextarea" onclick="this.select()">${reportText}</textarea>
+                    </div>
+                    <div style="display:flex;gap:12px;flex-shrink:0">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Zatvori</button>
+                        <button class="btn" onclick="copyFromTextarea()">📋 Kopiraj</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // Auto-selektuj tekst
+            setTimeout(() => {
+                const textarea = document.getElementById('reportTextarea');
+                if(textarea) textarea.select();
+            }, 100);
+        }
+        
+        function copyFromTextarea() {
+            const textarea = document.getElementById('reportTextarea');
+            if(!textarea) return;
+            
+            textarea.select();
+            textarea.setSelectionRange(0, 99999); // Za mobilne uređaje
+            
+            try {
+                document.execCommand('copy');
+                showAlert('✅ Izveštaj je kopiran!\n\nMožete zatvoriti ovaj prozor i nalepiti bilo gde.');
+            } catch(err) {
+                showAlert('Pritisnite Ctrl+C (ili Cmd+C) da kopirate selektovani tekst.');
+            }
+        }
+
+        function renderLogin(c) {
+            const waiters = DB.users.filter(u => u.role === 'konobar');
+            const admins = DB.users.filter(u => u.role === 'admin');
+            
+            c.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                    <div style="background:#0F3460;padding:40px;border-radius:16px;max-width:500px;width:100%">
+                        <h2 style="text-align:center;margin-bottom:32px;color:#E94560">🍽️ Dobrodošli</h2>
+                        
+                        <!-- Sekcija za konobara -->
+                        <div style="margin-bottom:32px">
+                            <h3 style="color:#FFD700;margin-bottom:16px;text-align:center">👨‍🍳 Konobar</h3>
+                            ${waiters.length > 0 ? `
+                                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px">
+                                    ${waiters.map(w => `
+                                        <div class="card" style="text-align:center;padding:20px;cursor:pointer" onclick="selectWaiter('${w.username}')">
+                                            <div style="font-size:48px;margin-bottom:8px">👨‍🍳</div>
+                                            <div style="color:#FFD700;font-weight:bold">${w.username}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : '<p style="color:#B0B0B0;text-align:center;font-size:13px">Nema konobara - Admin može dodati u "Konobari" tabu</p>'}
+                        </div>
+                        
+                        <div style="border-top:1px solid #2A2A4A;margin:32px 0"></div>
+                        
+                        <!-- Sekcija za admina -->
+                        <div>
+                            <h3 style="color:#E94560;margin-bottom:16px;text-align:center">👑 Administrator</h3>
+                            <input type="password" id="adminPassword" placeholder="Unesite admin lozinku" style="margin-bottom:12px">
+                            <button class="btn" onclick="loginAdmin()">Prijavi se kao Admin</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function selectWaiter(username) {
+            selectedWaiterUsername = username;
+            const c = document.getElementById('content');
+            const waiter = DB.users.find(u => u.username === username);
+            
+            c.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                    <div style="background:#0F3460;padding:40px;border-radius:16px;max-width:400px;width:100%">
+                        <button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-bottom:24px" onclick="page='login';render()">← Nazad</button>
+                        <div style="text-align:center;margin-bottom:24px">
+                            <div style="font-size:64px;margin-bottom:16px">👨‍🍳</div>
+                            <h2 style="color:#FFD700;margin-bottom:8px">${username}</h2>
+                            <p style="color:#B0B0B0;font-size:14px">Unesite vašu šifru</p>
+                        </div>
+                        <input type="password" id="waiterPassword" placeholder="Šifra" style="margin-bottom:16px">
+                        <button class="btn" onclick="loginWaiter()">Prijavi se</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function loginWaiter() {
+            const password = document.getElementById('waiterPassword').value.trim();
+            const user = DB.users.find(u => u.username === selectedWaiterUsername && u.password === password);
+            
+            if(user) {
+                DB.currentUser = {username: user.username, role: user.role};
+                // Koristi username kao konobarName
+                DB.konobarName = user.username;
+                save();
+                
+                if(!DB.workday) {
+                    page = 'workday';
+                } else {
+                    page = 'tables';
+                }
+                render();
+            } else {
+                showAlert('Pogrešna šifra');
+            }
+        }
+        
+        function loginAdmin() {
+            const password = document.getElementById('adminPassword').value.trim();
+            const admin = DB.users.find(u => u.role === 'admin' && u.password === password);
+            
+            if(admin) {
+                DB.currentUser = {username: admin.username, role: admin.role};
+                save();
+                page = 'tables';
+                render();
+            } else {
+                showAlert('Pogrešna admin lozinka');
+            }
+        }
+        
+        let selectedWaiterUsername = null;
+
+        function renderWorkday(c) {
+            if(!DB.workday) {
+                c.innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                        <div style="background:#0F3460;padding:40px;border-radius:16px;max-width:500px;width:100%;text-align:center">
+                            <div style="font-size:64px;margin-bottom:16px">📅</div>
+                            <h2 style="color:#E94560;margin-bottom:16px">Dobrodošli!</h2>
+                            <p style="color:#B0B0B0;margin-bottom:24px">Prijavili ste se kao: <strong style="color:#FFD700">${DB.konobarName || DB.currentUser.username}</strong></p>
+                            <p style="color:#FFF;margin-bottom:32px;font-size:18px">Da li želite da otvorite novi radni dan?</p>
+                            <button class="btn" onclick="openWorkday()">📅 Otvori Radni Dan</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const dayOrders = DB.orders.filter(o => o.time >= DB.workday.startTime);
+                const totalRevenue = dayOrders.reduce((s,o)=>s+o.tot,0);
+                const cash = dayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+                const card = dayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+                
+                // Parse start time properly
+                const startTime = new Date(DB.workday.startTime);
+                const now = new Date();
+                const durationMs = now - startTime;
+                const duration = Math.floor(durationMs / 1000 / 60); // minutes
+                const hours = Math.floor(duration / 60);
+                const mins = duration % 60;
+                
+                c.innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                        <div style="background:#0F3460;padding:40px;border-radius:16px;max-width:600px;width:100%">
+                            <div style="text-align:center;font-size:64px;margin-bottom:16px">📊</div>
+                            <h2 style="color:#E94560;margin-bottom:24px;text-align:center">Zatvaranje Radnog Dana</h2>
+                            
+                            <div style="background:#16213E;padding:20px;border-radius:12px;margin-bottom:20px">
+                                <div style="display:flex;justify-content:space-between;margin:8px 0">
+                                    <span style="color:#B0B0B0">Konobar:</span>
+                                    <span style="color:#FFD700;font-weight:bold">${DB.workday.user}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin:8px 0">
+                                    <span style="color:#B0B0B0">Početak:</span>
+                                    <span style="color:#FFF">${startTime.toLocaleString('sr-RS')}</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin:8px 0">
+                                    <span style="color:#B0B0B0">Trajanje:</span>
+                                    <span style="color:#FFF;font-weight:bold">${hours}h ${mins}min</span>
+                                </div>
+                            </div>
+                            
+                            <div style="background:#16213E;padding:20px;border-radius:12px;margin-bottom:20px">
+                                <h3 style="color:#E94560;margin-bottom:12px">Finansijski Pregled</h3>
+                                <div style="display:flex;justify-content:space-between;margin:8px 0">
+                                    <span style="color:#B0B0B0">Ukupan prihod:</span>
+                                    <span style="color:#FFD700;font-size:20px;font-weight:bold">${totalRevenue.toFixed(0)} din.</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin:8px 0">
+                                    <span style="color:#B0B0B0">💵 Cash:</span>
+                                    <span style="color:#FFF">${cash.toFixed(0)} din.</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin:8px 0">
+                                    <span style="color:#B0B0B0">💳 Card:</span>
+                                    <span style="color:#FFF">${card.toFixed(0)} din.</span>
+                                </div>
+                                <div style="display:flex;justify-content:space-between;margin:8px 0;padding-top:8px;border-top:1px solid #2A2A4A">
+                                    <span style="color:#B0B0B0">Broj narudžbi:</span>
+                                    <span style="color:#FFF;font-weight:bold">${dayOrders.length}</span>
+                                </div>
+                            </div>
+                            
+                            <div style="display:flex;gap:12px">
+                                <button class="btn btn-secondary" onclick="page='tables';render()">← Nazad</button>
+                                <button class="btn" onclick="closeWorkday()">✅ Zatvori Dan</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function openWorkday() {
+            DB.workday = {
+                user: DB.konobarName || DB.currentUser.username,
+                startTime: new Date().toISOString(),
+                startOrders: DB.orders.length
+            };
+            save();
+            page = 'tables';
+            render();
+        }
+
+        function closeWorkday() {
+            const dayOrders = DB.orders.filter(o => o.time >= DB.workday.startTime);
+            const totalRevenue = dayOrders.reduce((s,o)=>s+o.tot,0);
+            const cash = dayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+            const card = dayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+            
+            const endTime = new Date().toISOString();
+            const startTime = new Date(DB.workday.startTime);
+            const duration = Math.floor((new Date(endTime) - startTime) / 1000 / 60); // minutes
+            
+            const finalReport = {
+                user: DB.workday.user,
+                startTime: DB.workday.startTime,
+                endTime: endTime,
+                orders: dayOrders,
+                totalRevenue: totalRevenue,
+                cashRevenue: cash,
+                cardRevenue: card,
+                orderCount: dayOrders.length
+            };
+            
+            localStorage.setItem('lastWorkdayReport', JSON.stringify(finalReport));
+            
+            // Dodaj u istoriju sesija
+            DB.workdayHistory.push({
+                user: DB.workday.user,
+                loginTime: DB.workday.startTime,
+                logoutTime: endTime,
+                duration: duration,
+                orderCount: dayOrders.length,
+                revenue: totalRevenue
+            });
+            
+            // Resetuj samo stolove, ALI NE BRIŠEMO NARUDŽBINE!
+            // Narudžbine treba da ostanu u bazi zauvek za evidenciju
+            DB.tables = Array.from({length:10}, (_,i) => ({num:i+1, name:`Sto ${i+1}`, order:[], discount:0, discountPercent:0, discountedItems:[]}));
+            // DB.orders = []; // NE BRIŠEMO NARUDŽBINE!
+            DB.workday = null;
+            save();
+            
+            page = 'finalreport';
+            render();
+        }
+
+        function updateBadge() {
+            const occupied = DB.tables.filter(t=>t.order.length>0).length;
+            document.getElementById('badge').textContent = `${occupied} stolova`;
+        }
+
+        function renderTableSelect(c) {
+            let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px"><h2>🪑 Izaberi Sto</h2>';
+            if(DB.currentUser) {
+                h += '<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page=\'edittables\';render()">✏️ Izmeni Stolove</button>';
+            }
+            h += '</div><div class="table-grid">';
+            DB.tables.forEach(t => {
+                const isOccupied = t.order.length > 0;
+                const total = isOccupied ? t.order.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
+                h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
+                    <div class="table-icon">🪑</div>
+                    <div class="table-number">${t.name}</div>
+                    <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
+                </div>`;
+            });
+            h += '</div>';
+            c.innerHTML = h;
+        }
+
+        function selectTable(num) {
+            DB.selectedTable = num;
+            page = 'tables';
+            render();
+        }
+
+        function renderEditTables(c) {
+            let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tables';render()">← Natrag</button>
+                <h2>✏️ Izmeni Imena Stolova</h2>
+                <div style="width:80px"></div>
+            </div>`;
+            
+            DB.tables.forEach(t => {
+                h += `<div class="card" style="cursor:default">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div style="flex:1">
+                            <h3 style="color:#FFD700">Sto ${t.num}</h3>
+                            <p style="color:#B0B0B0;font-size:13px">Trenutno ime: ${t.name}</p>
+                        </div>
+                        <button class="btn" style="width:auto;padding:8px 16px" onclick="editTableName(${t.num})">✏️ Promeni Ime</button>
+                    </div>
+                </div>`;
+            });
+            
+            c.innerHTML = h;
+        }
+
+        function editTableName(num) {
+            editingTableNum = num;
+            const table = DB.tables.find(t => t.num === num);
+            document.getElementById('tableNameLabel').textContent = `Unesite novo ime za Sto ${num}:`;
+            document.getElementById('tableNameInput').value = table.name;
+            document.getElementById('tableNameModal').classList.add('show');
+            document.getElementById('tableNameInput').focus();
+        }
+
+        function closeTableNameModal() {
+            document.getElementById('tableNameModal').classList.remove('show');
+            editingTableNum = null;
+        }
+
+        function saveTableName() {
+            const newName = document.getElementById('tableNameInput').value.trim();
+            if(!newName) {
+                showAlert('Molimo unesite ime stola');
+                return;
+            }
+            const table = DB.tables.find(t => t.num === editingTableNum);
+            table.name = newName;
+            save();
+            closeTableNameModal();
+            render();
+        }
+
+        function renderTableMenu(c) {
+            const table = DB.tables.find(t=>t.num===DB.selectedTable);
+            const cats = ['Sve', ...new Set(DB.menu.map(i=>i.cat))];
+            const items = DB.selectedCat==='Sve' ? DB.menu : DB.menu.filter(i=>i.cat===DB.selectedCat);
+            
+            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            const tot = Math.max(0, sub-table.discount);
+            
+            let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="DB.selectedTable=null;render()">← Stolovi</button>
+                <h2>🪑 ${table.name}</h2>
+                <button class="btn" style="width:auto;padding:8px 16px" onclick="page='tableorder';render()">Narudžba (${table.order.length})</button>
+            </div>`;
+            
+            h += '<div style="margin:16px 0">';
+            cats.forEach(cat => h += `<span class="chip ${DB.selectedCat===cat?'active':''}" onclick="filterCat('${cat}')">${cat}</span>`);
+            h += '</div>';
+            
+            items.forEach(i => {
+                h += `<div class="card" onclick="addToTable(${i.id})">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div><h3>${i.name}</h3><p style="color:#B0B0B0;font-size:13px">${i.desc}</p></div>
+                        <div style="color:#FFD700;font-size:20px;font-weight:bold">${i.price} din.</div>
+                    </div>
+                </div>`;
+            });
+            
+            if(table.order.length > 0) {
+                h += `<div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#E94560;padding:12px 24px;border-radius:12px;box-shadow:0 4px 20px rgba(233,69,96,0.5);max-width:400px;width:90%">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <div style="font-size:12px;opacity:0.9">${table.order.length} stavki</div>
+                            <div style="font-size:20px;font-weight:bold">${tot.toFixed(0)} din.</div>
+                        </div>
+                        <button class="btn" style="width:auto;background:#FFF;color:#E94560;padding:10px 20px" onclick="page='tableorder';render()">Narudžba →</button>
+                    </div>
+                </div>`;
+            }
+            
+            c.innerHTML = h;
+        }
+
+        function filterCat(cat) { DB.selectedCat = cat; render(); }
+
+        function renderMenu(c) {
+            const cats = ['Sve', ...new Set(DB.menu.map(i=>i.cat))];
+            const items = DB.selectedCat==='Sve' ? DB.menu : DB.menu.filter(i=>i.cat===DB.selectedCat);
+            let h = '<h2>🍕 Menu - Katalog</h2><div style="margin:16px 0">';
+            cats.forEach(cat => h += `<span class="chip ${DB.selectedCat===cat?'active':''}" onclick="filterCat('${cat}')">${cat}</span>`);
+            h += '</div>';
+            items.forEach(i => {
+                h += `<div class="card">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div><h3>${i.name}</h3><p style="color:#B0B0B0;font-size:13px">${i.desc}</p></div>
+                        <div style="color:#FFD700;font-size:20px;font-weight:bold">${i.price} din.</div>
+                    </div>
+                </div>`;
+            });
+            c.innerHTML = h;
+        }
+
+        function addToTable(itemId) {
+            const table = DB.tables.find(t=>t.num===DB.selectedTable);
+            const menuItem = DB.menu.find(i=>i.id===itemId);
+            const existing = table.order.find(i=>i.id===itemId);
+            if(existing) existing.qty++;
+            else table.order.push({...menuItem, qty:1});
+            save();
+            render();
+        }
+
+        function renderTableOrder(c) {
+            const table = DB.tables.find(t=>t.num===DB.selectedTable);
+            if(!table) { DB.selectedTable=null; render(); return; }
+
+            // Inicijalizuj discountedItems ako ne postoji
+            if(!table.discountedItems) table.discountedItems = [];
+            if(table.discountPercent === undefined) table.discountPercent = 0;
+
+            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            
+            // Izračunaj popust
+            let discountAmount = 0;
+            if(table.discountPercent > 0 && table.discountedItems.length > 0) {
+                table.order.forEach(item => {
+                    if(table.discountedItems.includes(item.id)) {
+                        discountAmount += (item.price * item.qty * table.discountPercent / 100);
+                    }
+                });
+            }
+            
+            const tot = Math.max(0, sub - discountAmount);
+
+            let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tables';render()">← ${table.name}</button>
+                <h2>Narudžba</h2>
+                <div style="width:80px"></div>
+            </div>`;
+
+            if(table.order.length === 0) {
+                h += '<div class="empty"><div style="font-size:64px">🍽️</div><h3>Narudžba je prazna</h3><p>Dodajte stavke</p></div>';
+            } else {
+                table.order.forEach(i => {
+                    const isDiscounted = table.discountedItems.includes(i.id);
+                    const itemDiscount = isDiscounted ? (i.price * i.qty * table.discountPercent / 100) : 0;
+                    const itemTotal = (i.price * i.qty) - itemDiscount;
+                    
+                    h += `<div class="card" style="cursor:default;${isDiscounted ? 'border:2px solid #4CAF50' : ''}">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div style="flex:1">
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                    <input type="checkbox" 
+                                           id="disc_${i.id}" 
+                                           ${isDiscounted ? 'checked' : ''} 
+                                           onchange="toggleDiscountItem(${table.num}, ${i.id})"
+                                           style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">
+                                    <h3>${i.name}</h3>
+                                    ${isDiscounted && table.discountPercent > 0 ? `<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px">-${table.discountPercent}%</span>` : ''}
+                                </div>
+                                <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.${itemDiscount > 0 ? ` (-${itemDiscount.toFixed(0)} din.)` : ''}</p>
+                            </div>
+                            <div style="display:flex;gap:8px;align-items:center">
+                                <button onclick="changeTableQty(${table.num},${i.id},-1)" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
+                                <span style="color:#FFD700;font-weight:bold;min-width:24px;text-align:center">${i.qty}</span>
+                                <button onclick="changeTableQty(${table.num},${i.id},1)" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">+</button>
+                                <button onclick="delTableItem(${table.num},${i.id})" style="background:transparent;color:#E94560;border:none;cursor:pointer;font-size:20px;padding:4px">🗑️</button>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+
+                h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-top:16px">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                        <span>Subtotal:</span>
+                        <span>${sub.toFixed(0)} din.</span>
+                    </div>
+                    
+                    <div style="margin:16px 0;padding:16px;background:#16213E;border-radius:8px">
+                        <label style="color:#4CAF50;font-weight:bold;display:block;margin-bottom:8px">
+                            💚 Popust (%)
+                            ${table.discountedItems.length > 0 ? `<span style="color:#B0B0B0;font-size:12px;font-weight:normal"> - ${table.discountedItems.length} ${table.discountedItems.length === 1 ? 'artikal' : 'artikla'} označeno</span>` : ''}
+                        </label>
+                        <input type="number" 
+                               value="${table.discountPercent}" 
+                               onchange="setTableDiscountPercent(${table.num}, this.value)" 
+                               placeholder="0"
+                               min="0"
+                               max="100"
+                               style="margin:0">
+                        <p style="color:#B0B0B0;font-size:12px;margin-top:8px">
+                            ${table.discountedItems.length === 0 ? '👆 Prvo označite artikle gore (✓) pa unesite %' : '✓ Označeni artikli dobijaju popust'}
+                        </p>
+                    </div>
+                    
+                    ${discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50">
+                        <span>Popust (${table.discountPercent}%):</span>
+                        <span>-${discountAmount.toFixed(0)} din.</span>
+                    </div>` : ''}
+                    
+                    <div style="display:flex;justify-content:space-between;font-size:24px;font-weight:bold;border-top:2px solid #2A2A4A;padding-top:12px">
+                        <span>UKUPNO:</span>
+                        <span style="color:#FFD700">${tot.toFixed(0)} din.</span>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:16px">
+                        <button class="btn btn-secondary" onclick="clearTable(${table.num})">Očisti Sto</button>
+                        <button class="btn" onclick="proceedToPayment(${table.num})">💳 Naplati</button>
+                    </div>
+                </div>`;
+            }
+
+            c.innerHTML = h;
+        }
+
+        function toggleDiscountItem(tableNum, itemId) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            if(!table.discountedItems) table.discountedItems = [];
+            
+            const index = table.discountedItems.indexOf(itemId);
+            if(index > -1) {
+                table.discountedItems.splice(index, 1);
+            } else {
+                table.discountedItems.push(itemId);
+            }
+            
+            save();
+            render();
+        }
+
+        function setTableDiscountPercent(tableNum, val) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            const percent = parseFloat(val) || 0;
+            table.discountPercent = Math.max(0, Math.min(100, percent)); // Ograniči na 0-100%
+            save();
+            render();
+        }
+
+        function changeTableQty(tableNum, itemId, delta) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            const item = table.order.find(i=>i.id===itemId);
+            if(item) {
+                item.qty += delta;
+                if(item.qty <= 0) delTableItem(tableNum, itemId);
+                else { save(); render(); }
+            }
+        }
+
+        function delTableItem(tableNum, itemId) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            const item = table.order.find(i=>i.id===itemId);
+            
+            if(item) {
+                // Zabeleži uklonjeni artikal
+                DB.removedItems.push({
+                    itemId: item.id,
+                    itemName: item.name,
+                    itemPrice: item.price,
+                    quantity: item.qty,
+                    tableNum: tableNum,
+                    tableName: table.name,
+                    removedBy: DB.konobarName || DB.currentUser.username,
+                    removedAt: new Date().toISOString(),
+                    reason: 'Uklonjeno iz narudžbine'
+                });
+            }
+            
+            table.order = table.order.filter(i=>i.id!==itemId);
+            save();
+            render();
+        }
+
+        function setTableDiscount(tableNum, val) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            table.discount = parseFloat(val) || 0;
+            save();
+            render();
+        }
+
+        function clearTable(tableNum) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            if(!table) return;
+            
+            if(table.order.length === 0) {
+                showAlert('Sto je već prazan');
+                return;
+            }
+            
+            showConfirm('Očisti Sto', `Sigurno želite da očistite ${table.name}?`, (confirmed) => {
+                if(confirmed) {
+                    // Zapiši sve uklonjene artikle
+                    table.order.forEach(item => {
+                        DB.removedItems.push({
+                            itemId: item.id,
+                            itemName: item.name,
+                            itemPrice: item.price,
+                            quantity: item.qty,
+                            tableNum: tableNum,
+                            tableName: table.name,
+                            removedBy: DB.konobarName || DB.currentUser.username,
+                            removedAt: new Date().toISOString(),
+                            reason: 'Očišćen ceo sto'
+                        });
+                    });
+                    
+                    table.order = [];
+                    table.discount = 0;
+                    table.discountPercent = 0;
+                    table.discountedItems = [];
+                    save();
+                    
+                    // Vrati se na stranicu stolova
+                    DB.selectedTable = null;
+                    page = 'tables';
+                    render();
+                }
+            });
+        }
+
+        function proceedToPayment(tableNum) {
+            const table = DB.tables.find(t=>t.num===tableNum);
+            if(table.order.length === 0) { 
+                showAlert('Sto je prazan'); 
+                return; 
+            }
+            page = 'payment';
+            render();
+        }
+
+        function renderPayment(c) {
+            const table = DB.tables.find(t=>t.num===DB.selectedTable);
+            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            
+            // Izračunaj popust
+            let discountAmount = 0;
+            if(table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
+                table.order.forEach(item => {
+                    if(table.discountedItems.includes(item.id)) {
+                        discountAmount += (item.price * item.qty * table.discountPercent / 100);
+                    }
+                });
+            }
+            
+            const tot = Math.max(0, sub - discountAmount);
+            
+            let discountInfo = '';
+            if(discountAmount > 0) {
+                discountInfo = `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:12px">
+                    <div style="color:#4CAF50;font-size:14px;margin-bottom:4px">
+                        💚 Popust ${table.discountPercent}% na ${table.discountedItems.length} ${table.discountedItems.length === 1 ? 'artikal' : 'artikla'}
+                    </div>
+                    <div style="color:#B0B0B0;font-size:12px">
+                        Subtotal: ${sub.toFixed(0)} din. | Popust: -${discountAmount.toFixed(0)} din.
+                    </div>
+                </div>`;
+            }
+            
+            c.innerHTML = `<div style="margin-bottom:24px"><button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tableorder';render()">← Nazad</button></div>
+                <div style="background:#0F3460;padding:20px;border-radius:12px;text-align:center;margin-bottom:24px">
+                    <p style="color:#B0B0B0">${table.name} - Ukupno</p>
+                    ${discountInfo}
+                    <h1 style="color:#FFD700;font-size:48px">${tot.toFixed(0)} din.</h1>
+                </div>
+                <h3 style="text-align:center;margin:24px 0;color:#B0B0B0">Način plaćanja</h3>
+                <div style="display:flex;gap:16px">
+                    <div class="payment-option ${payMethod==='Cash'?'selected':''}" onclick="payMethod='Cash';render()">
+                        <div style="font-size:48px">💵</div><h3>Cash</h3>
+                    </div>
+                    <div class="payment-option ${payMethod==='Card'?'selected':''}" onclick="payMethod='Card';render()">
+                        <div style="font-size:48px">💳</div><h3>Card</h3>
+                    </div>
+                </div>
+                <button class="btn" style="margin-top:24px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>`;
+        }
+
+        function confirmPay() {
+            if(!payMethod) return;
+            const table = DB.tables.find(t=>t.num===DB.selectedTable);
+            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            
+            console.log('DEBUG confirmPay: Starting payment process');
+            console.log('DEBUG confirmPay: Table:', table);
+            console.log('DEBUG confirmPay: Subtotal:', sub);
+            
+            // Izračunaj popust
+            let discountAmount = 0;
+            if(table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
+                table.order.forEach(item => {
+                    if(table.discountedItems.includes(item.id)) {
+                        discountAmount += (item.price * item.qty * table.discountPercent / 100);
+                    }
+                });
+            }
+            
+            const tot = Math.max(0, sub - discountAmount);
+            
+            const newOrder = {
+                id:Date.now(),
+                table:table.num,
+                tableName: table.name,
+                items:[...table.order],
+                sub,
+                disc:discountAmount,
+                discountPercent: table.discountPercent || 0,
+                discountedItems: [...(table.discountedItems || [])],
+                tot,
+                method:payMethod,
+                createdBy: DB.konobarName || DB.currentUser.username,
+                time:new Date().toISOString()
+            };
+            
+            console.log('DEBUG confirmPay: New order:', newOrder);
+            
+            DB.orders.push(newOrder);
+            
+            console.log('DEBUG confirmPay: Orders after push:', DB.orders.length);
+            console.log('DEBUG confirmPay: All orders:', DB.orders);
+            
+            table.order = [];
+            table.discount = 0;
+            table.discountPercent = 0;
+            table.discountedItems = [];
+            
+            save();
+            
+            console.log('DEBUG confirmPay: After save, checking localStorage');
+            console.log('DEBUG confirmPay: localStorage orders:', JSON.parse(localStorage.getItem('orders')));
+            
+            page='receipt';
+            render();
+        }
+
+        function renderReceipt(c) {
+            const o = DB.orders[DB.orders.length-1];
+            if(!o) { c.innerHTML='<div class="empty">Nema narudžbi</div>'; return; }
+            let h = `<div class="success"><div class="success-icon">✅</div><h2 style="color:#4CAF50;margin-bottom:24px">Plaćanje uspešno!</h2>
+                <div style="background:#0F3460;padding:20px;border-radius:12px;max-width:400px;margin:0 auto">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>Sto ${o.table}</span><span>#${String(DB.orders.length).padStart(4,'0')}</span></div>
+                    <hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">`;
+            o.items.forEach(i => {
+                const isDiscounted = o.discountedItems && o.discountedItems.includes(i.id);
+                const itemTotal = i.price * i.qty;
+                h += `<div style="display:flex;justify-content:space-between;margin:4px 0">
+                    <span>${i.qty}x ${i.name}${isDiscounted && o.discountPercent ? ` <span style="color:#4CAF50;font-size:11px">(-${o.discountPercent}%)</span>` : ''}</span>
+                    <span>${itemTotal} din.</span>
+                </div>`;
+            });
+            h += `<hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">`;
+            if(o.disc>0) h += `<div style="display:flex;justify-content:space-between;color:#4CAF50"><span>Popust${o.discountPercent ? ` (${o.discountPercent}%)` : ''}:</span><span>- ${o.disc.toFixed(0)} din.</span></div>`;
+            h += `<div style="display:flex;justify-content:space-between;font-size:20px;font-weight:bold;margin-top:8px">
+                    <span>UKUPNO:</span><span style="color:#FFD700">${o.tot.toFixed(0)} din.</span>
+                </div>
+                <hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">
+                <div style="display:flex;justify-content:space-between"><span>Plaćanje:</span><span>${o.method==='Cash'?'💵':'💳'} ${o.method}</span></div>
+            </div>
+            <button class="btn" style="max-width:400px;margin:24px auto 0" onclick="newOrder()">Nazad na Stolove</button>
+        </div>`;
+            c.innerHTML = h;
+        }
+
+        function newOrder() {
+            DB.selectedTable = null;
+            payMethod = '';
+            page = 'tables';
+            render();
+        }
+
+        function renderRemoved(c) {
+            const today = new Date().toISOString().split('T')[0];
+            const todayRemoved = DB.removedItems.filter(r => r.removedAt.split('T')[0] === today);
+            const allRemoved = DB.removedItems;
+            
+            // Grupisanje po danima
+            const groupedByDate = {};
+            allRemoved.forEach(item => {
+                const date = new Date(item.removedAt).toLocaleDateString('sr-RS');
+                if(!groupedByDate[date]) groupedByDate[date] = [];
+                groupedByDate[date].push(item);
+            });
+            
+            // Statistika
+            const totalValue = todayRemoved.reduce((sum, item) => sum + (item.itemPrice * item.quantity), 0);
+            const totalItems = todayRemoved.reduce((sum, item) => sum + item.quantity, 0);
+            
+            let h = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                    <h2>🗑️ Uklonjeni Artikli</h2>
+                    ${DB.removedItems.length > 0 ? `<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="clearRemovedItems()">Očisti sve</button>` : ''}
+                </div>
+                
+                <p style="color:#B0B0B0;text-align:center;margin:8px 0 20px">${new Date().toLocaleDateString('sr-RS')}</p>
+                
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:24px">
+                    <div class="stat-card">
+                        <div class="stat-label">Uklonjeno danas</div>
+                        <div class="stat-value" style="color:#E94560">${totalItems}</div>
+                        <div class="stat-label">kom</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Vrednost</div>
+                        <div class="stat-value" style="color:#FF9800">${totalValue.toFixed(0)}</div>
+                        <div class="stat-label">din.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Ukupno (svi dani)</div>
+                        <div class="stat-value" style="color:#B0B0B0">${allRemoved.length}</div>
+                        <div class="stat-label">unosa</div>
+                    </div>
+                </div>
+            `;
+            
+            if(allRemoved.length === 0) {
+                h += '<div class="empty"><div style="font-size:64px">✅</div><h3>Nema uklonjenih artikala</h3><p>Sve je uredu!</p></div>';
+            } else {
+                // Prikaz po danima (najnoviji prvo)
+                const dates = Object.keys(groupedByDate).sort((a, b) => {
+                    const dateA = new Date(a.split('.').reverse().join('-'));
+                    const dateB = new Date(b.split('.').reverse().join('-'));
+                    return dateB - dateA;
+                });
+                
+                dates.forEach(date => {
+                    const items = groupedByDate[date];
+                    const isToday = date === new Date().toLocaleDateString('sr-RS');
+                    
+                    h += `
+                        <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:16px">
+                            <h3 style="color:#E94560;margin-bottom:16px">
+                                ${isToday ? '📅 Danas' : '📅 ' + date}
+                                <span style="color:#B0B0B0;font-size:14px;font-weight:normal;margin-left:12px">
+                                    (${items.length} ${items.length === 1 ? 'unos' : 'unosa'})
+                                </span>
+                            </h3>
+                    `;
+                    
+                    items.forEach((item, idx) => {
+                        const time = new Date(item.removedAt).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                        h += `
+                            <div class="card" style="cursor:default;margin-bottom:${idx === items.length - 1 ? '0' : '8px'}">
+                                <div style="display:flex;justify-content:space-between;align-items:start">
+                                    <div style="flex:1">
+                                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                                            <h3>${item.itemName}</h3>
+                                            <span style="background:#E94560;color:white;padding:2px 8px;border-radius:4px;font-size:11px">
+                                                ${item.quantity}x
+                                            </span>
+                                        </div>
+                                        <p style="color:#B0B0B0;font-size:13px">
+                                            🪑 ${item.tableName} · 
+                                            👤 ${item.removedBy} · 
+                                            🕐 ${time}
+                                        </p>
+                                    </div>
+                                    <div style="text-align:right">
+                                        <div style="color:#FF9800;font-size:18px;font-weight:bold">
+                                            ${(item.itemPrice * item.quantity).toFixed(0)} din.
+                                        </div>
+                                        <div style="color:#B0B0B0;font-size:12px">
+                                            ${item.itemPrice} × ${item.quantity}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    h += `</div>`;
+                });
+            }
+            
+            c.innerHTML = h;
+        }
+        
+        function clearRemovedItems() {
+            showConfirm('Obriši Evidenciju', 'Obrisati sve uklonjene artikle iz evidencije?', (confirmed) => {
+                if(confirmed) {
+                    DB.removedItems = [];
+                    save();
+                    render();
+                }
+            });
+        }
+
+        function renderReport(c) {
+            const today = new Date().toISOString().split('T')[0];
+            
+            console.log('DEBUG: Total orders in DB:', DB.orders.length);
+            console.log('DEBUG: Today date:', today);
+            console.log('DEBUG: All orders:', DB.orders);
+            
+            const ords = DB.orders.filter(o=> {
+                const orderDate = o.time.split('T')[0];
+                console.log('DEBUG: Comparing', orderDate, 'with', today);
+                return orderDate === today;
+            });
+            
+            console.log('DEBUG: Orders today:', ords.length);
+            
+            const rev = ords.reduce((s,o)=>s+o.tot,0);
+            const cash = ords.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+            const card = ords.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+            
+            // Grupisanje po konobarima
+            const ordersByUser = {};
+            ords.forEach(order => {
+                const user = order.createdBy || 'Nepoznato';
+                if(!ordersByUser[user]) ordersByUser[user] = {count: 0, revenue: 0};
+                ordersByUser[user].count++;
+                ordersByUser[user].revenue += order.tot;
+            });
+            
+            let h = `<h2>📊 Dnevni Izveštaj</h2>
+                <p style="color:#B0B0B0;text-align:center;margin:8px 0 4px">${new Date().toLocaleDateString('sr-RS')}</p>
+                <p style="color:#B0B0B0;text-align:center;margin:0 0 20px;font-size:12px">
+                    Ukupno narudžbina u sistemu: ${DB.orders.length} | 
+                    Danas: ${ords.length}
+                </p>
+                
+                <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:20px;font-size:12px;color:#B0B0B0">
+                    🔍 Debug: Datum danas = ${today} | Narudžbina danas = ${ords.length}
+                </div>`;
+            
+            h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0">
+                <div class="stat-card">
+                    <div class="stat-label">Ukupan prihod</div>
+                    <div class="stat-value">${rev.toFixed(0)}</div>
+                    <div class="stat-label">din.</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Narudžbi danas</div>
+                    <div class="stat-value" style="color:#E94560">${ords.length}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Prosečan račun</div>
+                    <div class="stat-value" style="color:#4CAF50">${ords.length > 0 ? (rev/ords.length).toFixed(0) : 0}</div>
+                    <div class="stat-label">din.</div>
+                </div>
+            </div>`;
+            
+            h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
+                <div style="display:flex;gap:16px">
+                    <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                        <div style="font-size:32px">💵</div>
+                        <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${cash.toFixed(0)} din.</div>
+                        <div style="color:#B0B0B0;font-size:12px">Cash (${rev>0?Math.round(cash/rev*100):0}%)</div>
+                    </div>
+                    <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                        <div style="font-size:32px">💳</div>
+                        <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${card.toFixed(0)} din.</div>
+                        <div style="color:#B0B0B0;font-size:12px">Card (${rev>0?Math.round(card/rev*100):0}%)</div>
+                    </div>
+                </div>
+            </div>`;
+            
+            // Prikaz po konobarima
+            if(Object.keys(ordersByUser).length > 0) {
+                h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">👥 Aktivnost Konobara</h3>`;
+                
+                // Sortiraj konobara po prihodu (najveći prihod prvo)
+                const sortedUsers = Object.entries(ordersByUser).sort((a, b) => b[1].revenue - a[1].revenue);
+                
+                sortedUsers.forEach(([user, data], index) => {
+                    const percent = rev > 0 ? Math.round(data.revenue / rev * 100) : 0;
+                    const avgOrder = data.count > 0 ? (data.revenue / data.count).toFixed(0) : 0;
+                    
+                    // Izračunaj progress bar za vizuelni prikaz
+                    const maxRevenue = sortedUsers[0][1].revenue;
+                    const progressPercent = maxRevenue > 0 ? Math.round((data.revenue / maxRevenue) * 100) : 0;
+                    
+                    // Badge za poziciju
+                    const positionBadge = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+                    
+                    h += `<div style="background:#16213E;padding:16px;border-radius:8px;margin-bottom:12px;border-left:4px solid ${index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : '#2A2A4A'};cursor:pointer" onclick="showWaiterOrders('${user}')">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="font-size:20px">${positionBadge}</span>
+                                <div>
+                                    <div style="color:#FFD700;font-weight:bold;font-size:16px">👨‍🍳 ${user}</div>
+                                    <div style="color:#B0B0B0;font-size:11px">${data.count} ${data.count === 1 ? 'narudžbina' : 'narudžbina'} · Klikni za detalje</div>
+                                </div>
+                            </div>
+                            <div style="text-align:right">
+                                <div style="color:#4CAF50;font-size:20px;font-weight:bold">${data.revenue.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:11px">${percent}% prihoda</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Progress bar -->
+                        <div style="background:#0F3460;height:8px;border-radius:4px;overflow:hidden;margin-bottom:8px">
+                            <div style="background:linear-gradient(90deg, #E94560, #FFD700);height:100%;width:${progressPercent}%;border-radius:4px;transition:width 0.3s"></div>
+                        </div>
+                        
+                        <!-- Dodatne statistike -->
+                        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
+                            <div style="background:#0F3460;padding:8px;border-radius:6px;text-align:center">
+                                <div style="color:#B0B0B0;font-size:10px">Prosečan račun</div>
+                                <div style="color:#FFD700;font-size:14px;font-weight:bold">${avgOrder} din.</div>
+                            </div>
+                            <div style="background:#0F3460;padding:8px;border-radius:6px;text-align:center">
+                                <div style="color:#B0B0B0;font-size:10px">Učešće</div>
+                                <div style="color:#4CAF50;font-size:14px;font-weight:bold">${percent}%</div>
+                            </div>
+                            <div style="background:#0F3460;padding:8px;border-radius:6px;text-align:center">
+                                <div style="color:#B0B0B0;font-size:10px">Pozicija</div>
+                                <div style="color:#E94560;font-size:14px;font-weight:bold">#${index + 1}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                
+                h += `</div>`;
+            }
+            
+            if(ords.length === 0) {
+                h += '<div class="empty"><div style="font-size:64px">📭</div><h3>Nema narudžbi danas</h3>';
+                if(DB.orders.length > 0) {
+                    h += `<p style="color:#B0B0B0;margin-top:12px">Ali imate ${DB.orders.length} ${DB.orders.length === 1 ? 'narudžbinu' : 'narudžbina'} iz prethodnih dana</p>`;
+                    h += `<button class="btn" style="max-width:300px;margin:20px auto 0" onclick="showAllOrders()">Prikaži sve narudžbine</button>`;
+                }
+                h += '</div>';
+            } else {
+                // Prikaži poslednje narudžbine
+                h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">📋 Poslednje Narudžbine</h3>`;
+                
+                const recentOrders = [...ords].reverse().slice(0, 10);
+                recentOrders.forEach((order, idx) => {
+                    const time = new Date(order.time).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    const tableName = order.tableName || `Sto ${order.table}`;
+                    
+                    h += `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div style="flex:1">
+                                <div style="color:#FFD700;font-weight:bold">${tableName}</div>
+                                <div style="color:#B0B0B0;font-size:12px">
+                                    ${time} · 
+                                    ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
+                                    ${order.method}
+                                    ${order.createdBy ? ' · 👨‍🍳 ' + order.createdBy : ''}
+                                </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:12px">
+                                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${order.tot.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:20px" id="arrow_${order.id}">▼</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Detalji artikala (sakriveni po defaultu) -->
+                        <div id="details_${order.id}" style="display:none;border-top:1px solid #2A2A4A;margin-top:12px;padding-top:12px">
+                            <div style="color:#E94560;font-weight:bold;margin-bottom:8px;font-size:13px">Artikli:</div>`;
+                    
+                    order.items.forEach(item => {
+                        const isDiscounted = order.discountedItems && order.discountedItems.includes(item.id);
+                        h += `<div style="display:flex;justify-content:space-between;color:#B0B0B0;font-size:13px;margin:4px 0;padding-left:12px">
+                            <span>${item.qty}x ${item.name}${isDiscounted && order.discountPercent ? ` <span style="color:#4CAF50">(-${order.discountPercent}%)</span>` : ''}</span>
+                            <span>${(item.price * item.qty).toFixed(0)} din.</span>
+                        </div>`;
+                    });
+                    
+                    h += `<div style="border-top:1px solid #2A2A4A;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-size:13px">
+                            <span style="color:#B0B0B0">Subtotal:</span>
+                            <span style="color:#FFF">${order.sub.toFixed(0)} din.</span>
+                        </div>`;
+                    
+                    if(order.disc > 0) {
+                        h += `<div style="display:flex;justify-content:space-between;font-size:13px;color:#4CAF50">
+                            <span>Popust${order.discountPercent ? ` (${order.discountPercent}%)` : ''}:</span>
+                            <span>-${order.disc.toFixed(0)} din.</span>
+                        </div>`;
+                    }
+                    
+                    h += `<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:bold;margin-top:4px">
+                            <span style="color:#FFD700">UKUPNO:</span>
+                            <span style="color:#FFD700">${order.tot.toFixed(0)} din.</span>
+                        </div>
+                    </div>
+                    </div>`;
+                });
+                
+                h += `</div>`;
+            }
+            
+            c.innerHTML = h;
+        }
+        
+        function showAllOrders() {
+            const allOrders = [...DB.orders].reverse();
+            let h = `<div style="max-width:800px;margin:0 auto">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                    <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='report';render()">← Nazad</button>
+                    <h2>📋 Sve Narudžbine</h2>
+                    <div style="width:80px"></div>
+                </div>`;
+            
+            allOrders.forEach(order => {
+                const date = new Date(order.time).toLocaleDateString('sr-RS');
+                const time = new Date(order.time).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                const tableName = order.tableName || `Sto ${order.table}`;
+                
+                h += `<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:12px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <div style="flex:1">
+                            <div style="color:#FFD700;font-weight:bold;font-size:18px">${tableName}</div>
+                            <div style="color:#B0B0B0;font-size:12px">
+                                ${date} ${time} · 
+                                ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
+                                ${order.method}
+                                ${order.createdBy ? ' · 👨‍🍳 ' + order.createdBy : ''}
+                            </div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:12px">
+                            <div style="color:#4CAF50;font-size:20px;font-weight:bold">${order.tot.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:20px" id="arrow_${order.id}">▼</div>
+                        </div>
+                    </div>
+                    
+                    <div id="details_${order.id}" style="display:none;border-top:1px solid #2A2A4A;padding-top:8px;margin-top:8px">
+                        <div style="color:#E94560;font-weight:bold;margin-bottom:8px;font-size:13px">Artikli:</div>`;
+                
+                order.items.forEach(item => {
+                    const isDiscounted = order.discountedItems && order.discountedItems.includes(item.id);
+                    h += `<div style="display:flex;justify-content:space-between;color:#B0B0B0;font-size:13px;margin:4px 0;padding-left:12px">
+                        <span>${item.qty}x ${item.name}${isDiscounted && order.discountPercent ? ` <span style="color:#4CAF50">(-${order.discountPercent}%)</span>` : ''}</span>
+                        <span>${(item.price * item.qty).toFixed(0)} din.</span>
+                    </div>`;
+                });
+                
+                h += `<div style="border-top:1px solid #2A2A4A;margin-top:8px;padding-top:8px">
+                        <div style="display:flex;justify-content:space-between;font-size:13px">
+                            <span style="color:#B0B0B0">Subtotal:</span>
+                            <span style="color:#FFF">${order.sub.toFixed(0)} din.</span>
+                        </div>`;
+                
+                if(order.disc > 0) {
+                    h += `<div style="display:flex;justify-content:space-between;font-size:13px;color:#4CAF50;margin-top:4px">
+                        <span>Popust${order.discountPercent ? ` (${order.discountPercent}%)` : ''}:</span>
+                        <span>-${order.disc.toFixed(0)} din.</span>
+                    </div>`;
+                }
+                
+                h += `<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:bold;margin-top:4px">
+                        <span style="color:#FFD700">UKUPNO:</span>
+                        <span style="color:#FFD700">${order.tot.toFixed(0)} din.</span>
+                    </div>
+                </div>
+                </div>`;
+                
+                h += `</div>`;
+            });
+            
+            h += `</div>`;
+            document.getElementById('content').innerHTML = h;
+        }
+        
+        function toggleOrderDetails(orderId) {
+            const detailsDiv = document.getElementById('details_' + orderId);
+            const arrowDiv = document.getElementById('arrow_' + orderId);
+            
+            if(detailsDiv && arrowDiv) {
+                if(detailsDiv.style.display === 'none') {
+                    detailsDiv.style.display = 'block';
+                    arrowDiv.textContent = '▲';
+                } else {
+                    detailsDiv.style.display = 'none';
+                    arrowDiv.textContent = '▼';
+                }
+            }
+        }
+        
+        function showWaiterOrders(waiterName) {
+            const waiterOrders = DB.orders.filter(o => o.createdBy === waiterName).reverse();
+            const waiterRemoved = DB.removedItems.filter(r => r.removedBy === waiterName);
+            const waiterSessions = DB.workdayHistory.filter(s => s.user === waiterName).reverse();
+            
+            const totalRevenue = waiterOrders.reduce((s,o)=>s+o.tot,0);
+            const cash = waiterOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+            const card = waiterOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+            const avgOrder = waiterOrders.length > 0 ? (totalRevenue / waiterOrders.length).toFixed(0) : 0;
+            
+            // Statistika uklonjenih
+            const totalRemovedValue = waiterRemoved.reduce((s, item) => s + (item.itemPrice * item.quantity), 0);
+            const totalRemovedQty = waiterRemoved.reduce((s, item) => s + item.quantity, 0);
+            
+            // Statistika sesija
+            const totalWorkMinutes = waiterSessions.reduce((s, session) => s + session.duration, 0);
+            const totalWorkHours = Math.floor(totalWorkMinutes / 60);
+            const totalWorkMins = totalWorkMinutes % 60;
+            
+            let h = `<div style="max-width:800px;margin:0 auto">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                    <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='report';render()">← Nazad na Izveštaj</button>
+                    <h2>👨‍🍳 ${waiterName}</h2>
+                    <div style="width:120px"></div>
+                </div>
+                
+                <!-- Statistika konobara -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
+                    <div class="stat-card">
+                        <div class="stat-label">Ukupan prihod</div>
+                        <div class="stat-value">${totalRevenue.toFixed(0)}</div>
+                        <div class="stat-label">din.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Narudžbi</div>
+                        <div class="stat-value" style="color:#E94560">${waiterOrders.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Prosečan račun</div>
+                        <div class="stat-value" style="color:#4CAF50">${avgOrder}</div>
+                        <div class="stat-label">din.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Uklonjeno artikala</div>
+                        <div class="stat-value" style="color:#FF9800">${totalRemovedQty}</div>
+                        <div class="stat-label">${totalRemovedValue.toFixed(0)} din.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Ukupno radio</div>
+                        <div class="stat-value" style="color:#9C27B0">${totalWorkHours}h ${totalWorkMins}min</div>
+                        <div class="stat-label">${waiterSessions.length} ${waiterSessions.length === 1 ? 'sesija' : 'sesija'}</div>
+                    </div>
+                </div>
+                
+                <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
+                    <div style="display:flex;gap:16px">
+                        <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">💵</div>
+                            <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${cash.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Cash (${totalRevenue>0?Math.round(cash/totalRevenue*100):0}%)</div>
+                        </div>
+                        <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">💳</div>
+                            <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${card.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Card (${totalRevenue>0?Math.round(card/totalRevenue*100):0}%)</div>
+                        </div>
+                    </div>
+                </div>`;
+            
+            // Sekcija za sesije (prisustvo)
+            if(waiterSessions.length > 0) {
+                h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#9C27B0;margin-bottom:16px">🕐 Istorija Prisustva</h3>
+                    <p style="color:#B0B0B0;font-size:13px;margin-bottom:16px">
+                        Ukupno ${waiterSessions.length} ${waiterSessions.length === 1 ? 'sesija' : 'sesija'} · 
+                        ${totalWorkHours}h ${totalWorkMins}min rada
+                    </p>`;
+                
+                waiterSessions.slice(0, 20).forEach((session, idx) => {
+                    const loginDate = new Date(session.loginTime);
+                    const logoutDate = new Date(session.logoutTime);
+                    const date = loginDate.toLocaleDateString('sr-RS');
+                    const loginTime = loginDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    const logoutTime = logoutDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    const hours = Math.floor(session.duration / 60);
+                    const mins = session.duration % 60;
+                    
+                    h += `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div style="flex:1">
+                                <div style="color:#FFD700;font-weight:bold">${date}</div>
+                                <div style="color:#B0B0B0;font-size:12px">
+                                    🔓 ${loginTime} → 🔒 ${logoutTime} · 
+                                    ${session.orderCount} ${session.orderCount === 1 ? 'narudžbina' : 'narudžbina'}
+                                </div>
+                            </div>
+                            <div style="text-align:right">
+                                <div style="color:#9C27B0;font-size:16px;font-weight:bold">${hours}h ${mins}min</div>
+                                <div style="color:#4CAF50;font-size:13px">${session.revenue.toFixed(0)} din.</div>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+                
+                if(waiterSessions.length > 20) {
+                    h += `<p style="color:#B0B0B0;font-size:12px;text-align:center;margin-top:12px">
+                        ... i još ${waiterSessions.length - 20} ${waiterSessions.length - 20 === 1 ? 'sesija' : 'sesija'}
+                    </p>`;
+                }
+                
+                h += `</div>`;
+            }
+            // Sekcija za uklonjene artikle
+            if(waiterRemoved.length > 0) {
+                h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#FF9800;margin-bottom:16px">🗑️ Uklonjeni Artikli</h3>
+                    <p style="color:#B0B0B0;font-size:13px;margin-bottom:16px">
+                        Ukupno ${totalRemovedQty} ${totalRemovedQty === 1 ? 'artikal' : 'artikala'} u vrednosti od ${totalRemovedValue.toFixed(0)} din.
+                    </p>`;
+                
+                // Grupisanje po artiklima
+                const itemGroups = {};
+                waiterRemoved.forEach(item => {
+                    if(!itemGroups[item.itemName]) {
+                        itemGroups[item.itemName] = {
+                            qty: 0,
+                            value: 0,
+                            instances: []
+                        };
+                    }
+                    itemGroups[item.itemName].qty += item.quantity;
+                    itemGroups[item.itemName].value += item.itemPrice * item.quantity;
+                    itemGroups[item.itemName].instances.push(item);
+                });
+                
+                // Sortiraj po količini
+                const sortedItems = Object.entries(itemGroups).sort((a, b) => b[1].qty - a[1].qty);
+                
+                sortedItems.forEach(([itemName, data]) => {
+                    h += `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="toggleRemovedDetails('${itemName.replace(/'/g, "\\'")}')">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div style="flex:1">
+                                <div style="color:#FFD700;font-weight:bold">${itemName}</div>
+                                <div style="color:#B0B0B0;font-size:12px">
+                                    ${data.instances.length} ${data.instances.length === 1 ? 'put' : 'puta'} uklonjeno · 
+                                    Ukupno ${data.qty} kom
+                                </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:12px">
+                                <div style="color:#FF9800;font-size:18px;font-weight:bold">${data.value.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:20px" id="removed_arrow_${itemName.replace(/\s/g, '_')}">▼</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Detalji instanci -->
+                        <div id="removed_details_${itemName.replace(/\s/g, '_')}" style="display:none;border-top:1px solid #2A2A4A;margin-top:12px;padding-top:12px">`;
+                    
+                    data.instances.reverse().forEach(instance => {
+                        const date = new Date(instance.removedAt).toLocaleDateString('sr-RS');
+                        const time = new Date(instance.removedAt).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                        
+                        h += `<div style="background:#0F3460;padding:8px;border-radius:6px;margin-bottom:6px">
+                            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
+                                <div style="color:#B0B0B0">
+                                    ${date} ${time} · ${instance.tableName} · ${instance.quantity}x
+                                </div>
+                                <div style="color:#FF9800;font-weight:bold">${(instance.itemPrice * instance.quantity).toFixed(0)} din.</div>
+                            </div>
+                            <div style="color:#B0B0B0;font-size:11px;margin-top:4px;font-style:italic">
+                                "${instance.reason}"
+                            </div>
+                        </div>`;
+                    });
+                    
+                    h += `</div>
+                    </div>`;
+                });
+                
+                h += `</div>`;
+            }
+            
+            h += `<div style="background:#0F3460;padding:20px;border-radius:12px">
+                    <h3 style="color:#E94560;margin-bottom:16px">📋 Sve Narudžbine</h3>`;
+            
+            if(waiterOrders.length === 0) {
+                h += '<div class="empty"><div style="font-size:48px">📭</div><p>Nema narudžbina</p></div>';
+            } else {
+                waiterOrders.forEach(order => {
+                    const date = new Date(order.time).toLocaleDateString('sr-RS');
+                    const time = new Date(order.time).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    const tableName = order.tableName || `Sto ${order.table}`;
+                    
+                    h += `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div style="flex:1">
+                                <div style="color:#FFD700;font-weight:bold">${tableName}</div>
+                                <div style="color:#B0B0B0;font-size:12px">
+                                    ${date} ${time} · 
+                                    ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
+                                    ${order.method}
+                                </div>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:12px">
+                                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${order.tot.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:20px" id="arrow_${order.id}">▼</div>
+                            </div>
+                        </div>
+                        
+                        <div id="details_${order.id}" style="display:none;border-top:1px solid #2A2A4A;margin-top:12px;padding-top:12px">
+                            <div style="color:#E94560;font-weight:bold;margin-bottom:8px;font-size:13px">Artikli:</div>`;
+                    
+                    order.items.forEach(item => {
+                        const isDiscounted = order.discountedItems && order.discountedItems.includes(item.id);
+                        h += `<div style="display:flex;justify-content:space-between;color:#B0B0B0;font-size:13px;margin:4px 0;padding-left:12px">
+                            <span>${item.qty}x ${item.name}${isDiscounted && order.discountPercent ? ` <span style="color:#4CAF50">(-${order.discountPercent}%)</span>` : ''}</span>
+                            <span>${(item.price * item.qty).toFixed(0)} din.</span>
+                        </div>`;
+                    });
+                    
+                    h += `<div style="border-top:1px solid #2A2A4A;margin-top:8px;padding-top:8px">
+                            <div style="display:flex;justify-content:space-between;font-size:13px">
+                                <span style="color:#B0B0B0">Subtotal:</span>
+                                <span style="color:#FFF">${order.sub.toFixed(0)} din.</span>
+                            </div>`;
+                    
+                    if(order.disc > 0) {
+                        h += `<div style="display:flex;justify-content:space-between;font-size:13px;color:#4CAF50;margin-top:4px">
+                            <span>Popust${order.discountPercent ? ` (${order.discountPercent}%)` : ''}:</span>
+                            <span>-${order.disc.toFixed(0)} din.</span>
+                        </div>`;
+                    }
+                    
+                    h += `<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:bold;margin-top:4px">
+                            <span style="color:#FFD700">UKUPNO:</span>
+                            <span style="color:#FFD700">${order.tot.toFixed(0)} din.</span>
+                        </div>
+                    </div>
+                    </div>`;
+                });
+            }
+            
+            h += `</div></div>`;
+            document.getElementById('content').innerHTML = h;
+        }
+        
+        function toggleRemovedDetails(itemName) {
+            const safeName = itemName.replace(/\s/g, '_');
+            const detailsDiv = document.getElementById('removed_details_' + safeName);
+            const arrowDiv = document.getElementById('removed_arrow_' + safeName);
+            
+            if(detailsDiv && arrowDiv) {
+                if(detailsDiv.style.display === 'none') {
+                    detailsDiv.style.display = 'block';
+                    arrowDiv.textContent = '▲';
+                } else {
+                    detailsDiv.style.display = 'none';
+                    arrowDiv.textContent = '▼';
+                }
+            }
+        }
+
+        function renderUsers(c) {
+            const waiters = DB.users.filter(u => u.role === 'konobar');
+            
+            let h = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+                    <h2>👥 Upravljanje Konobarima</h2>
+                    <button class="btn" style="width:auto;padding:8px 16px" onclick="addWaiter()">+ Dodaj Konobara</button>
+                </div>
+                
+                <p style="color:#B0B0B0;margin-bottom:20px">
+                    Ovde možete dodavati, menjati i brisati konobare. Svaki konobar će se pojaviti na početnom ekranu.
+                </p>`;
+            
+            if(waiters.length === 0) {
+                h += '<div class="empty"><div style="font-size:64px">👨‍🍳</div><h3>Nema konobara</h3><p>Dodajte prvog konobara</p></div>';
+            } else {
+                waiters.forEach(w => {
+                    // Statistika konobara
+                    const waiterOrders = DB.orders.filter(o => o.createdBy === w.username);
+                    const totalRevenue = waiterOrders.reduce((s,o)=>s+o.tot,0);
+                    const waiterRemoved = DB.removedItems.filter(r => r.removedBy === w.username);
+                    
+                    h += `<div class="card" style="cursor:default">
+                        <div style="display:flex;justify-content:space-between;align-items:start">
+                            <div style="flex:1">
+                                <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                                    <div style="font-size:48px">👨‍🍳</div>
+                                    <div>
+                                        <h3 style="color:#FFD700">${w.username}</h3>
+                                        <p style="color:#B0B0B0;font-size:13px">Šifra: ${'•'.repeat(w.password.length)}</p>
+                                    </div>
+                                </div>
+                                
+                                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px">
+                                    <div style="background:#16213E;padding:8px;border-radius:6px;text-align:center">
+                                        <div style="color:#B0B0B0;font-size:11px">Narudžbi</div>
+                                        <div style="color:#4CAF50;font-size:18px;font-weight:bold">${waiterOrders.length}</div>
+                                    </div>
+                                    <div style="background:#16213E;padding:8px;border-radius:6px;text-align:center">
+                                        <div style="color:#B0B0B0;font-size:11px">Prihod</div>
+                                        <div style="color:#FFD700;font-size:18px;font-weight:bold">${totalRevenue.toFixed(0)}</div>
+                                    </div>
+                                    <div style="background:#16213E;padding:8px;border-radius:6px;text-align:center">
+                                        <div style="color:#B0B0B0;font-size:11px">Uklonjeno</div>
+                                        <div style="color:#FF9800;font-size:18px;font-weight:bold">${waiterRemoved.length}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div style="display:flex;gap:8px">
+                                <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="editWaiter('${w.username}')">✏️ Izmeni</button>
+                                <button class="btn" style="width:auto;padding:8px 16px;background:#E94560" onclick="deleteWaiter('${w.username}')">🗑️ Obriši</button>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+            }
+            
+            c.innerHTML = h;
+        }
+        
+        function addWaiter() {
+            openWaiterModal('add');
+        }
+        
+        function editWaiter(username) {
+            openWaiterModal('edit', username);
+        }
+        
+        function deleteWaiter(username) {
+            const waiter = DB.users.find(u => u.username === username);
+            if(!waiter) return;
+            
+            const waiterOrders = DB.orders.filter(o => o.createdBy === username);
+            
+            let confirmMsg = `Da li ste sigurni da želite da obrišete konobara "${username}"?`;
+            if(waiterOrders.length > 0) {
+                confirmMsg += `\n\nOvaj konobar ima ${waiterOrders.length} narudžbina u sistemu. Narudžbine će ostati sačuvane, ali neće više biti povezane sa ovim konobarom.`;
+            }
+            
+            showConfirm('Brisanje Konobara', confirmMsg, (confirmed) => {
+                if(confirmed) {
+                    DB.users = DB.users.filter(u => u.username !== username);
+                    save();
+                    render();
+                    showAlert('✅ Konobar je obrisan');
+                }
+            });
+        }
+
+        function renderEdit(c) {
+            let h = '<div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>✏️ Izmeni Menu</h2><div><button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-right:8px" onclick="importCSV()">⬆ Import</button><button class="btn" style="width:auto;padding:8px 16px" onclick="addMenuItem()">+ Dodaj</button></div></div>';
+            DB.menu.forEach(i => {
+                h += `<div class="card" style="cursor:default">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <div style="flex:1">
+                            <span style="background:#E94560;color:white;padding:2px 8px;border-radius:4px;font-size:11px">${i.cat}</span>
+                            <h3 style="margin-top:8px">${i.name}</h3>
+                            ${i.desc?'<p style="color:#B0B0B0;font-size:13px">'+i.desc+'</p>':''}
+                        </div>
+                        <div style="display:flex;gap:12px;align-items:center">
+                            <span style="color:#FFD700;font-size:20px;font-weight:bold">${i.price} din.</span>
+                            <button onclick="editItem(${i.id})" style="background:transparent;border:none;cursor:pointer;font-size:20px">✏️</button>
+                            <button onclick="deleteItem(${i.id})" style="background:transparent;border:none;cursor:pointer;font-size:20px;color:#E94560">🗑️</button>
+                        </div>
+                    </div>
+                </div>`;
+            });
+            c.innerHTML = h;
+        }
+
+        function addMenuItem() {
+            const name = prompt('Naziv:');
+            if(!name) return;
+            const desc = prompt('Opis:') || '';
+            const price = parseFloat(prompt('Cena:'));
+            if(!price) { 
+                showAlert('Nevalidna cena'); 
+                return; 
+            }
+            const cat = prompt('Kategorija (Hrana/Piće/Dezert):') || 'Hrana';
+            DB.menu.push({id:Date.now(),name,desc,price,cat});
+            save();
+            render();
+        }
+
+        function editItem(id) {
+            const i = DB.menu.find(x=>x.id===id);
+            if(!i) return;
+            i.name = prompt('Naziv:', i.name) || i.name;
+            i.desc = prompt('Opis:', i.desc) || i.desc;
+            const p = parseFloat(prompt('Cena:', i.price));
+            if(p) i.price = p;
+            i.cat = prompt('Kategorija:', i.cat) || i.cat;
+            save();
+            render();
+        }
+
+        function deleteItem(id) {
+            const item = DB.menu.find(x=>x.id===id);
+            if(!item) return;
+            
+            showConfirm('Obriši Stavku', `Sigurno želite da obrišete "${item.name}" iz menija?`, (confirmed) => {
+                if(confirmed) {
+                    DB.menu = DB.menu.filter(i=>i.id!==id);
+                    save();
+                    render();
+                }
+            });
+        }
+
+        function importCSV() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.csv';
+            input.onchange = e => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    const lines = ev.target.result.split('\n').slice(1);
+                    let count = 0;
+                    lines.forEach(line => {
+                        const p = line.split(',').map(x=>x.trim());
+                        if(p.length<3 || !p[0] || !p[2]) return;
+                        const price = parseFloat(p[2]);
+                        if(!price) return;
+                        DB.menu.push({id:Date.now()+Math.random(),name:p[0],desc:p[1]||'',price,cat:p[3]||'Hrana'});
+                        count++;
+                    });
+                    if(count>0) { 
+                        save(); 
+                        render(); 
+                        showAlert(`✅ Uvezeno ${count} stavki!`); 
+                    }
+                    else showAlert('❌ Nema validnih stavki');
+                };
+                reader.readAsText(file);
+            };
+            input.click();
+        }
+
+        function renderSettings(c) {
+            c.innerHTML = `<h2>⚙️ Postavke</h2>
+                <div style="margin:20px 0">
+                    <label style="color:#E94560;font-weight:bold">Naziv restauranta</label>
+                    <input type="text" id="sname" value="${DB.settings.name}">
+                    <label style="color:#E94560;font-weight:bold">Adresa</label>
+                    <input type="text" id="saddr" value="${DB.settings.addr}">
+                    <label style="color:#E94560;font-weight:bold">Telefon</label>
+                    <input type="text" id="sphone" value="${DB.settings.phone}">
+                    
+                    <div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                        <h3 style="color:#4CAF50;margin-bottom:16px">🔥 Firebase Sinhronizacija</h3>
+                        <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #4CAF50">
+                            <p style="color:#FFD700;font-weight:bold;margin-bottom:8px">✅ Aktivna</p>
+                            <p style="color:#B0B0B0;font-size:13px;line-height:1.6">
+                                • Podaci se automatski sinhronizuju između svih uređaja<br>
+                                • Promena na telefonu se odmah vidi na računaru<br>
+                                • Auto-refresh svaka 5 sekundi<br>
+                                • Bez potrebe za ručnim exportom/importom
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                        <h3 style="color:#FFD700;margin-bottom:16px">📧 Email Izveštaji</h3>
+                        <label style="color:#E94560;font-weight:bold">Email za izveštaje</label>
+                        <input type="email" id="semail" value="${DB.settings.email || ''}" placeholder="vas@email.com">
+                        <p style="color:#B0B0B0;font-size:13px;margin-top:8px;line-height:1.6">
+                            💡 Kada konobari zatvore radni dan, moći će da preuzmu kompletan izveštaj.
+                        </p>
+                    </div>
+                    
+                    <label style="color:#E94560;font-weight:bold">IP Adresa štampača</label>
+                    <input type="text" id="sip" value="${DB.settings.ip}">
+                    <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Štampanje dostupno samo u Android verziji</p>
+                    <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
+                </div>`;
+        }
+
+        function saveSettings() {
+            DB.settings.name = document.getElementById('sname').value;
+            DB.settings.addr = document.getElementById('saddr').value;
+            DB.settings.phone = document.getElementById('sphone').value;
+            DB.settings.email = document.getElementById('semail').value;
+            DB.settings.ip = document.getElementById('sip').value;
+            save();
+            showAlert('✅ Sačuvano!');
+        }
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        async function initApp() {
+            console.log('🚀 Starting Restaurant POS with Firebase...');
+            
+            // Show loading
+            document.getElementById('content').innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                    <div style="font-size:64px;margin-bottom:20px">🔄</div>
+                    <h2 style="color:#E94560">Učitavanje...</h2>
+                    <p style="color:#B0B0B0">Povezivanje sa Firebase serverom...</p>
+                </div>
+            `;
+            
+            try {
+                // Load data from Firebase
+                await loadFromFirebase();
+                
+                // Set initial page
+                if(DB.currentUser) {
+                    if(DB.currentUser.role === 'konobar' && !DB.workday) {
+                        page = 'workday';
+                    } else {
+                        page = 'tables';
+                    }
+                } else {
+                    page = 'login';
+                }
+                
+                // Start auto-refresh
+                startAutoRefresh();
+                
+                // Initial render
+                render();
+                
+                console.log('✅ Restaurant POS ready!');
+                
+            } catch (error) {
+                console.error('❌ Initialization failed:', error);
+                document.getElementById('content').innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;padding:20px">
+                        <div style="font-size:64px;margin-bottom:20px">❌</div>
+                        <h2 style="color:#E94560">Greška povezivanja</h2>
+                        <p style="color:#B0B0B0;text-align:center;max-width:500px;line-height:1.6">
+                            Nije moguće povezati se sa Firebase serverom.<br><br>
+                            Proverite internet konekciju i pokušajte ponovo.
+                        </p>
+                        <p style="color:#B0B0B0;font-size:12px;margin-top:8px">${error.message}</p>
+                        <button class="btn" onclick="initApp()" style="max-width:300px;margin-top:20px">🔄 Pokušaj ponovo</button>
+                    </div>
+                `;
+            }
+        }
+        
+        // Start app when page loads
+        initApp();
+    </script>
+</body>
+</html>
