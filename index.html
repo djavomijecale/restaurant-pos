@@ -1078,20 +1078,38 @@ ${'='.repeat(60)}
         }
 
         function renderTableSelect(c) {
+            console.log('🔍 renderTableSelect - DB.tables:', DB.tables);
+            
             let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px"><h2>🪑 Izaberi Sto</h2>';
             if(DB.currentUser) {
                 h += '<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page=\'edittables\';render()">✏️ Izmeni Stolove</button>';
             }
             h += '</div><div class="table-grid">';
-            DB.tables.forEach(t => {
-                const isOccupied = t.order.length > 0;
-                const total = isOccupied ? t.order.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
-                h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
-                    <div class="table-icon">🪑</div>
-                    <div class="table-number">${t.name}</div>
-                    <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
-                </div>`;
-            });
+            
+            if (DB.tables && Array.isArray(DB.tables)) {
+                console.log('✅ DB.tables is array with length:', DB.tables.length);
+                DB.tables.forEach((t, index) => {
+                    console.log(`  Table ${index}:`, t);
+                    if (!t) {
+                        console.warn(`  ⚠️ Table ${index} is null/undefined`);
+                        return;
+                    }
+                    if (!t.order) {
+                        console.warn(`  ⚠️ Table ${index} has no order property`);
+                        t.order = []; // Fix it
+                    }
+                    const isOccupied = t.order && Array.isArray(t.order) && t.order.length > 0;
+                    const total = isOccupied ? t.order.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
+                    h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
+                        <div class="table-icon">🪑</div>
+                        <div class="table-number">${t.name || 'Sto ' + t.num}</div>
+                        <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
+                    </div>`;
+                });
+            } else {
+                console.error('❌ DB.tables is not an array:', typeof DB.tables, DB.tables);
+            }
+            
             h += '</div>';
             c.innerHTML = h;
         }
