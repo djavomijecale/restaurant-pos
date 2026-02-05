@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Restaurant POS - Sa Stolovima</title>
+    
+    <!-- SheetJS for Excel import -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -2414,32 +2418,202 @@ ${'='.repeat(60)}
         function importCSV() {
             const input = document.createElement('input');
             input.type = 'file';
-            input.accept = '.csv';
+            input.accept = '.csv,.xlsx,.xls';
             input.onchange = e => {
                 const file = e.target.files[0];
                 if(!file) return;
-                const reader = new FileReader();
-                reader.onload = ev => {
-                    const lines = ev.target.result.split('\n').slice(1);
-                    let count = 0;
-                    lines.forEach(line => {
-                        const p = line.split(',').map(x=>x.trim());
-                        if(p.length<3 || !p[0] || !p[2]) return;
-                        const price = parseFloat(p[2]);
-                        if(!price) return;
-                        DB.menu.push({id:Date.now()+Math.random(),name:p[0],desc:p[1]||'',price,cat:p[3]||'Hrana'});
-                        count++;
-                    });
-                    if(count>0) { 
-                        save(); 
-                        render(); 
-                        showAlert(`✅ Uvezeno ${count} stavki!`); 
-                    }
-                    else showAlert('❌ Nema validnih stavki');
-                };
-                reader.readAsText(file);
+                
+                const fileName = file.name.toLowerCase();
+                
+                // Check if it's Excel file
+                if(fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                    importExcel(file);
+                } else {
+                    importCSVFile(file);
+                }
             };
             input.click();
+        }
+        
+        function importCSVFile(file) {
+            const reader = new FileReader();
+            reader.onload = ev => {
+                const text = ev.target.result;
+                const lines = text.split('\n').filter(line => line.trim());
+                
+                if(lines.length < 2) {
+                    showAlert('❌ Fajl je prazan ili nema podataka');
+                    return;
+                }
+                
+                // Get header to detect format
+                const header = lines[0].toLowerCase();
+                let count = 0;
+                
+                // Detect if it's a POS export format (has "name", "price", "category" columns)
+                if(header.includes('name') && (header.includes('price') || header.includes('cost'))) {
+                    // Advanced POS format
+                    const headers = lines[0].split(',').map(h => h.trim());
+                    
+                    // Find column indices
+                    const nameIdx = headers.findIndex(h => h.toLowerCase().includes('name'));
+                    const priceIdx = headers.findIndex(h => h.toLowerCase().includes('price ['));
+                    const costIdx = headers.findIndex(h => h.toLowerCase() === 'cost');
+                    const categoryIdx = headers.findIndex(h => h.toLowerCase().includes('category'));
+                    const descIdx = headers.findIndex(h => h.toLowerCase().includes('description'));
+                    
+                    console.log('📊 Detected POS export format');
+                    console.log('Columns:', {nameIdx, priceIdx, costIdx, categoryIdx, descIdx});
+                    
+                    // Process data rows (skip header)
+                    for(let i = 1; i < lines.length; i++) {
+                        const line = lines[i];
+                        if(!line.trim()) continue;
+                        
+                        // Parse CSV line (handle commas in quotes)
+                        const columns = parseCSVLine(line);
+                        
+                        const name = nameIdx >= 0 ? columns[nameIdx]?.trim() : '';
+                        const desc = descIdx >= 0 ? columns[descIdx]?.trim() : '';
+                        const category = categoryIdx >= 0 ? columns[categoryIdx]?.trim() : 'Hrana';
+                        
+                        // Try to get price from Price column first, then Cost column
+                        let priceStr = '';
+                        if(priceIdx >= 0 && columns[priceIdx]) {
+                            priceStr = columns[priceIdx].trim();
+                        } else if(costIdx >= 0 && columns[costIdx]) {
+                            priceStr = columns[costIdx].trim();
+                        }
+                        
+                        if(!name || !priceStr) continue;
+                        
+                        const price = parseFloat(priceStr);
+                        if(isNaN(price) || price <= 0) continue;
+                        
+                        DB.menu.push({
+                            id: Date.now() + Math.random(),
+                            name: name,
+                            desc: desc || '',
+                            price: price,
+                            cat: category || 'Hrana'
+                        });
+                        count++;
+                    }
+                } else {
+                    // Simple format: Naziv,Opis,Cena,Kategorija
+                    for(let i = 1; i < lines.length; i++) {
+                        const line = lines[i];
+                        if(!line.trim()) continue;
+                        
+                        const p = line.split(',').map(x => x.trim());
+                        if(p.length < 3 || !p[0] || !p[2]) continue;
+                        
+                        const price = parseFloat(p[2]);
+                        if(isNaN(price) || price <= 0) continue;
+                        
+                        DB.menu.push({
+                            id: Date.now() + Math.random(),
+                            name: p[0],
+                            desc: p[1] || '',
+                            price: price,
+                            cat: p[3] || 'Hrana'
+                        });
+                        count++;
+                    }
+                }
+                
+                if(count > 0) { 
+                    save(); 
+                    render(); 
+                    showAlert(`✅ Uvezeno ${count} stavki iz CSV!`); 
+                } else {
+                    showAlert('❌ Nema validnih stavki\n\nProverite format fajla.');
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        // Helper function to parse CSV line (handles commas in quotes)
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for(let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if(char === '"') {
+                    inQuotes = !inQuotes;
+                } else if(char === ',' && !inQuotes) {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current);
+            
+            return result;
+        }
+        
+        function importExcel(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    // Parse Excel file
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    
+                    // Get first sheet
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    
+                    // Convert to JSON (skip header row)
+                    const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
+                    
+                    let count = 0;
+                    // Skip header row (index 0)
+                    for(let i = 1; i < rows.length; i++) {
+                        const row = rows[i];
+                        
+                        // Skip empty rows
+                        if(!row || row.length === 0) continue;
+                        
+                        const name = row[0] ? String(row[0]).trim() : '';
+                        const desc = row[1] ? String(row[1]).trim() : '';
+                        const priceStr = row[2] ? String(row[2]).trim() : '';
+                        const cat = row[3] ? String(row[3]).trim() : 'Hrana';
+                        
+                        // Validate required fields
+                        if(!name || !priceStr) continue;
+                        
+                        const price = parseFloat(priceStr);
+                        if(isNaN(price) || price <= 0) continue;
+                        
+                        // Add to menu
+                        DB.menu.push({
+                            id: Date.now() + Math.random(),
+                            name: name,
+                            desc: desc,
+                            price: price,
+                            cat: cat
+                        });
+                        count++;
+                    }
+                    
+                    if(count > 0) {
+                        save();
+                        render();
+                        showAlert(`✅ Uvezeno ${count} stavki iz Excel-a!`);
+                    } else {
+                        showAlert('❌ Nema validnih stavki u Excel fajlu');
+                    }
+                    
+                } catch(error) {
+                    console.error('Excel import error:', error);
+                    showAlert('❌ Greška pri učitavanju Excel fajla!\n\n' + error.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
         }
 
         function renderSettings(c) {
@@ -2451,6 +2625,24 @@ ${'='.repeat(60)}
                     <input type="text" id="saddr" value="${DB.settings.addr}">
                     <label style="color:#E94560;font-weight:bold">Telefon</label>
                     <input type="text" id="sphone" value="${DB.settings.phone}">
+                    
+                    <div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                        <h3 style="color:#FF9800;margin-bottom:16px">🔐 Promena Šifre</h3>
+                        <p style="color:#B0B0B0;font-size:13px;margin-bottom:16px">
+                            Promenite šifru za svoj nalog (${DB.currentUser.username})
+                        </p>
+                        
+                        <label style="color:#E94560;font-weight:bold">Stara šifra</label>
+                        <input type="password" id="oldPassword" placeholder="Unesite staru šifru">
+                        
+                        <label style="color:#E94560;font-weight:bold">Nova šifra</label>
+                        <input type="password" id="newPassword" placeholder="Unesite novu šifru">
+                        
+                        <label style="color:#E94560;font-weight:bold">Potvrdi novu šifru</label>
+                        <input type="password" id="confirmPassword" placeholder="Ponovite novu šifru">
+                        
+                        <button class="btn btn-secondary" style="margin-top:12px;background:#FF9800" onclick="changePassword()">🔐 Promeni Šifru</button>
+                    </div>
                     
                     <div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
                         <h3 style="color:#4CAF50;margin-bottom:16px">🔥 Firebase Sinhronizacija</h3>
@@ -2479,6 +2671,53 @@ ${'='.repeat(60)}
                     <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Štampanje dostupno samo u Android verziji</p>
                     <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
                 </div>`;
+        }
+        
+        function changePassword() {
+            const oldPass = document.getElementById('oldPassword').value;
+            const newPass = document.getElementById('newPassword').value;
+            const confirmPass = document.getElementById('confirmPassword').value;
+            
+            // Validacija
+            if (!oldPass || !newPass || !confirmPass) {
+                showAlert('❌ Molimo popunite sva polja!');
+                return;
+            }
+            
+            // Proveri staru šifru
+            if (DB.currentUser.password !== oldPass) {
+                showAlert('❌ Stara šifra nije tačna!');
+                return;
+            }
+            
+            // Proveri da li se nove šifre poklapaju
+            if (newPass !== confirmPass) {
+                showAlert('❌ Nove šifre se ne poklapaju!');
+                return;
+            }
+            
+            // Proveri dužinu nove šifre
+            if (newPass.length < 4) {
+                showAlert('❌ Nova šifra mora imati minimum 4 karaktera!');
+                return;
+            }
+            
+            // Promeni šifru
+            const userIndex = DB.users.findIndex(u => u.username === DB.currentUser.username);
+            if (userIndex !== -1) {
+                DB.users[userIndex].password = newPass;
+                DB.currentUser.password = newPass;
+                save();
+                
+                // Očisti polja
+                document.getElementById('oldPassword').value = '';
+                document.getElementById('newPassword').value = '';
+                document.getElementById('confirmPassword').value = '';
+                
+                showAlert('✅ Šifra je uspešno promenjena!\n\nKoristite novu šifru pri sledećem prijavljivanju.');
+            } else {
+                showAlert('❌ Greška: Korisnik nije pronađen!');
+            }
         }
 
         function saveSettings() {
