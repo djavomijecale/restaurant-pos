@@ -194,6 +194,7 @@
             currentUser: JSON.parse(localStorage.getItem('currentUser')) || null,
             selectedTable: null,
             selectedCat: 'Sve',
+            selectedGroup: 'Sve',
             konobarName: localStorage.getItem('konobarName') || null,
             workday: JSON.parse(localStorage.getItem('workday')) || null,
             workdayHistory: []
@@ -1176,8 +1177,7 @@ ${'='.repeat(60)}
 
         function renderTableMenu(c) {
             const table = DB.tables.find(t=>t.num===DB.selectedTable);
-            const cats = ['Sve', ...new Set(DB.menu.map(i=>i.cat))];
-            const items = DB.selectedCat==='Sve' ? DB.menu : DB.menu.filter(i=>i.cat===DB.selectedCat);
+            const cats = ['Sve', 'Hrana', 'Piće'];
             
             const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
             const tot = Math.max(0, sub-table.discount);
@@ -1188,14 +1188,51 @@ ${'='.repeat(60)}
                 <button class="btn" style="width:auto;padding:8px 16px" onclick="page='tableorder';render()">Narudžba (${table.order.length})</button>
             </div>`;
             
+            // Category chips
             h += '<div style="margin:16px 0">';
             cats.forEach(cat => h += `<span class="chip ${DB.selectedCat===cat?'active':''}" onclick="filterCat('${cat}')">${cat}</span>`);
             h += '</div>';
             
+            // Get groups based on selected category
+            let groups = [];
+            if(DB.selectedCat === 'Sve') {
+                groups = [];
+            } else if(DB.selectedCat === 'Hrana') {
+                const hranaItems = DB.menu.filter(i => i.cat === 'Hrana');
+                groups = ['Sve', ...new Set(hranaItems.map(i => i.group || 'Ostalo'))];
+            } else if(DB.selectedCat === 'Piće') {
+                const piceItems = DB.menu.filter(i => i.cat === 'Piće');
+                groups = ['Sve', ...new Set(piceItems.map(i => i.group || 'Ostalo'))];
+            }
+            
+            // Group chips
+            if(groups.length > 1) {
+                h += '<div style="margin:16px 0;border-top:2px solid #2A2A4A;padding-top:16px">';
+                h += '<p style="color:#B0B0B0;font-size:13px;margin-bottom:8px">Grupe:</p>';
+                groups.forEach(group => {
+                    h += `<span class="chip ${DB.selectedGroup===group?'active':''}" onclick="filterGroup('${group}')">${group}</span>`;
+                });
+                h += '</div>';
+            }
+            
+            // Filter items
+            let items = DB.menu;
+            if(DB.selectedCat !== 'Sve') {
+                items = items.filter(i => i.cat === DB.selectedCat);
+            }
+            if(DB.selectedGroup && DB.selectedGroup !== 'Sve') {
+                items = items.filter(i => (i.group || 'Ostalo') === DB.selectedGroup);
+            }
+            
+            // Display items
             items.forEach(i => {
                 h += `<div class="card" onclick="addToTable(${i.id})">
                     <div style="display:flex;justify-content:space-between;align-items:center">
-                        <div><h3>${i.name}</h3><p style="color:#B0B0B0;font-size:13px">${i.desc}</p></div>
+                        <div>
+                            <h3>${i.name}</h3>
+                            <p style="color:#B0B0B0;font-size:13px">${i.desc || ''}</p>
+                            ${i.group ? `<span style="color:#FFD700;font-size:11px">📁 ${i.group}</span>` : ''}
+                        </div>
                         <div style="color:#FFD700;font-size:20px;font-weight:bold">${i.price} din.</div>
                     </div>
                 </div>`;
@@ -1216,29 +1253,95 @@ ${'='.repeat(60)}
             c.innerHTML = h;
         }
 
-        function filterCat(cat) { DB.selectedCat = cat; render(); }
+        function filterCat(cat) { 
+            DB.selectedCat = cat;
+            DB.selectedGroup = 'Sve';
+            render(); 
+        }
+        
+        function filterGroup(group) {
+            DB.selectedGroup = group;
+            render();
+        }
 
         function renderMenu(c) {
-            // Fixed categories instead of dynamic
+            // Fixed categories
             const cats = ['Sve', 'Hrana', 'Piće'];
-            const items = DB.selectedCat==='Sve' ? DB.menu : DB.menu.filter(i=>i.cat===DB.selectedCat);
-            let h = '<h2>🍕 Menu - Katalog</h2><div style="margin:16px 0">';
+            
+            let h = '<h2>🍕 Menu - Katalog</h2>';
+            
+            // Category chips
+            h += '<div style="margin:16px 0">';
             cats.forEach(cat => h += `<span class="chip ${DB.selectedCat===cat?'active':''}" onclick="filterCat('${cat}')">${cat}</span>`);
             h += '</div>';
             
+            // Get groups based on selected category
+            let groups = [];
+            if(DB.selectedCat === 'Sve') {
+                // Show all groups
+                groups = ['Sve', ...new Set(DB.menu.map(i => i.cat + ':' + (i.group || 'Ostalo')))];
+            } else if(DB.selectedCat === 'Hrana') {
+                // Show only Hrana groups
+                const hranaItems = DB.menu.filter(i => i.cat === 'Hrana');
+                groups = ['Sve', ...new Set(hranaItems.map(i => i.group || 'Ostalo'))];
+            } else if(DB.selectedCat === 'Piće') {
+                // Show only Piće groups
+                const piceItems = DB.menu.filter(i => i.cat === 'Piće');
+                groups = ['Sve', ...new Set(piceItems.map(i => i.group || 'Ostalo'))];
+            }
+            
+            // Group chips (only show if not 'Sve' category or if there are groups)
+            if(groups.length > 1 && DB.selectedCat !== 'Sve') {
+                h += '<div style="margin:16px 0;border-top:2px solid #2A2A4A;padding-top:16px">';
+                h += '<p style="color:#B0B0B0;font-size:13px;margin-bottom:8px">Grupe:</p>';
+                groups.forEach(group => {
+                    h += `<span class="chip ${DB.selectedGroup===group?'active':''}" onclick="filterGroup('${group}')">${group}</span>`;
+                });
+                h += '</div>';
+            }
+            
+            // Filter items
+            let items = DB.menu;
+            
+            // Filter by category
+            if(DB.selectedCat !== 'Sve') {
+                items = items.filter(i => i.cat === DB.selectedCat);
+            }
+            
+            // Filter by group
+            if(DB.selectedGroup && DB.selectedGroup !== 'Sve') {
+                items = items.filter(i => (i.group || 'Ostalo') === DB.selectedGroup);
+            }
+            
+            // Display items
             if(items.length === 0) {
-                h += '<div class="empty"><p>Nema stavki u ovoj kategoriji</p></div>';
+                h += '<div class="empty"><p>Nema stavki u ovoj kategoriji/grupi</p></div>';
             } else {
                 items.forEach(i => {
                     h += `<div class="card">
                         <div style="display:flex;justify-content:space-between;align-items:center">
-                            <div><h3>${i.name}</h3><p style="color:#B0B0B0;font-size:13px">${i.desc}</p></div>
+                            <div>
+                                <h3>${i.name}</h3>
+                                <p style="color:#B0B0B0;font-size:13px">${i.desc || ''}</p>
+                                ${i.group ? `<span style="color:#FFD700;font-size:11px">📁 ${i.group}</span>` : ''}
+                            </div>
                             <div style="color:#FFD700;font-size:20px;font-weight:bold">${i.price} din.</div>
                         </div>
                     </div>`;
                 });
             }
             c.innerHTML = h;
+        }
+        
+        function filterCat(cat) { 
+            DB.selectedCat = cat;
+            DB.selectedGroup = 'Sve'; // Reset group when category changes
+            render(); 
+        }
+        
+        function filterGroup(group) {
+            DB.selectedGroup = group;
+            render();
         }
 
         function addToTable(itemId) {
@@ -2423,23 +2526,37 @@ ${'='.repeat(60)}
         }
 
         function importCSV() {
-            const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.csv,.xlsx,.xls';
-            input.onchange = e => {
-                const file = e.target.files[0];
-                if(!file) return;
-                
-                const fileName = file.name.toLowerCase();
-                
-                // Check if it's Excel file
-                if(fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-                    importExcel(file);
-                } else {
-                    importCSVFile(file);
+            // Ask if user wants to clear existing menu
+            showConfirm(
+                '⬆ Import Cenovnika',
+                `Da li želite da obrišete sve postojeće proizvode pre importa?\n\n✅ DA - Obriši sve i uvezi novi cenovnik (preporučeno)\n❌ NE - Dodaj nove proizvode uz postojeće`,
+                (clearMenu) => {
+                    if(clearMenu) {
+                        // Clear menu
+                        DB.menu = [];
+                        console.log('🗑️ Menu cleared before import');
+                    }
+                    
+                    // Open file picker
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.csv,.xlsx,.xls';
+                    input.onchange = e => {
+                        const file = e.target.files[0];
+                        if(!file) return;
+                        
+                        const fileName = file.name.toLowerCase();
+                        
+                        // Check if it's Excel file
+                        if(fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                            importExcel(file);
+                        } else {
+                            importCSVFile(file);
+                        }
+                    };
+                    input.click();
                 }
-            };
-            input.click();
+            );
         }
         
         function importCSVFile(file) {
@@ -2701,7 +2818,8 @@ ${'='.repeat(60)}
                             name: name,
                             desc: desc,
                             price: price,
-                            cat: category
+                            cat: category,
+                            group: groupName  // Store original group name
                         });
                         count++;
                     }
