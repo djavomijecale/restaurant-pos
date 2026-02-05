@@ -196,7 +196,7 @@
             selectedCat: 'Sve',
             selectedGroup: 'Sve',
             konobarName: localStorage.getItem('konobarName') || null,
-            workday: JSON.parse(localStorage.getItem('workday')) || null,
+            workday: null,
             workdayHistory: []
         };
         
@@ -272,6 +272,7 @@
                     ];
                     
                     DB.workdayHistory = data.workdayHistory || [];
+                    DB.workday = data.workday || null;
                     
                     // If no data exists, initialize with defaults
                     if (!data || Object.keys(data).length === 0) {
@@ -310,6 +311,7 @@
                 removedItems: DB.removedItems,
                 settings: DB.settings,
                 users: DB.users,
+                workday: DB.workday,
                 workdayHistory: DB.workdayHistory,
                 lastUpdated: new Date().toISOString()
             };
