@@ -273,6 +273,7 @@
                     
                     DB.workdayHistory = data.workdayHistory || [];
                     DB.workday = data.workday || null;
+                    console.log('📋 Workday loaded from Firebase:', DB.workday ? 'ACTIVE' : 'NONE');
                     
                     // If no data exists, initialize with defaults
                     if (!data || Object.keys(data).length === 0) {
@@ -2972,6 +2973,10 @@ ${'='.repeat(60)}
         // ============================================
         async function initApp() {
             console.log('🚀 Starting Restaurant POS with Firebase...');
+            
+            // IMPORTANT: Clear old localStorage workday to prevent conflicts
+            localStorage.removeItem('workday');
+            console.log('🧹 Cleared old workday from localStorage');
             
             // Show loading
             document.getElementById('content').innerHTML = `
