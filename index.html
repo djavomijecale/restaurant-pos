@@ -2570,6 +2570,48 @@ ${'='.repeat(60)}
                     // Convert to JSON (skip header row)
                     const rows = XLSX.utils.sheet_to_json(firstSheet, {header: 1});
                     
+                    if(rows.length < 2) {
+                        showAlert('❌ Excel fajl je prazan ili nema podataka');
+                        return;
+                    }
+                    
+                    // Get header row
+                    const headers = rows[0].map(h => h ? String(h).trim() : '');
+                    console.log('📊 Excel headers:', headers);
+                    
+                    // Find column indices (support both English and Serbian)
+                    const nameIdx = headers.findIndex(h => 
+                        h.toLowerCase().includes('naziv') || 
+                        h.toLowerCase() === 'name'
+                    );
+                    
+                    const priceIdx = headers.findIndex(h => 
+                        h.toLowerCase().includes('cena') || 
+                        h.toLowerCase().includes('price')
+                    );
+                    
+                    const categoryIdx = headers.findIndex(h => 
+                        h.toLowerCase().includes('kategorija') || 
+                        h.toLowerCase().includes('category')
+                    );
+                    
+                    const groupIdx = headers.findIndex(h => 
+                        h.toLowerCase().includes('grupa') || 
+                        h.toLowerCase().includes('group')
+                    );
+                    
+                    const descIdx = headers.findIndex(h => 
+                        h.toLowerCase().includes('opis') || 
+                        h.toLowerCase().includes('description')
+                    );
+                    
+                    console.log('Column indices:', {nameIdx, priceIdx, categoryIdx, groupIdx, descIdx});
+                    
+                    if(nameIdx === -1 || priceIdx === -1) {
+                        showAlert('❌ Excel fajl mora imati kolone "Naziv" i "Cena"!\n\nPronađene kolone:\n' + headers.join(', '));
+                        return;
+                    }
+                    
                     let count = 0;
                     // Skip header row (index 0)
                     for(let i = 1; i < rows.length; i++) {
@@ -2578,16 +2620,35 @@ ${'='.repeat(60)}
                         // Skip empty rows
                         if(!row || row.length === 0) continue;
                         
-                        const name = row[0] ? String(row[0]).trim() : '';
-                        const desc = row[1] ? String(row[1]).trim() : '';
-                        const priceStr = row[2] ? String(row[2]).trim() : '';
-                        const cat = row[3] ? String(row[3]).trim() : 'Hrana';
+                        const name = row[nameIdx] ? String(row[nameIdx]).trim() : '';
+                        const priceVal = row[priceIdx];
+                        
+                        // Get category - prefer Grupa, fallback to Kategorija
+                        let category = 'Hrana';
+                        if(groupIdx >= 0 && row[groupIdx]) {
+                            category = String(row[groupIdx]).trim();
+                        } else if(categoryIdx >= 0 && row[categoryIdx]) {
+                            category = String(row[categoryIdx]).trim();
+                        }
+                        
+                        const desc = descIdx >= 0 && row[descIdx] ? String(row[descIdx]).trim() : '';
                         
                         // Validate required fields
-                        if(!name || !priceStr) continue;
+                        if(!name) {
+                            console.log(`Skipping row ${i+1}: No name`);
+                            continue;
+                        }
                         
-                        const price = parseFloat(priceStr);
-                        if(isNaN(price) || price <= 0) continue;
+                        if(!priceVal) {
+                            console.log(`Skipping row ${i+1}: No price for ${name}`);
+                            continue;
+                        }
+                        
+                        const price = parseFloat(priceVal);
+                        if(isNaN(price) || price <= 0) {
+                            console.log(`Skipping row ${i+1}: Invalid price for ${name}: ${priceVal}`);
+                            continue;
+                        }
                         
                         // Add to menu
                         DB.menu.push({
@@ -2595,7 +2656,7 @@ ${'='.repeat(60)}
                             name: name,
                             desc: desc,
                             price: price,
-                            cat: cat
+                            cat: category
                         });
                         count++;
                     }
@@ -2605,7 +2666,7 @@ ${'='.repeat(60)}
                         render();
                         showAlert(`✅ Uvezeno ${count} stavki iz Excel-a!`);
                     } else {
-                        showAlert('❌ Nema validnih stavki u Excel fajlu');
+                        showAlert('❌ Nema validnih stavki u Excel fajlu\n\nProverite da kolone "Naziv" i "Cena" imaju validne podatke.');
                     }
                     
                 } catch(error) {
