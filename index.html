@@ -165,6 +165,7 @@
             <div class="nav-item active" onclick="nav('menu')"><span style="font-size:24px">🍕</span><span style="font-size:11px">Menu</span></div>
             <div class="nav-item" onclick="nav('tables')"><span style="font-size:24px">🪑</span><span style="font-size:11px">Stolovi</span></div>
             <div class="nav-item" id="navReport" onclick="nav('report')"><span style="font-size:24px">📊</span><span style="font-size:11px">Izveštaj</span></div>
+            <div class="nav-item" id="navHistory" onclick="nav('history')"><span style="font-size:24px">📜</span><span style="font-size:11px">Istorija</span></div>
             <div class="nav-item" id="navRemoved" onclick="nav('removed')"><span style="font-size:24px">🗑️</span><span style="font-size:11px">Uklonjeno</span></div>
             <div class="nav-item" id="navUsers" onclick="nav('users')"><span style="font-size:24px">👥</span><span style="font-size:11px">Konobari</span></div>
             <div class="nav-item" id="navEdit" onclick="nav('edit')"><span style="font-size:24px">✏️</span><span style="font-size:11px">Izmeni</span></div>
@@ -196,7 +197,7 @@
             selectedCat: 'Sve',
             selectedGroup: 'Sve',
             konobarName: localStorage.getItem('konobarName') || null,
-            workday: null,
+            workdays: {},
             workdayHistory: []
         };
         
@@ -272,8 +273,18 @@
                     ];
                     
                     DB.workdayHistory = data.workdayHistory || [];
-                    DB.workday = data.workday || null;
-                    console.log('📋 Workday loaded from Firebase:', DB.workday ? 'ACTIVE' : 'NONE');
+                    
+                    // MIGRACIJA: Ako postoji stari workday format, konvertuj ga
+                    if (data.workday && !data.workdays) {
+                        console.log('🔄 Migrating old workday format...');
+                        DB.workdays = {};
+                        DB.workdays[data.workday.user] = data.workday;
+                    } else {
+                        DB.workdays = data.workdays || {};
+                    }
+                    
+                    const activeWorkdays = Object.keys(DB.workdays).length;
+                    console.log('📋 Workdays loaded from Firebase:', activeWorkdays, 'active');
                     
                     // If no data exists, initialize with defaults
                     if (!data || Object.keys(data).length === 0) {
@@ -312,7 +323,7 @@
                 removedItems: DB.removedItems,
                 settings: DB.settings,
                 users: DB.users,
-                workday: DB.workday,
+                workdays: DB.workdays,
                 workdayHistory: DB.workdayHistory,
                 lastUpdated: new Date().toISOString()
             };
@@ -512,6 +523,7 @@
             else if(page==='tables' && DB.selectedTable!==null) renderTableMenu(c);
             else if(page==='tableorder') renderTableOrder(c);
             else if(page==='report') renderReport(c);
+            else if(page==='history') renderHistory(c);
             else if(page==='removed') renderRemoved(c);
             else if(page==='users') renderUsers(c);
             else if(page==='edit') renderEdit(c);
@@ -551,13 +563,21 @@
                     logoutBtn.addEventListener('click', function(e) {
                         e.preventDefault();
                         e.stopPropagation();
+                        
+                        // Logout korisnika ALI workdays OSTAJU u Firebase!
                         DB.currentUser = null;
                         DB.selectedTable = null;
-                        DB.workday = null;
                         DB.konobarName = null;
+                        
+                        // Očisti samo lokalne podatke
                         localStorage.removeItem('currentUser');
-                        localStorage.removeItem('workday');
                         localStorage.removeItem('konobarName');
+                        
+                        // VAŽNO: NE brišemo DB.workdays - oni ostaju u Firebase!
+                        // Workday se briše samo kada konobar ZATVORI radni dan
+                        
+                        console.log('✅ Logout uspešan - workdays ostaju aktivni');
+                        
                         page = 'login';
                         render();
                     });
@@ -917,7 +937,9 @@ ${'='.repeat(60)}
                 DB.konobarName = user.username;
                 save();
                 
-                if(!DB.workday) {
+                // Proveri DA LI OVAJ KONOBAR ima aktivan workday
+                const myWorkday = DB.workdays && DB.workdays[user.username];
+                if(!myWorkday) {
                     page = 'workday';
                 } else {
                     page = 'tables';
@@ -945,7 +967,10 @@ ${'='.repeat(60)}
         let selectedWaiterUsername = null;
 
         function renderWorkday(c) {
-            if(!DB.workday) {
+            const username = DB.currentUser.username;
+            const myWorkday = DB.workdays ? DB.workdays[username] : null;
+            
+            if(!myWorkday) {
                 c.innerHTML = `
                     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
                         <div style="background:#0F3460;padding:40px;border-radius:16px;max-width:500px;width:100%;text-align:center">
@@ -958,13 +983,13 @@ ${'='.repeat(60)}
                     </div>
                 `;
             } else {
-                const dayOrders = DB.orders.filter(o => o.time >= DB.workday.startTime);
+                const dayOrders = DB.orders.filter(o => o.time >= myWorkday.startTime);
                 const totalRevenue = dayOrders.reduce((s,o)=>s+o.tot,0);
                 const cash = dayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
                 const card = dayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
                 
                 // Parse start time properly
-                const startTime = new Date(DB.workday.startTime);
+                const startTime = new Date(myWorkday.startTime);
                 const now = new Date();
                 const durationMs = now - startTime;
                 const duration = Math.floor(durationMs / 1000 / 60); // minutes
@@ -980,7 +1005,7 @@ ${'='.repeat(60)}
                             <div style="background:#16213E;padding:20px;border-radius:12px;margin-bottom:20px">
                                 <div style="display:flex;justify-content:space-between;margin:8px 0">
                                     <span style="color:#B0B0B0">Konobar:</span>
-                                    <span style="color:#FFD700;font-weight:bold">${DB.workday.user}</span>
+                                    <span style="color:#FFD700;font-weight:bold">${myWorkday.user}</span>
                                 </div>
                                 <div style="display:flex;justify-content:space-between;margin:8px 0">
                                     <span style="color:#B0B0B0">Početak:</span>
@@ -1023,29 +1048,48 @@ ${'='.repeat(60)}
         }
 
         function openWorkday() {
-            DB.workday = {
-                user: DB.konobarName || DB.currentUser.username,
+            const username = DB.currentUser.username;
+            
+            // Inicijalizuj workdays ako ne postoji
+            if (!DB.workdays) DB.workdays = {};
+            
+            // Kreiraj workday samo za ovog konobara
+            DB.workdays[username] = {
+                user: username,
                 startTime: new Date().toISOString(),
                 startOrders: DB.orders.length
             };
+            
             save();
             page = 'tables';
             render();
         }
 
         function closeWorkday() {
-            const dayOrders = DB.orders.filter(o => o.time >= DB.workday.startTime);
+            const username = DB.currentUser.username;
+            const myWorkday = DB.workdays ? DB.workdays[username] : null;
+            
+            if (!myWorkday) {
+                showAlert('❌ Greška: Nema aktivnog radnog dana!');
+                return;
+            }
+            
+            // Filtriraj samo narudžbine ovog konobara od početka njegovog dana
+            const dayOrders = DB.orders.filter(o => 
+                o.time >= myWorkday.startTime && 
+                o.createdBy === username
+            );
             const totalRevenue = dayOrders.reduce((s,o)=>s+o.tot,0);
             const cash = dayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
             const card = dayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
             
             const endTime = new Date().toISOString();
-            const startTime = new Date(DB.workday.startTime);
+            const startTime = new Date(myWorkday.startTime);
             const duration = Math.floor((new Date(endTime) - startTime) / 1000 / 60); // minutes
             
             const finalReport = {
-                user: DB.workday.user,
-                startTime: DB.workday.startTime,
+                user: myWorkday.user,
+                startTime: myWorkday.startTime,
                 endTime: endTime,
                 orders: dayOrders,
                 totalRevenue: totalRevenue,
@@ -1058,19 +1102,31 @@ ${'='.repeat(60)}
             
             // Dodaj u istoriju sesija
             DB.workdayHistory.push({
-                user: DB.workday.user,
-                loginTime: DB.workday.startTime,
+                user: myWorkday.user,
+                loginTime: myWorkday.startTime,
                 logoutTime: endTime,
                 duration: duration,
                 orderCount: dayOrders.length,
                 revenue: totalRevenue
             });
             
-            // Resetuj samo stolove, ALI NE BRIŠEMO NARUDŽBINE!
-            // Narudžbine treba da ostanu u bazi zauvek za evidenciju
-            DB.tables = Array.from({length:10}, (_,i) => ({num:i+1, name:`Sto ${i+1}`, order:[], discount:0, discountPercent:0, discountedItems:[]}));
-            // DB.orders = []; // NE BRIŠEMO NARUDŽBINE!
-            DB.workday = null;
+            // Resetuj samo stolove koje je ovaj konobar koristio
+            // ALI NE BRIŠEMO NARUDŽBINE - one ostaju u bazi zauvek!
+            DB.tables.forEach(table => {
+                if (table.order && table.order.length > 0) {
+                    const tableUser = table.order[0]?.createdBy || '';
+                    if (tableUser === username) {
+                        table.order = [];
+                        table.discount = 0;
+                        table.discountPercent = 0;
+                        table.discountedItems = [];
+                    }
+                }
+            });
+            
+            // Obriši SAMO workday ovog konobara
+            delete DB.workdays[username];
+            console.log('✅ Workday zatvoren za:', username);
             save();
             
             page = 'finalreport';
@@ -2030,6 +2086,383 @@ ${'='.repeat(60)}
             
             c.innerHTML = h;
         }
+        
+        // ============================================
+        // HISTORY PAGE - Istorijski Izveštaji
+        // ============================================
+        
+        function renderHistory(c) {
+            // Date filter state
+            if (!window.historyFilter) {
+                const today = new Date();
+                const lastMonth = new Date(today);
+                lastMonth.setDate(today.getDate() - 30);
+                
+                window.historyFilter = {
+                    startDate: lastMonth.toISOString().split('T')[0],
+                    endDate: today.toISOString().split('T')[0],
+                    viewMode: 'summary'  // summary, orders, sessions
+                };
+            }
+            
+            const filter = window.historyFilter;
+            
+            // Filter orders by date range
+            const filteredOrders = DB.orders.filter(o => {
+                const orderDate = o.time.split('T')[0];
+                return orderDate >= filter.startDate && orderDate <= filter.endDate;
+            });
+            
+            // Filter workday sessions by date range
+            const filteredSessions = DB.workdayHistory.filter(s => {
+                const sessionDate = s.loginTime.split('T')[0];
+                return sessionDate >= filter.startDate && sessionDate <= filter.endDate;
+            });
+            
+            // Calculate statistics
+            const totalRevenue = filteredOrders.reduce((s,o)=>s+o.tot,0);
+            const totalOrders = filteredOrders.length;
+            const cash = filteredOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+            const card = filteredOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+            const totalSessions = filteredSessions.length;
+            
+            // Group by date
+            const ordersByDate = {};
+            filteredOrders.forEach(o => {
+                const date = o.time.split('T')[0];
+                if (!ordersByDate[date]) ordersByDate[date] = {orders: [], revenue: 0};
+                ordersByDate[date].orders.push(o);
+                ordersByDate[date].revenue += o.tot;
+            });
+            
+            // Group by user
+            const ordersByUser = {};
+            filteredOrders.forEach(o => {
+                const user = o.createdBy || 'Nepoznato';
+                if (!ordersByUser[user]) ordersByUser[user] = {count: 0, revenue: 0};
+                ordersByUser[user].count++;
+                ordersByUser[user].revenue += o.tot;
+            });
+            
+            let h = `
+                <div style="max-width:1200px;margin:0 auto">
+                    <h2>📜 Istorija Izveštaja</h2>
+                    
+                    <!-- Date Filter -->
+                    <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;align-items:end">
+                            <div>
+                                <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Od datuma:</label>
+                                <input type="date" id="startDate" value="${filter.startDate}" 
+                                    style="width:100%;padding:8px;border-radius:6px;border:1px solid #2A2A4A;background:#16213E;color:#FFF">
+                            </div>
+                            <div>
+                                <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Do datuma:</label>
+                                <input type="date" id="endDate" value="${filter.endDate}"
+                                    style="width:100%;padding:8px;border-radius:6px;border:1px solid #2A2A4A;background:#16213E;color:#FFF">
+                            </div>
+                            <button class="btn" onclick="applyHistoryFilter()" style="height:36px">🔍 Primeni</button>
+                            <button class="btn btn-secondary" onclick="exportHistoryToExcel()" style="height:36px">📊 Excel</button>
+                        </div>
+                    </div>
+                    
+                    <!-- View Mode Tabs -->
+                    <div style="display:flex;gap:8px;margin-bottom:20px;overflow-x:auto">
+                        <button class="btn ${filter.viewMode==='summary'?'':'btn-secondary'}" 
+                            onclick="window.historyFilter.viewMode='summary';render()" 
+                            style="flex:1;min-width:120px">📊 Pregled</button>
+                        <button class="btn ${filter.viewMode==='orders'?'':'btn-secondary'}" 
+                            onclick="window.historyFilter.viewMode='orders';render()"
+                            style="flex:1;min-width:120px">📋 Narudžbine</button>
+                        <button class="btn ${filter.viewMode==='sessions'?'':'btn-secondary'}" 
+                            onclick="window.historyFilter.viewMode='sessions';render()"
+                            style="flex:1;min-width:120px">👥 Sesije</button>
+                    </div>
+            `;
+            
+            // Render based on view mode
+            if (filter.viewMode === 'summary') {
+                h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card);
+            } else if (filter.viewMode === 'orders') {
+                h += renderHistoryOrders(filteredOrders);
+            } else if (filter.viewMode === 'sessions') {
+                h += renderHistorySessions(filteredSessions);
+            }
+            
+            h += `</div>`;
+            c.innerHTML = h;
+        }
+        
+        function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card) {
+            const avgOrder = orders.length > 0 ? (totalRevenue / orders.length) : 0;
+            
+            let h = `
+                <!-- Summary Stats -->
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
+                    <div class="stat-card">
+                        <div class="stat-label">Ukupan prihod</div>
+                        <div class="stat-value">${totalRevenue.toFixed(0)}</div>
+                        <div class="stat-label">din.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Narudžbi</div>
+                        <div class="stat-value" style="color:#E94560">${orders.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Prosečan račun</div>
+                        <div class="stat-value" style="color:#4CAF50">${avgOrder.toFixed(0)}</div>
+                        <div class="stat-label">din.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Sesija</div>
+                        <div class="stat-value" style="color:#FFD700">${sessions.length}</div>
+                    </div>
+                </div>
+                
+                <!-- Payment Methods -->
+                <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
+                    <div style="display:flex;gap:16px">
+                        <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">💵</div>
+                            <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${cash.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Cash (${totalRevenue>0?Math.round(cash/totalRevenue*100):0}%)</div>
+                        </div>
+                        <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">💳</div>
+                            <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${card.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Card (${totalRevenue>0?Math.round(card/totalRevenue*100):0}%)</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- By User -->
+                <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">👥 Po Konobarima</h3>
+            `;
+            
+            const sortedUsers = Object.entries(ordersByUser).sort((a, b) => b[1].revenue - a[1].revenue);
+            sortedUsers.forEach(([user, data], index) => {
+                const percent = totalRevenue > 0 ? Math.round(data.revenue / totalRevenue * 100) : 0;
+                const avgOrder = data.count > 0 ? (data.revenue / data.count).toFixed(0) : 0;
+                const badge = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`;
+                
+                h += `
+                    <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="font-size:20px">${badge}</span>
+                                <div>
+                                    <div style="color:#FFD700;font-weight:bold">${user}</div>
+                                    <div style="color:#B0B0B0;font-size:11px">${data.count} narudžbina · ${avgOrder} din. prosek</div>
+                                </div>
+                            </div>
+                            <div style="text-align:right">
+                                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${data.revenue.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:11px">${percent}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            h += `</div>`;
+            
+            // By Date
+            h += `
+                <div style="background:#0F3460;padding:20px;border-radius:12px">
+                    <h3 style="color:#E94560;margin-bottom:16px">📅 Po Danima</h3>
+            `;
+            
+            const sortedDates = Object.entries(ordersByDate).sort((a, b) => b[0].localeCompare(a[0]));
+            sortedDates.slice(0, 10).forEach(([date, data]) => {
+                const dateObj = new Date(date);
+                const formatted = dateObj.toLocaleDateString('sr-RS', {weekday: 'short', day: 'numeric', month: 'short'});
+                
+                h += `
+                    <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+                        <div>
+                            <div style="color:#FFD700;font-weight:bold">${formatted}</div>
+                            <div style="color:#B0B0B0;font-size:11px">${data.orders.length} narudžbina</div>
+                        </div>
+                        <div style="color:#4CAF50;font-size:18px;font-weight:bold">${data.revenue.toFixed(0)} din.</div>
+                    </div>
+                `;
+            });
+            
+            if (sortedDates.length > 10) {
+                h += `<div style="color:#B0B0B0;text-align:center;margin-top:12px;font-size:12px">... i još ${sortedDates.length - 10} dana</div>`;
+            }
+            
+            h += `</div>`;
+            
+            return h;
+        }
+        
+        function renderHistoryOrders(orders) {
+            const sortedOrders = [...orders].sort((a, b) => b.time.localeCompare(a.time));
+            
+            let h = `
+                <div style="background:#0F3460;padding:20px;border-radius:12px">
+                    <h3 style="color:#E94560;margin-bottom:16px">📋 Sve Narudžbine (${orders.length})</h3>
+            `;
+            
+            if (sortedOrders.length === 0) {
+                h += `<div style="text-align:center;color:#B0B0B0;padding:40px">Nema narudžbina za izabrani period</div>`;
+            } else {
+                sortedOrders.forEach(o => {
+                    const date = new Date(o.time);
+                    const formatted = date.toLocaleString('sr-RS', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    h += `
+                        <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
+                            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+                                <div>
+                                    <div style="color:#FFD700;font-weight:bold">Narudžbina #${o.id}</div>
+                                    <div style="color:#B0B0B0;font-size:11px">${formatted} · ${o.createdBy || 'Nepoznato'}</div>
+                                </div>
+                                <div style="text-align:right">
+                                    <div style="color:#4CAF50;font-size:18px;font-weight:bold">${o.tot.toFixed(0)} din.</div>
+                                    <div style="color:#B0B0B0;font-size:11px">${o.method}</div>
+                                </div>
+                            </div>
+                            <div style="color:#B0B0B0;font-size:12px">
+                                ${o.items.map(it => `${it.name} x${it.qty}`).join(', ')}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            h += `</div>`;
+            return h;
+        }
+        
+        function renderHistorySessions(sessions) {
+            const sortedSessions = [...sessions].sort((a, b) => b.loginTime.localeCompare(a.loginTime));
+            
+            let h = `
+                <div style="background:#0F3460;padding:20px;border-radius:12px">
+                    <h3 style="color:#E94560;margin-bottom:16px">👥 Sve Sesije (${sessions.length})</h3>
+            `;
+            
+            if (sortedSessions.length === 0) {
+                h += `<div style="text-align:center;color:#B0B0B0;padding:40px">Nema sesija za izabrani period</div>`;
+            } else {
+                sortedSessions.forEach(s => {
+                    const loginDate = new Date(s.loginTime);
+                    const logoutDate = new Date(s.logoutTime);
+                    
+                    const dateStr = loginDate.toLocaleDateString('sr-RS', {day: 'numeric', month: 'short', year: 'numeric'});
+                    const loginTime = loginDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    const logoutTime = logoutDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                    
+                    const hours = Math.floor(s.duration / 60);
+                    const mins = s.duration % 60;
+                    const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
+                    
+                    h += `
+                        <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
+                            <div style="display:flex;justify-content:space-between;align-items:start">
+                                <div>
+                                    <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user}</div>
+                                    <div style="color:#B0B0B0;font-size:11px">${dateStr}</div>
+                                    <div style="color:#FFF;font-size:12px;margin-top:4px">
+                                        🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
+                                    </div>
+                                </div>
+                                <div style="text-align:right">
+                                    <div style="color:#4CAF50;font-size:18px;font-weight:bold">${s.revenue.toFixed(0)} din.</div>
+                                    <div style="color:#B0B0B0;font-size:11px">${s.orderCount} narudžbina</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            h += `</div>`;
+            return h;
+        }
+        
+        function applyHistoryFilter() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            
+            if (startDate && endDate) {
+                window.historyFilter.startDate = startDate;
+                window.historyFilter.endDate = endDate;
+                render();
+            }
+        }
+        
+        function exportHistoryToExcel() {
+            const filter = window.historyFilter;
+            
+            // Filter orders
+            const orders = DB.orders.filter(o => {
+                const orderDate = o.time.split('T')[0];
+                return orderDate >= filter.startDate && orderDate <= filter.endDate;
+            });
+            
+            if (orders.length === 0) {
+                showAlert('Nema narudžbina za export!');
+                return;
+            }
+            
+            // Prepare data for Excel
+            const data = [];
+            
+            // Header
+            data.push(['Datum', 'Vreme', 'ID', 'Konobar', 'Stavke', 'Ukupno', 'Način plaćanja']);
+            
+            // Rows
+            orders.forEach(o => {
+                const date = new Date(o.time);
+                const dateStr = date.toLocaleDateString('sr-RS');
+                const timeStr = date.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                const items = o.items.map(it => `${it.name} x${it.qty}`).join(', ');
+                
+                data.push([
+                    dateStr,
+                    timeStr,
+                    o.id,
+                    o.createdBy || 'Nepoznato',
+                    items,
+                    o.tot,
+                    o.method
+                ]);
+            });
+            
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            
+            // Column widths
+            ws['!cols'] = [
+                {wch: 12},  // Datum
+                {wch: 8},   // Vreme
+                {wch: 6},   // ID
+                {wch: 15},  // Konobar
+                {wch: 40},  // Stavke
+                {wch: 10},  // Ukupno
+                {wch: 12}   // Način plaćanja
+            ];
+            
+            XLSX.utils.book_append_sheet(wb, ws, 'Izveštaj');
+            
+            // Generate filename
+            const filename = `Izvestaj_${filter.startDate}_${filter.endDate}.xlsx`;
+            
+            // Download
+            XLSX.writeFile(wb, filename);
+        }
+
         
         function showAllOrders() {
             const allOrders = [...DB.orders].reverse();
