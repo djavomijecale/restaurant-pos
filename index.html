@@ -59,6 +59,11 @@
         .modal.show { display: flex; }
         .modal-content { background: #0F3460; padding: 32px; border-radius: 16px; max-width: 500px; width: 90%; }
         
+        /* Waiter role restrictions */
+        body.waiter-role .admin-only {
+            display: none !important;
+        }
+        
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             .header { padding: 10px 12px; }
@@ -166,10 +171,10 @@
             <div class="nav-item" onclick="nav('tables')"><span style="font-size:24px">🪑</span><span style="font-size:11px">Stolovi</span></div>
             <div class="nav-item" id="navReport" onclick="nav('report')"><span style="font-size:24px">📊</span><span style="font-size:11px">Izveštaj</span></div>
             <div class="nav-item" id="navHistory" onclick="nav('history')"><span style="font-size:24px">📜</span><span style="font-size:11px">Istorija</span></div>
-            <div class="nav-item" id="navRemoved" onclick="nav('removed')"><span style="font-size:24px">🗑️</span><span style="font-size:11px">Uklonjeno</span></div>
-            <div class="nav-item" id="navUsers" onclick="nav('users')"><span style="font-size:24px">👥</span><span style="font-size:11px">Konobari</span></div>
-            <div class="nav-item" id="navEdit" onclick="nav('edit')"><span style="font-size:24px">✏️</span><span style="font-size:11px">Izmeni</span></div>
-            <div class="nav-item" id="navSettings" onclick="nav('settings')"><span style="font-size:24px">⚙️</span><span style="font-size:11px">Postavke</span></div>
+            <div class="nav-item admin-only" id="navRemoved" onclick="nav('removed')"><span style="font-size:24px">🗑️</span><span style="font-size:11px">Uklonjeno</span></div>
+            <div class="nav-item admin-only" id="navUsers" onclick="nav('users')"><span style="font-size:24px">👥</span><span style="font-size:11px">Konobari</span></div>
+            <div class="nav-item admin-only" id="navEdit" onclick="nav('edit')"><span style="font-size:24px">✏️</span><span style="font-size:11px">Izmeni</span></div>
+            <div class="nav-item admin-only" id="navSettings" onclick="nav('settings')"><span style="font-size:24px">⚙️</span><span style="font-size:11px">Postavke</span></div>
         </div>
     </div>
 
@@ -359,7 +364,7 @@
         function save() {
             localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
             localStorage.setItem('konobarName', DB.konobarName);
-            localStorage.setItem('workday', JSON.stringify(DB.workday));
+            // workdays se čuvaju u Firebase kroz DB.workdays objekat
             saveToFirebase();
         }
         
@@ -499,7 +504,7 @@
         }
 
         function nav(p) {
-            if(DB.currentUser && DB.currentUser.role === 'konobar' && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users')) {
+            if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users')) {
                 showAlert('Nemate pristup ovoj stranici');
                 return;
             }
@@ -513,6 +518,13 @@
 
         function render() {
             const c = document.getElementById('content');
+            
+            // Dodaj/ukloni waiter-role klasu na body u zavisnosti od uloge korisnika
+            if (DB.currentUser && DB.currentUser.role === 'waiter') {
+                document.body.classList.add('waiter-role');
+            } else {
+                document.body.classList.remove('waiter-role');
+            }
             
             if(page==='login') renderLogin(c);
             else if(page==='workday') renderWorkday(c);
@@ -544,14 +556,17 @@
                 if(navBar) navBar.classList.add('show');
                 
                 const roleIcon = DB.currentUser.role === 'admin' ? '👑' : '👨‍🍳';
-                const displayName = DB.currentUser.role === 'konobar' && DB.konobarName ? DB.konobarName : DB.currentUser.username;
+                const displayName = (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && DB.konobarName ? DB.konobarName : DB.currentUser.username;
                 let html = `<div class="user-badge">${roleIcon} ${displayName}</div>`;
                 
-                if(DB.currentUser.role === 'konobar' && DB.workday) {
+                // Proveri da li konobar/waiter ima aktivan radni dan
+                const hasWorkday = DB.workdays && DB.workdays[DB.currentUser.username];
+                
+                if((DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && hasWorkday) {
                     html += `<div class="workday-badge">📅 Radni dan otvoren</div>`;
                 }
                 
-                if(DB.currentUser.role === 'konobar' && DB.workday) {
+                if((DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && hasWorkday) {
                     html += `<button class="logout-btn" id="closeDayBtn" style="background:#FF9800">Zatvori dan</button>`;
                 }
                 
@@ -588,8 +603,8 @@
                     closeDayBtn.addEventListener('click', function(e) {
                         e.preventDefault();
                         e.stopPropagation();
-                        page = 'workday';
-                        render();
+                        // Direktno pozovi closeWorkday funkciju
+                        closeWorkday();
                     });
                 }
                 
@@ -600,7 +615,7 @@
                 const navSettings = document.getElementById('navSettings');
                 
                 if(navReport && navRemoved && navUsers && navEdit && navSettings) {
-                    if(DB.currentUser.role === 'konobar') {
+                    if(DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') {
                         navReport.style.display = 'flex';
                         navRemoved.style.display = 'none';
                         navUsers.style.display = 'none';
@@ -1885,16 +1900,24 @@ ${'='.repeat(60)}
 
         function renderReport(c) {
             const today = new Date().toISOString().split('T')[0];
+            const isWaiter = DB.currentUser.role === 'waiter';
+            const currentUsername = DB.currentUser.username;
             
             console.log('DEBUG: Total orders in DB:', DB.orders.length);
             console.log('DEBUG: Today date:', today);
-            console.log('DEBUG: All orders:', DB.orders);
+            console.log('DEBUG: Is waiter:', isWaiter);
             
-            const ords = DB.orders.filter(o=> {
+            // Filtriraj narudžbine za danas
+            let ords = DB.orders.filter(o=> {
                 const orderDate = o.time.split('T')[0];
-                console.log('DEBUG: Comparing', orderDate, 'with', today);
                 return orderDate === today;
             });
+            
+            // Ako je konobar, prikaži SAMO njegove narudžbine
+            if (isWaiter) {
+                ords = ords.filter(o => o.createdBy === currentUsername);
+                console.log('DEBUG: Filtered for waiter:', currentUsername, '- Orders:', ords.length);
+            }
             
             console.log('DEBUG: Orders today:', ords.length);
             
@@ -1902,34 +1925,39 @@ ${'='.repeat(60)}
             const cash = ords.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
             const card = ords.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
             
-            // Grupisanje po konobarima
+            // Grupisanje po konobarima (samo za admina)
             const ordersByUser = {};
-            ords.forEach(order => {
-                const user = order.createdBy || 'Nepoznato';
-                if(!ordersByUser[user]) ordersByUser[user] = {count: 0, revenue: 0};
-                ordersByUser[user].count++;
-                ordersByUser[user].revenue += order.tot;
-            });
+            if (!isWaiter) {
+                ords.forEach(order => {
+                    const user = order.createdBy || 'Nepoznato';
+                    if(!ordersByUser[user]) ordersByUser[user] = {count: 0, revenue: 0};
+                    ordersByUser[user].count++;
+                    ordersByUser[user].revenue += order.tot;
+                });
+            }
             
-            let h = `<h2>📊 Dnevni Izveštaj</h2>
-                <p style="color:#B0B0B0;text-align:center;margin:8px 0 4px">${new Date().toLocaleDateString('sr-RS')}</p>
-                <p style="color:#B0B0B0;text-align:center;margin:0 0 20px;font-size:12px">
+            let h = `<h2>📊 ${isWaiter ? 'Moj Dnevni Izveštaj' : 'Dnevni Izveštaj'}</h2>
+                <p style="color:#B0B0B0;text-align:center;margin:8px 0 4px">${new Date().toLocaleDateString('sr-RS')}</p>`;
+            
+            if (!isWaiter) {
+                h += `<p style="color:#B0B0B0;text-align:center;margin:0 0 20px;font-size:12px">
                     Ukupno narudžbina u sistemu: ${DB.orders.length} | 
                     Danas: ${ords.length}
-                </p>
-                
-                <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:20px;font-size:12px;color:#B0B0B0">
-                    🔍 Debug: Datum danas = ${today} | Narudžbina danas = ${ords.length}
-                </div>`;
+                </p>`;
+            } else {
+                h += `<p style="color:#B0B0B0;text-align:center;margin:0 0 20px;font-size:12px">
+                    Moje narudžbine danas: ${ords.length}
+                </p>`;
+            }
             
             h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0">
                 <div class="stat-card">
-                    <div class="stat-label">Ukupan prihod</div>
+                    <div class="stat-label">${isWaiter ? 'Moj prihod' : 'Ukupan prihod'}</div>
                     <div class="stat-value">${rev.toFixed(0)}</div>
                     <div class="stat-label">din.</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Narudžbi danas</div>
+                    <div class="stat-label">${isWaiter ? 'Moje narudžbine' : 'Narudžbi danas'}</div>
                     <div class="stat-value" style="color:#E94560">${ords.length}</div>
                 </div>
                 <div class="stat-card">
@@ -1955,8 +1983,8 @@ ${'='.repeat(60)}
                 </div>
             </div>`;
             
-            // Prikaz po konobarima
-            if(Object.keys(ordersByUser).length > 0) {
+            // Prikaz po konobarima - SAMO ZA ADMINA
+            if(!isWaiter && Object.keys(ordersByUser).length > 0) {
                 h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
                     <h3 style="color:#E94560;margin-bottom:16px">👥 Aktivnost Konobara</h3>`;
                 
@@ -2016,8 +2044,8 @@ ${'='.repeat(60)}
             }
             
             if(ords.length === 0) {
-                h += '<div class="empty"><div style="font-size:64px">📭</div><h3>Nema narudžbi danas</h3>';
-                if(DB.orders.length > 0) {
+                h += `<div class="empty"><div style="font-size:64px">📭</div><h3>${isWaiter ? 'Nemaš narudžbi danas' : 'Nema narudžbi danas'}</h3>`;
+                if(!isWaiter && DB.orders.length > 0) {
                     h += `<p style="color:#B0B0B0;margin-top:12px">Ali imate ${DB.orders.length} ${DB.orders.length === 1 ? 'narudžbinu' : 'narudžbina'} iz prethodnih dana</p>`;
                     h += `<button class="btn" style="max-width:300px;margin:20px auto 0" onclick="showAllOrders()">Prikaži sve narudžbine</button>`;
                 }
@@ -2025,7 +2053,7 @@ ${'='.repeat(60)}
             } else {
                 // Prikaži poslednje narudžbine
                 h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
-                    <h3 style="color:#E94560;margin-bottom:16px">📋 Poslednje Narudžbine</h3>`;
+                    <h3 style="color:#E94560;margin-bottom:16px">📋 ${isWaiter ? 'Moje Narudžbine' : 'Poslednje Narudžbine'}</h3>`;
                 
                 const recentOrders = [...ords].reverse().slice(0, 10);
                 recentOrders.forEach((order, idx) => {
@@ -2039,9 +2067,14 @@ ${'='.repeat(60)}
                                 <div style="color:#B0B0B0;font-size:12px">
                                     ${time} · 
                                     ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
-                                    ${order.method}
-                                    ${order.createdBy ? ' · 👨‍🍳 ' + order.createdBy : ''}
-                                </div>
+                                    ${order.method}`;
+                    
+                    // Prikaži konobarevo ime SAMO ako je admin
+                    if (!isWaiter && order.createdBy) {
+                        h += ` · 👨‍🍳 ${order.createdBy}`;
+                    }
+                    
+                    h += `</div>
                             </div>
                             <div style="display:flex;align-items:center;gap:12px">
                                 <div style="color:#4CAF50;font-size:18px;font-weight:bold">${order.tot.toFixed(0)} din.</div>
@@ -2084,6 +2117,55 @@ ${'='.repeat(60)}
                 h += `</div>`;
             }
             
+            // UKUPAN DNEVNI IZVEŠTAJ - SAMO ZA KONOBARA
+            if (isWaiter) {
+                // Izračunaj ukupan dnevni izveštaj (svi konobari)
+                const allTodayOrders = DB.orders.filter(o => {
+                    const orderDate = o.time.split('T')[0];
+                    return orderDate === today;
+                });
+                
+                const totalDailyRevenue = allTodayOrders.reduce((s,o)=>s+o.tot,0);
+                const totalDailyOrders = allTodayOrders.length;
+                const totalDailyCash = allTodayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+                const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+                
+                h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-top:20px;border:2px solid #2A2A4A">
+                    <h3 style="color:#FFD700;margin-bottom:16px">📊 Ukupan Dnevni Izveštaj (Svi Konobari)</h3>
+                    <p style="color:#B0B0B0;font-size:12px;margin-bottom:16px">Svi konobari zajedno za današnji dan</p>
+                    
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">
+                        <div class="stat-card">
+                            <div class="stat-label">Ukupan prihod</div>
+                            <div class="stat-value">${totalDailyRevenue.toFixed(0)}</div>
+                            <div class="stat-label">din.</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Ukupno narudžbi</div>
+                            <div class="stat-value" style="color:#E94560">${totalDailyOrders}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Prosečan račun</div>
+                            <div class="stat-value" style="color:#4CAF50">${totalDailyOrders > 0 ? (totalDailyRevenue/totalDailyOrders).toFixed(0) : 0}</div>
+                            <div class="stat-label">din.</div>
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex;gap:16px">
+                        <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:24px">💵</div>
+                            <div style="color:#FFD700;font-size:18px;font-weight:bold;margin:8px 0">${totalDailyCash.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:11px">Cash (${totalDailyRevenue>0?Math.round(totalDailyCash/totalDailyRevenue*100):0}%)</div>
+                        </div>
+                        <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:24px">💳</div>
+                            <div style="color:#FFD700;font-size:18px;font-weight:bold;margin:8px 0">${totalDailyCard.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:11px">Card (${totalDailyRevenue>0?Math.round(totalDailyCard/totalDailyRevenue*100):0}%)</div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            
             c.innerHTML = h;
         }
         
@@ -2092,6 +2174,9 @@ ${'='.repeat(60)}
         // ============================================
         
         function renderHistory(c) {
+            const isWaiter = DB.currentUser.role === 'waiter';
+            const currentUsername = DB.currentUser.username;
+            
             // Date filter state
             if (!window.historyFilter) {
                 const today = new Date();
@@ -2118,6 +2203,14 @@ ${'='.repeat(60)}
                 const sessionDate = s.loginTime.split('T')[0];
                 return sessionDate >= filter.startDate && sessionDate <= filter.endDate;
             });
+            
+            
+            // KONOBAR: Filtriraj SAMO njegove podatke
+            if (isWaiter) {
+                filteredOrders = filteredOrders.filter(o => o.createdBy === currentUsername);
+                filteredSessions = filteredSessions.filter(s => s.user === currentUsername);
+                console.log('DEBUG: Waiter history filtered for:', currentUsername);
+            }
             
             // Calculate statistics
             const totalRevenue = filteredOrders.reduce((s,o)=>s+o.tot,0);
@@ -2146,7 +2239,7 @@ ${'='.repeat(60)}
             
             let h = `
                 <div style="max-width:1200px;margin:0 auto">
-                    <h2>📜 Istorija Izveštaja</h2>
+                    <h2>📜 ${isWaiter ? 'Moja Istorija' : 'Istorija Izveštaja'}</h2>
                     
                     <!-- Date Filter -->
                     <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
@@ -2162,7 +2255,14 @@ ${'='.repeat(60)}
                                     style="width:100%;padding:8px;border-radius:6px;border:1px solid #2A2A4A;background:#16213E;color:#FFF">
                             </div>
                             <button class="btn" onclick="applyHistoryFilter()" style="height:36px">🔍 Primeni</button>
-                            <button class="btn btn-secondary" onclick="exportHistoryToExcel()" style="height:36px">📊 Excel</button>
+                            `;
+            
+            // Excel export SAMO ZA ADMINA
+            if (!isWaiter) {
+                h += `<button class="btn btn-secondary" onclick="exportHistoryToExcel()" style="height:36px">📊 Excel</button>`;
+            }
+            
+            h += `
                         </div>
                     </div>
                     
@@ -2182,7 +2282,7 @@ ${'='.repeat(60)}
             
             // Render based on view mode
             if (filter.viewMode === 'summary') {
-                h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card);
+                h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter);
             } else if (filter.viewMode === 'orders') {
                 h += renderHistoryOrders(filteredOrders);
             } else if (filter.viewMode === 'sessions') {
@@ -2193,7 +2293,7 @@ ${'='.repeat(60)}
             c.innerHTML = h;
         }
         
-        function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card) {
+        function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter) {
             const avgOrder = orders.length > 0 ? (totalRevenue / orders.length) : 0;
             
             let h = `
@@ -2236,7 +2336,10 @@ ${'='.repeat(60)}
                     </div>
                 </div>
                 
-                <!-- By User -->
+                <!-- By User - SAMO ZA ADMINA -->`;
+            
+            if (!isWaiter) {
+                h += `
                 <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
                     <h3 style="color:#E94560;margin-bottom:16px">👥 Po Konobarima</h3>
             `;
@@ -2267,6 +2370,9 @@ ${'='.repeat(60)}
             });
             
             h += `</div>`;
+            }
+            
+            h += `</div>`;  // Zatvori ostatak
             
             // By Date
             h += `
@@ -3426,7 +3532,8 @@ ${'='.repeat(60)}
                 
                 // Set initial page
                 if(DB.currentUser) {
-                    if(DB.currentUser.role === 'konobar' && !DB.workday) {
+                    const hasWorkday = DB.workdays && DB.workdays[DB.currentUser.username];
+                    if((DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && !hasWorkday) {
                         page = 'workday';
                     } else {
                         page = 'tables';
