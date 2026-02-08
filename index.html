@@ -1160,8 +1160,11 @@ ${'='.repeat(60)}
         function renderTableSelect(c) {
             console.log('🔍 renderTableSelect - DB.tables:', DB.tables);
             
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
             let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px"><h2>🪑 Izaberi Sto</h2>';
-            if(DB.currentUser) {
+            if(DB.currentUser && !isWaiter) {
                 h += '<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page=\'edittables\';render()">✏️ Izmeni Stolove</button>';
             }
             h += '</div><div class="table-grid">';
@@ -1178,13 +1181,24 @@ ${'='.repeat(60)}
                         console.warn(`  ⚠️ Table ${index} has no order property`);
                         t.order = []; // Fix it
                     }
-                    const isOccupied = t.order && Array.isArray(t.order) && t.order.length > 0;
-                    const total = isOccupied ? t.order.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
-                    h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
-                        <div class="table-icon">🪑</div>
-                        <div class="table-number">${t.name || 'Sto ' + t.num}</div>
-                        <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
-                    </div>`;
+                    
+                    // Filtriraj stavke za ovog konobara
+                    let myItems = t.order;
+                    if (isWaiter) {
+                        myItems = t.order.filter(item => item.createdBy === currentUsername);
+                    }
+                    
+                    const isOccupied = myItems && Array.isArray(myItems) && myItems.length > 0;
+                    const total = isOccupied ? myItems.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
+                    
+                    // Prikaži sto samo ako admin ILI ako konobar ima stavke na njemu
+                    if (!isWaiter || isOccupied) {
+                        h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
+                            <div class="table-icon">🪑</div>
+                            <div class="table-number">${t.name || 'Sto ' + t.num}</div>
+                            <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
+                        </div>`;
+                    }
                 });
             } else {
                 console.error('❌ DB.tables is not an array:', typeof DB.tables, DB.tables);
@@ -1253,13 +1267,22 @@ ${'='.repeat(60)}
             const table = DB.tables.find(t=>t.num===DB.selectedTable);
             const cats = ['Sve', 'Hrana', 'Piće'];
             
-            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
+            // Filtriraj samo stavke trenutnog konobara
+            let myOrder = table.order;
+            if (isWaiter) {
+                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+            }
+            
+            const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
             const tot = Math.max(0, sub-table.discount);
             
             let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                 <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="DB.selectedTable=null;render()">← Stolovi</button>
                 <h2>🪑 ${table.name}</h2>
-                <button class="btn" style="width:auto;padding:8px 16px" onclick="page='tableorder';render()">Narudžba (${table.order.length})</button>
+                <button class="btn" style="width:auto;padding:8px 16px" onclick="page='tableorder';render()">Narudžba (${myOrder.length})</button>
             </div>`;
             
             // Category chips
@@ -1312,11 +1335,11 @@ ${'='.repeat(60)}
                 </div>`;
             });
             
-            if(table.order.length > 0) {
+            if(myOrder.length > 0) {
                 h += `<div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#E94560;padding:12px 24px;border-radius:12px;box-shadow:0 4px 20px rgba(233,69,96,0.5);max-width:400px;width:90%">
                     <div style="display:flex;justify-content:space-between;align-items:center">
                         <div>
-                            <div style="font-size:12px;opacity:0.9">${table.order.length} stavki</div>
+                            <div style="font-size:12px;opacity:0.9">${myOrder.length} stavki</div>
                             <div style="font-size:20px;font-weight:bold">${tot.toFixed(0)} din.</div>
                         </div>
                         <button class="btn" style="width:auto;background:#FFF;color:#E94560;padding:10px 20px" onclick="page='tableorder';render()">Narudžba →</button>
@@ -1421,9 +1444,20 @@ ${'='.repeat(60)}
         function addToTable(itemId) {
             const table = DB.tables.find(t=>t.num===DB.selectedTable);
             const menuItem = DB.menu.find(i=>i.id===itemId);
-            const existing = table.order.find(i=>i.id===itemId);
-            if(existing) existing.qty++;
-            else table.order.push({...menuItem, qty:1});
+            const existing = table.order.find(i=>i.id===itemId && i.createdBy===DB.currentUser.username);
+            
+            if(existing) {
+                existing.qty++;
+            } else {
+                // Dodaj novu stavku sa createdBy poljem
+                table.order.push({
+                    ...menuItem, 
+                    qty: 1,
+                    createdBy: DB.currentUser.username,
+                    addedAt: new Date().toISOString()
+                });
+            }
+            
             save();
             render();
         }
@@ -1432,16 +1466,25 @@ ${'='.repeat(60)}
             const table = DB.tables.find(t=>t.num===DB.selectedTable);
             if(!table) { DB.selectedTable=null; render(); return; }
 
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
+            // Filtriraj samo stavke trenutnog konobara
+            let myOrder = table.order;
+            if (isWaiter) {
+                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+            }
+
             // Inicijalizuj discountedItems ako ne postoji
             if(!table.discountedItems) table.discountedItems = [];
             if(table.discountPercent === undefined) table.discountPercent = 0;
 
-            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
             
-            // Izračunaj popust
+            // Izračunaj popust (SAMO ZA ADMINA)
             let discountAmount = 0;
-            if(table.discountPercent > 0 && table.discountedItems.length > 0) {
-                table.order.forEach(item => {
+            if(!isWaiter && table.discountPercent > 0 && table.discountedItems.length > 0) {
+                myOrder.forEach(item => {
                     if(table.discountedItems.includes(item.id)) {
                         discountAmount += (item.price * item.qty * table.discountPercent / 100);
                     }
@@ -1452,37 +1495,42 @@ ${'='.repeat(60)}
 
             let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
                 <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tables';render()">← ${table.name}</button>
-                <h2>Narudžba</h2>
+                <h2>${isWaiter ? 'Moja Narudžba' : 'Narudžba'}</h2>
                 <div style="width:80px"></div>
             </div>`;
 
-            if(table.order.length === 0) {
+            if(myOrder.length === 0) {
                 h += '<div class="empty"><div style="font-size:64px">🍽️</div><h3>Narudžba je prazna</h3><p>Dodajte stavke</p></div>';
             } else {
-                table.order.forEach(i => {
-                    const isDiscounted = table.discountedItems.includes(i.id);
+                myOrder.forEach(i => {
+                    const isDiscounted = !isWaiter && table.discountedItems.includes(i.id);
                     const itemDiscount = isDiscounted ? (i.price * i.qty * table.discountPercent / 100) : 0;
                     const itemTotal = (i.price * i.qty) - itemDiscount;
                     
                     h += `<div class="card" style="cursor:default;${isDiscounted ? 'border:2px solid #4CAF50' : ''}">
                         <div style="display:flex;justify-content:space-between;align-items:center">
                             <div style="flex:1">
-                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                                    <input type="checkbox" 
-                                           id="disc_${i.id}" 
-                                           ${isDiscounted ? 'checked' : ''} 
-                                           onchange="toggleDiscountItem(${table.num}, ${i.id})"
-                                           style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">
-                                    <h3>${i.name}</h3>
+                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">`;
+                    
+                    // Checkbox za discount SAMO ZA ADMINA
+                    if (!isWaiter) {
+                        h += `<input type="checkbox" 
+                                   id="disc_${i.id}" 
+                                   ${isDiscounted ? 'checked' : ''} 
+                                   onchange="toggleDiscountItem(${table.num}, ${i.id})"
+                                   style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">`;
+                    }
+                    
+                    h += `<h3>${i.name}</h3>
                                     ${isDiscounted && table.discountPercent > 0 ? `<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px">-${table.discountPercent}%</span>` : ''}
                                 </div>
                                 <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.${itemDiscount > 0 ? ` (-${itemDiscount.toFixed(0)} din.)` : ''}</p>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center">
-                                <button onclick="changeTableQty(${table.num},${i.id},-1)" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
+                                <button onclick="changeTableQty(${table.num},${i.id},-1,'${i.createdBy}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
                                 <span style="color:#FFD700;font-weight:bold;min-width:24px;text-align:center">${i.qty}</span>
-                                <button onclick="changeTableQty(${table.num},${i.id},1)" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">+</button>
-                                <button onclick="delTableItem(${table.num},${i.id})" style="background:transparent;color:#E94560;border:none;cursor:pointer;font-size:20px;padding:4px">🗑️</button>
+                                <button onclick="changeTableQty(${table.num},${i.id},1,'${i.createdBy}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">+</button>
+                                <button onclick="delTableItem(${table.num},${i.id},'${i.createdBy}')" style="background:transparent;color:#E94560;border:none;cursor:pointer;font-size:20px;padding:4px">🗑️</button>
                             </div>
                         </div>
                     </div>`;
@@ -1492,8 +1540,11 @@ ${'='.repeat(60)}
                     <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                         <span>Subtotal:</span>
                         <span>${sub.toFixed(0)} din.</span>
-                    </div>
+                    </div>`;
                     
+                // Discount sekcija SAMO ZA ADMINA
+                if (!isWaiter) {
+                    h += `
                     <div style="margin:16px 0;padding:16px;background:#16213E;border-radius:8px">
                         <label style="color:#4CAF50;font-weight:bold;display:block;margin-bottom:8px">
                             💚 Popust (%)
@@ -1514,8 +1565,10 @@ ${'='.repeat(60)}
                     ${discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50">
                         <span>Popust (${table.discountPercent}%):</span>
                         <span>-${discountAmount.toFixed(0)} din.</span>
-                    </div>` : ''}
+                    </div>` : ''}`;
+                }
                     
+                h += `
                     <div style="display:flex;justify-content:space-between;font-size:24px;font-weight:bold;border-top:2px solid #2A2A4A;padding-top:12px">
                         <span>UKUPNO:</span>
                         <span style="color:#FFD700">${tot.toFixed(0)} din.</span>
@@ -1553,21 +1606,36 @@ ${'='.repeat(60)}
             render();
         }
 
-        function changeTableQty(tableNum, itemId, delta) {
+        function changeTableQty(tableNum, itemId, delta, createdBy) {
             const table = DB.tables.find(t=>t.num===tableNum);
-            const item = table.order.find(i=>i.id===itemId);
+            const item = table.order.find(i=>i.id===itemId && i.createdBy===createdBy);
+            
             if(item) {
+                // Proveri da li trenutni korisnik sme da menja ovu stavku
+                const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+                if (isWaiter && item.createdBy !== DB.currentUser.username) {
+                    showAlert('Ne možete menjati stavke drugih konobara!');
+                    return;
+                }
+                
                 item.qty += delta;
-                if(item.qty <= 0) delTableItem(tableNum, itemId);
+                if(item.qty <= 0) delTableItem(tableNum, itemId, createdBy);
                 else { save(); render(); }
             }
         }
 
-        function delTableItem(tableNum, itemId) {
+        function delTableItem(tableNum, itemId, createdBy) {
             const table = DB.tables.find(t=>t.num===tableNum);
-            const item = table.order.find(i=>i.id===itemId);
+            const item = table.order.find(i=>i.id===itemId && i.createdBy===createdBy);
             
             if(item) {
+                // Proveri da li trenutni korisnik sme da briše ovu stavku
+                const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+                if (isWaiter && item.createdBy !== DB.currentUser.username) {
+                    showAlert('Ne možete brisati stavke drugih konobara!');
+                    return;
+                }
+                
                 // Zabeleži uklonjeni artikal
                 DB.removedItems.push({
                     itemId: item.id,
@@ -1582,7 +1650,7 @@ ${'='.repeat(60)}
                 });
             }
             
-            table.order = table.order.filter(i=>i.id!==itemId);
+            table.order = table.order.filter(i=>!(i.id===itemId && i.createdBy===createdBy));
             save();
             render();
         }
@@ -1598,15 +1666,28 @@ ${'='.repeat(60)}
             const table = DB.tables.find(t=>t.num===tableNum);
             if(!table) return;
             
-            if(table.order.length === 0) {
-                showAlert('Sto je već prazan');
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
+            // Filtriraj samo njegove stavke
+            let myOrder = table.order;
+            if (isWaiter) {
+                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+            }
+            
+            if(myOrder.length === 0) {
+                showAlert(isWaiter ? 'Nemate stavki na ovom stolu' : 'Sto je već prazan');
                 return;
             }
             
-            showConfirm('Očisti Sto', `Sigurno želite da očistite ${table.name}?`, (confirmed) => {
+            const message = isWaiter 
+                ? `Sigurno želite da očistite svoje stavke sa ${table.name}?` 
+                : `Sigurno želite da očistite ${table.name}?`;
+            
+            showConfirm('Očisti Sto', message, (confirmed) => {
                 if(confirmed) {
                     // Zapiši sve uklonjene artikle
-                    table.order.forEach(item => {
+                    myOrder.forEach(item => {
                         DB.removedItems.push({
                             itemId: item.id,
                             itemName: item.name,
@@ -1620,10 +1701,17 @@ ${'='.repeat(60)}
                         });
                     });
                     
-                    table.order = [];
-                    table.discount = 0;
-                    table.discountPercent = 0;
-                    table.discountedItems = [];
+                    // KONOBAR: Briši samo njegove stavke
+                    // ADMIN: Briši sve
+                    if (isWaiter) {
+                        table.order = table.order.filter(item => item.createdBy !== currentUsername);
+                    } else {
+                        table.order = [];
+                        table.discount = 0;
+                        table.discountPercent = 0;
+                        table.discountedItems = [];
+                    }
+                    
                     save();
                     
                     // Vrati se na stranicu stolova
@@ -1636,22 +1724,43 @@ ${'='.repeat(60)}
 
         function proceedToPayment(tableNum) {
             const table = DB.tables.find(t=>t.num===tableNum);
-            if(table.order.length === 0) { 
-                showAlert('Sto je prazan'); 
+            
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
+            // Filtriraj samo njegove stavke
+            let myOrder = table.order;
+            if (isWaiter) {
+                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+            }
+            
+            if(myOrder.length === 0) { 
+                showAlert(isWaiter ? 'Nemate stavki na ovom stolu' : 'Sto je prazan'); 
                 return; 
             }
+            
             page = 'payment';
             render();
         }
 
         function renderPayment(c) {
             const table = DB.tables.find(t=>t.num===DB.selectedTable);
-            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
             
-            // Izračunaj popust
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
+            // Filtriraj samo njegove stavke
+            let myOrder = table.order;
+            if (isWaiter) {
+                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+            }
+            
+            const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
+            
+            // Izračunaj popust (SAMO ZA ADMINA)
             let discountAmount = 0;
-            if(table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
-                table.order.forEach(item => {
+            if(!isWaiter && table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
+                myOrder.forEach(item => {
                     if(table.discountedItems.includes(item.id)) {
                         discountAmount += (item.price * item.qty * table.discountPercent / 100);
                     }
@@ -1674,9 +1783,10 @@ ${'='.repeat(60)}
             
             c.innerHTML = `<div style="margin-bottom:24px"><button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tableorder';render()">← Nazad</button></div>
                 <div style="background:#0F3460;padding:20px;border-radius:12px;text-align:center;margin-bottom:24px">
-                    <p style="color:#B0B0B0">${table.name} - Ukupno</p>
+                    <p style="color:#B0B0B0">${table.name} - ${isWaiter ? 'Moje' : 'Ukupno'}</p>
                     ${discountInfo}
                     <h1 style="color:#FFD700;font-size:48px">${tot.toFixed(0)} din.</h1>
+                    ${isWaiter ? `<p style="color:#B0B0B0;font-size:13px;margin-top:8px">(${myOrder.length} ${myOrder.length === 1 ? 'stavka' : 'stavki'})</p>` : ''}
                 </div>
                 <h3 style="text-align:center;margin:24px 0;color:#B0B0B0">Način plaćanja</h3>
                 <div style="display:flex;gap:16px">
@@ -1693,16 +1803,27 @@ ${'='.repeat(60)}
         function confirmPay() {
             if(!payMethod) return;
             const table = DB.tables.find(t=>t.num===DB.selectedTable);
-            const sub = table.order.reduce((s,i)=>s+(i.price*i.qty),0);
+            
+            const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+            const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+            
+            // Filtriraj samo njegove stavke
+            let myOrder = table.order;
+            if (isWaiter) {
+                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+            }
+            
+            const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
             
             console.log('DEBUG confirmPay: Starting payment process');
             console.log('DEBUG confirmPay: Table:', table);
+            console.log('DEBUG confirmPay: My order items:', myOrder.length);
             console.log('DEBUG confirmPay: Subtotal:', sub);
             
-            // Izračunaj popust
+            // Izračunaj popust (SAMO ZA ADMINA)
             let discountAmount = 0;
-            if(table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
-                table.order.forEach(item => {
+            if(!isWaiter && table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
+                myOrder.forEach(item => {
                     if(table.discountedItems.includes(item.id)) {
                         discountAmount += (item.price * item.qty * table.discountPercent / 100);
                     }
@@ -1715,11 +1836,11 @@ ${'='.repeat(60)}
                 id:Date.now(),
                 table:table.num,
                 tableName: table.name,
-                items:[...table.order],
+                items:[...myOrder],  // Samo njegove stavke!
                 sub,
                 disc:discountAmount,
-                discountPercent: table.discountPercent || 0,
-                discountedItems: [...(table.discountedItems || [])],
+                discountPercent: !isWaiter ? (table.discountPercent || 0) : 0,
+                discountedItems: !isWaiter ? [...(table.discountedItems || [])] : [],
                 tot,
                 method:payMethod,
                 createdBy: DB.konobarName || DB.currentUser.username,
@@ -1733,10 +1854,18 @@ ${'='.repeat(60)}
             console.log('DEBUG confirmPay: Orders after push:', DB.orders.length);
             console.log('DEBUG confirmPay: All orders:', DB.orders);
             
-            table.order = [];
-            table.discount = 0;
-            table.discountPercent = 0;
-            table.discountedItems = [];
+            // KONOBAR: Briši samo njegove stavke
+            // ADMIN: Briši sve
+            if (isWaiter) {
+                table.order = table.order.filter(item => item.createdBy !== currentUsername);
+                console.log('DEBUG confirmPay: Waiter - removed only their items. Remaining:', table.order.length);
+            } else {
+                table.order = [];
+                table.discount = 0;
+                table.discountPercent = 0;
+                table.discountedItems = [];
+                console.log('DEBUG confirmPay: Admin - cleared entire table');
+            }
             
             save();
             
