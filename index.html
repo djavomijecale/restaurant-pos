@@ -146,10 +146,15 @@
                 <label style="color:#B0B0B0;display:block;margin-bottom:8px">Ime konobara</label>
                 <input type="text" id="waiterNameInput" placeholder="Npr: Marko Marković">
             </div>
-            <div style="margin-bottom:24px">
+            <div style="margin-bottom:16px">
                 <label style="color:#B0B0B0;display:block;margin-bottom:8px">Šifra</label>
                 <input type="text" id="waiterPasswordInput" placeholder="Šifra za prijavu">
                 <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Konobar će koristiti ovu šifru za prijavu</p>
+            </div>
+            <div style="margin-bottom:24px">
+                <label style="color:#B0B0B0;display:block;margin-bottom:8px">💰 Satnica (din/sat)</label>
+                <input type="number" id="waiterHourlyRateInput" placeholder="Npr: 350" value="350" min="0" step="10">
+                <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Plata se računa: sati × satnica</p>
             </div>
             <div style="display:flex;gap:12px">
                 <button class="btn btn-secondary" onclick="closeWaiterModal()">Odustani</button>
@@ -428,17 +433,20 @@
             const title = document.getElementById('waiterModalTitle');
             const nameInput = document.getElementById('waiterNameInput');
             const passwordInput = document.getElementById('waiterPasswordInput');
+            const hourlyRateInput = document.getElementById('waiterHourlyRateInput');
             
             if(mode === 'add') {
                 title.textContent = '+ Dodaj Konobara';
                 nameInput.value = '';
                 passwordInput.value = '';
+                hourlyRateInput.value = '350'; // Default satnica
             } else if(mode === 'edit' && username) {
                 const waiter = DB.users.find(u => u.username === username);
                 if(waiter) {
                     title.textContent = '✏️ Izmeni Konobara';
                     nameInput.value = waiter.username;
                     passwordInput.value = waiter.password;
+                    hourlyRateInput.value = waiter.hourlyRate || 350; // Koristi postojeću ili default
                 }
             }
             
@@ -454,6 +462,7 @@
         function saveWaiter() {
             const username = document.getElementById('waiterNameInput').value.trim();
             const password = document.getElementById('waiterPasswordInput').value.trim();
+            const hourlyRate = parseFloat(document.getElementById('waiterHourlyRateInput').value) || 350;
             
             if(!username) {
                 showAlert('Molimo unesite ime konobara');
@@ -462,6 +471,11 @@
             
             if(!password) {
                 showAlert('Molimo unesite šifru');
+                return;
+            }
+            
+            if(hourlyRate <= 0) {
+                showAlert('Satnica mora biti veća od 0');
                 return;
             }
             
@@ -478,6 +492,7 @@
                 if(waiter) {
                     waiter.username = username;
                     waiter.password = password;
+                    waiter.hourlyRate = hourlyRate;
                     save();
                     closeWaiterModal();
                     render();
@@ -493,7 +508,8 @@
                 DB.users.push({
                     username: username,
                     password: password,
-                    role: 'konobar'
+                    role: 'konobar',
+                    hourlyRate: hourlyRate
                 });
                 
                 save();
@@ -707,6 +723,11 @@
                             <div class="stat-value" style="color:#4CAF50">${report.orderCount > 0 ? (report.totalRevenue/report.orderCount).toFixed(0) : 0}</div>
                             <div class="stat-label">din.</div>
                         </div>
+                        <div class="stat-card" style="background:linear-gradient(135deg, #4CAF50 0%, #45a049 100%)">
+                            <div class="stat-label" style="color:#FFF">💰 Plata</div>
+                            <div class="stat-value" style="color:#FFD700">${report.salary ? report.salary.toFixed(0) : 0}</div>
+                            <div class="stat-label" style="color:#FFF">din. (${report.hourlyRate || 350}/sat)</div>
+                        </div>
                     </div>
                     
                     <div style="background:#0F3460;padding:24px;border-radius:12px;margin-bottom:20px">
@@ -724,6 +745,90 @@
                             </div>
                         </div>
                     </div>`;
+            
+            // BONUS SEKCIJA - Nova pravila
+            const startDate2 = new Date(report.startTime);
+            const endDate2 = new Date(report.endTime);
+            const startHour = startDate2.getHours();
+            const endHour = endDate2.getHours();
+            const dayOfWeek = startDate2.getDay(); // 0 = nedelja (pazar)
+            const isSunday = dayOfWeek === 0;
+            
+            // Prva smena: 8 AM - 4 PM
+            const isFirstShift = startHour >= 8 && startHour < 14 && endHour >= 15 && endHour <= 17;
+            
+            // Druga smena: 4 PM - 11 PM
+            const isSecondShift = startHour >= 14 && startHour < 20 && endHour >= 22 && endHour <= 23;
+            
+            let bonusEarned = false;
+            let bonusAmount = 0;
+            let bonusMessage = '';
+            let motivationMessage = '';
+            
+            // PRVA SMENA: ≥20,000 din → 1,000 din
+            if (isFirstShift) {
+                if (report.totalRevenue >= 20000) {
+                    bonusEarned = true;
+                    bonusAmount = 1000;
+                    bonusMessage = 'Prva smena - ostvaren prihod od 20,000 din ili više!';
+                } else {
+                    const remaining = 20000 - report.totalRevenue;
+                    motivationMessage = `Još ${remaining.toFixed(0)} din. do bonusa od 1,000 din.`;
+                }
+            }
+            
+            // DRUGA SMENA (SVAKI DAN): ≥60k → 2,000 din, ≥40k → 1,000 din
+            if (isSecondShift) {
+                if (report.totalRevenue >= 60000) {
+                    bonusEarned = true;
+                    bonusAmount = 2000;
+                    bonusMessage = 'Druga smena - ostvaren prihod od 60,000 din ili više!';
+                } else if (report.totalRevenue >= 40000) {
+                    bonusEarned = true;
+                    bonusAmount = 1000;
+                    bonusMessage = 'Druga smena - ostvaren prihod od 40,000 din ili više!';
+                } else {
+                    const remaining = 40000 - report.totalRevenue;
+                    motivationMessage = `Još ${remaining.toFixed(0)} din. do bonusa od 1,000 din.<br>`;
+                    if (report.totalRevenue < 60000) {
+                        const remaining2 = 60000 - report.totalRevenue;
+                        motivationMessage += `Ili ${remaining2.toFixed(0)} din. do bonusa od 2,000 din.`;
+                    }
+                }
+            }
+            
+            if (bonusEarned) {
+                h += `
+                    <div style="background:linear-gradient(135deg, #FFD700 0%, #FFA500 100%);padding:24px;border-radius:12px;margin-bottom:20px;box-shadow:0 4px 16px rgba(255,215,0,0.3);border:2px solid #FFD700">
+                        <div style="text-align:center">
+                            <div style="font-size:64px;margin-bottom:12px">🎁</div>
+                            <h3 style="color:#000;margin-bottom:12px;font-size:24px">ČESTITAMO!</h3>
+                            <p style="color:#000;font-size:16px;margin-bottom:16px">${bonusMessage}</p>
+                            <div style="background:rgba(0,0,0,0.2);padding:16px;border-radius:8px">
+                                <div style="color:#000;font-size:14px;margin-bottom:8px">Prihod: ${report.totalRevenue.toFixed(0)} din.</div>
+                                ${isFirstShift ? '<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 20,000 din. ✅</div>' : ''}
+                                ${isSecondShift && report.totalRevenue >= 60000 ? '<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 60,000 din. ✅</div>' : ''}
+                                ${isSecondShift && report.totalRevenue >= 40000 && report.totalRevenue < 60000 ? '<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 40,000 din. ✅</div>' : ''}
+                                <div style="color:#000;font-size:32px;font-weight:bold;margin-top:12px">BONUS: ${bonusAmount.toFixed(0)} din.</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (motivationMessage) {
+                h += `
+                    <div style="background:#0F3460;padding:24px;border-radius:12px;margin-bottom:20px;border:2px solid #666">
+                        <div style="text-align:center">
+                            <div style="font-size:48px;margin-bottom:12px">💪</div>
+                            <h3 style="color:#FFD700;margin-bottom:12px">${isFirstShift ? 'Prva Smena' : 'Druga Smena'}</h3>
+                            <p style="color:#B0B0B0;font-size:14px;margin-bottom:16px">${motivationMessage.includes('Još') ? 'Još malo do bonusa!' : ''}</p>
+                            <div style="background:#16213E;padding:16px;border-radius:8px">
+                                <div style="color:#FFF;font-size:14px;margin-bottom:8px">Prihod: ${report.totalRevenue.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:12px;margin-top:8px">${motivationMessage}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
             
             if(topItems.length > 0) {
                 h += `<div style="background:#0F3460;padding:24px;border-radius:12px;margin-bottom:20px">
@@ -942,18 +1047,33 @@ ${'='.repeat(60)}
             `;
         }
         
-        function loginWaiter() {
+        async function loginWaiter() {
             const password = document.getElementById('waiterPassword').value.trim();
             const user = DB.users.find(u => u.username === selectedWaiterUsername && u.password === password);
             
             if(user) {
+                // Prikaži loading
+                document.getElementById('content').innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                        <div style="font-size:64px;margin-bottom:20px">🔄</div>
+                        <h2 style="color:#E94560">Prijavljivanje...</h2>
+                        <p style="color:#B0B0B0">Proveravam status radnog dana...</p>
+                    </div>
+                `;
+                
                 DB.currentUser = {username: user.username, role: user.role};
                 // Koristi username kao konobarName
                 DB.konobarName = user.username;
                 save();
                 
-                // Proveri DA LI OVAJ KONOBAR ima aktivan workday
+                console.log('🔄 Učitavam najnovije podatke iz Firebase...');
+                // KLJUČNO: Učitaj najnovije podatke PRE provere workday-a!
+                await loadFromFirebase();
+                
+                // Proveri DA LI OVAJ KONOBAR ima aktivan workday (NAKON učitavanja!)
                 const myWorkday = DB.workdays && DB.workdays[user.username];
+                console.log('✅ Workday status za', user.username, ':', myWorkday ? 'AKTIVAN' : 'NEMA');
+                
                 if(!myWorkday) {
                     page = 'workday';
                 } else {
@@ -965,13 +1085,28 @@ ${'='.repeat(60)}
             }
         }
         
-        function loginAdmin() {
+        async function loginAdmin() {
             const password = document.getElementById('adminPassword').value.trim();
             const admin = DB.users.find(u => u.role === 'admin' && u.password === password);
             
             if(admin) {
+                // Prikaži loading
+                document.getElementById('content').innerHTML = `
+                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                        <div style="font-size:64px;margin-bottom:20px">🔄</div>
+                        <h2 style="color:#E94560">Prijavljivanje...</h2>
+                        <p style="color:#B0B0B0">Učitavam najnovije podatke...</p>
+                    </div>
+                `;
+                
                 DB.currentUser = {username: admin.username, role: admin.role};
                 save();
+                
+                console.log('🔄 Admin login - učitavam najnovije podatke iz Firebase...');
+                // Učitaj najnovije podatke pre nego što admin vidi bilo šta
+                await loadFromFirebase();
+                console.log('✅ Admin podaci učitani');
+                
                 page = 'tables';
                 render();
             } else {
@@ -1102,6 +1237,12 @@ ${'='.repeat(60)}
             const startTime = new Date(myWorkday.startTime);
             const duration = Math.floor((new Date(endTime) - startTime) / 1000 / 60); // minutes
             
+            // RAČUNANJE PLATE - Koristi satnicu konobara
+            const waiterUser = DB.users.find(u => u.username === username);
+            const hourlyRate = waiterUser?.hourlyRate || 350; // Default 350 ako nije postavljena
+            const hours = duration / 60; // sati (sa decimalama)
+            const salary = Math.floor(hours * hourlyRate); // plata (zaokruženo)
+            
             const finalReport = {
                 user: myWorkday.user,
                 startTime: myWorkday.startTime,
@@ -1110,10 +1251,63 @@ ${'='.repeat(60)}
                 totalRevenue: totalRevenue,
                 cashRevenue: cash,
                 cardRevenue: card,
-                orderCount: dayOrders.length
+                orderCount: dayOrders.length,
+                duration: duration,
+                salary: salary,
+                hourlyRate: hourlyRate
             };
             
             localStorage.setItem('lastWorkdayReport', JSON.stringify(finalReport));
+            
+            // Inicijalizuj workdayHistory ako ne postoji
+            if (!DB.workdayHistory) {
+                DB.workdayHistory = [];
+                console.log('⚠️ workdayHistory nije postojao, inicijalizovan!');
+            }
+            
+            // BONUS SISTEM - Nova Pravila
+            const startDate = new Date(myWorkday.startTime);
+            const endDate = new Date(endTime);
+            const startHour = startDate.getHours();
+            const endHour = endDate.getHours();
+            const dayOfWeek = startDate.getDay(); // 0 = nedelja (pazar)
+            const isSunday = dayOfWeek === 0;
+            
+            // Prva smena: 8 AM - 4 PM (16h)
+            const isFirstShift = startHour >= 8 && startHour < 14 && endHour >= 15 && endHour <= 17;
+            
+            // Druga smena: 4 PM (16h) - 11 PM (23h)
+            const isSecondShift = startHour >= 14 && startHour < 20 && endHour >= 22 && endHour <= 23;
+            
+            let bonusEarned = false;
+            let bonusAmount = 0;
+            let bonusReason = '';
+            
+            // PRVA SMENA: 20,000 din → 1,000 din bonus
+            if (isFirstShift && totalRevenue >= 20000) {
+                bonusEarned = true;
+                bonusAmount = 1000;
+                bonusReason = 'Prva smena - prihod ≥ 20,000 din.';
+            }
+            
+            // DRUGA SMENA (SVAKI DAN):
+            if (isSecondShift) {
+                if (totalRevenue >= 60000) {
+                    bonusEarned = true;
+                    bonusAmount = 2000;
+                    bonusReason = 'Druga smena - prihod ≥ 60,000 din.';
+                } else if (totalRevenue >= 40000) {
+                    bonusEarned = true;
+                    bonusAmount = 1000;
+                    bonusReason = 'Druga smena - prihod ≥ 40,000 din.';
+                }
+            }
+            
+            if (bonusEarned) {
+                console.log(`🎁 BONUS OSTVAREN! ${myWorkday.user}: ${bonusAmount} din (${bonusReason})`);
+            }
+            
+            console.log(`💰 PLATA: ${myWorkday.user}: ${salary} din (${(duration/60).toFixed(2)} sati × ${hourlyRate} din/sat)`);
             
             // Dodaj u istoriju sesija
             DB.workdayHistory.push({
@@ -1122,8 +1316,17 @@ ${'='.repeat(60)}
                 logoutTime: endTime,
                 duration: duration,
                 orderCount: dayOrders.length,
-                revenue: totalRevenue
+                revenue: totalRevenue,
+                salary: salary,
+                hourlyRate: hourlyRate,
+                bonusEarned: bonusEarned,
+                bonusAmount: bonusAmount,
+                bonusReason: bonusReason,
+                isFirstShift: isFirstShift,
+                isSecondShift: isSecondShift
             });
+            
+            console.log('✅ Sesija dodata u workdayHistory:', DB.workdayHistory.length, 'sesija ukupno');
             
             // Resetuj samo stolove koje je ovaj konobar koristio
             // ALI NE BRIŠEMO NARUDŽBINE - one ostaju u bazi zauvek!
@@ -1185,17 +1388,36 @@ ${'='.repeat(60)}
                     // Filtriraj stavke za ovog konobara (za prikaz vrednosti)
                     let myItems = t.order;
                     if (isWaiter) {
-                        myItems = t.order.filter(item => item.createdBy === currentUsername);
+                        // Konobar vidi svoje stavke + stare stavke bez createdBy
+                        myItems = t.order.filter(item => 
+                            !item.createdBy || item.createdBy === currentUsername
+                        );
                     }
                     
                     const isOccupied = myItems && Array.isArray(myItems) && myItems.length > 0;
                     const total = isOccupied ? myItems.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
+                    
+                    // Za admina: Proveri koje konobare ima na ovom stolu
+                    let waiterIndicator = '';
+                    if (!isWaiter && t.order.length > 0) {
+                        const waitersOnTable = [...new Set(t.order.map(item => item.createdBy).filter(Boolean))];
+                        if (waitersOnTable.length > 0) {
+                            const waiterColors = ['#4CAF50', '#FF9800', '#9C27B0', '#2196F3', '#E91E63'];
+                            waiterIndicator = '<div style="display:flex;gap:4px;margin-top:4px;justify-content:center">';
+                            waitersOnTable.forEach((waiter, idx) => {
+                                const color = waiterColors[idx % waiterColors.length];
+                                waiterIndicator += `<span style="background:${color};color:#FFF;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold">${waiter}</span>`;
+                            });
+                            waiterIndicator += '</div>';
+                        }
+                    }
                     
                     // Prikaži SVE stolove (i za konobara i za admina)
                     h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
                         <div class="table-icon">🪑</div>
                         <div class="table-number">${t.name || 'Sto ' + t.num}</div>
                         <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
+                        ${waiterIndicator}
                     </div>`;
                 });
             } else {
@@ -1271,7 +1493,9 @@ ${'='.repeat(60)}
             // Filtriraj samo stavke trenutnog konobara
             let myOrder = table.order;
             if (isWaiter) {
-                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+                myOrder = table.order.filter(item => 
+                    !item.createdBy || item.createdBy === currentUsername
+                );
             }
             
             const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
@@ -1470,7 +1694,9 @@ ${'='.repeat(60)}
             // Filtriraj samo stavke trenutnog konobara
             let myOrder = table.order;
             if (isWaiter) {
-                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+                myOrder = table.order.filter(item => 
+                    !item.createdBy || item.createdBy === currentUsername
+                );
             }
 
             // Inicijalizuj discountedItems ako ne postoji
@@ -1525,10 +1751,10 @@ ${'='.repeat(60)}
                                 <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.${itemDiscount > 0 ? ` (-${itemDiscount.toFixed(0)} din.)` : ''}</p>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center">
-                                <button onclick="changeTableQty(${table.num},${i.id},-1,'${i.createdBy}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
+                                <button onclick="changeTableQty(${table.num},${i.id},-1,'${i.createdBy || ''}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
                                 <span style="color:#FFD700;font-weight:bold;min-width:24px;text-align:center">${i.qty}</span>
-                                <button onclick="changeTableQty(${table.num},${i.id},1,'${i.createdBy}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">+</button>
-                                <button onclick="delTableItem(${table.num},${i.id},'${i.createdBy}')" style="background:transparent;color:#E94560;border:none;cursor:pointer;font-size:20px;padding:4px">🗑️</button>
+                                <button onclick="changeTableQty(${table.num},${i.id},1,'${i.createdBy || ''}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">+</button>
+                                <button onclick="delTableItem(${table.num},${i.id},'${i.createdBy || ''}')" style="background:transparent;color:#E94560;border:none;cursor:pointer;font-size:20px;padding:4px">🗑️</button>
                             </div>
                         </div>
                     </div>`;
@@ -1606,12 +1832,24 @@ ${'='.repeat(60)}
 
         function changeTableQty(tableNum, itemId, delta, createdBy) {
             const table = DB.tables.find(t=>t.num===tableNum);
-            const item = table.order.find(i=>i.id===itemId && i.createdBy===createdBy);
+            
+            // Pronađi stavku - backward compatible sa starim stavkama bez createdBy
+            let item;
+            if (createdBy && createdBy !== '') {
+                // Nova stavka sa createdBy
+                item = table.order.find(i=>i.id===itemId && i.createdBy===createdBy);
+            } else {
+                // Stara stavka bez createdBy - pronađi bilo koju sa tim ID-em
+                item = table.order.find(i=>i.id===itemId && !i.createdBy);
+            }
             
             if(item) {
                 // Proveri da li trenutni korisnik sme da menja ovu stavku
                 const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
-                if (isWaiter && item.createdBy !== DB.currentUser.username) {
+                
+                // Admin može sve
+                // Konobar može samo svoje (ili stare stavke bez createdBy)
+                if (isWaiter && item.createdBy && item.createdBy !== DB.currentUser.username) {
                     showAlert('Ne možete menjati stavke drugih konobara!');
                     return;
                 }
@@ -1624,12 +1862,24 @@ ${'='.repeat(60)}
 
         function delTableItem(tableNum, itemId, createdBy) {
             const table = DB.tables.find(t=>t.num===tableNum);
-            const item = table.order.find(i=>i.id===itemId && i.createdBy===createdBy);
+            
+            // Pronađi stavku - backward compatible sa starim stavkama bez createdBy
+            let item;
+            if (createdBy && createdBy !== '') {
+                // Nova stavka sa createdBy
+                item = table.order.find(i=>i.id===itemId && i.createdBy===createdBy);
+            } else {
+                // Stara stavka bez createdBy - pronađi bilo koju sa tim ID-em
+                item = table.order.find(i=>i.id===itemId && !i.createdBy);
+            }
             
             if(item) {
                 // Proveri da li trenutni korisnik sme da briše ovu stavku
                 const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
-                if (isWaiter && item.createdBy !== DB.currentUser.username) {
+                
+                // Admin može sve
+                // Konobar može samo svoje (ili stare stavke bez createdBy)
+                if (isWaiter && item.createdBy && item.createdBy !== DB.currentUser.username) {
                     showAlert('Ne možete brisati stavke drugih konobara!');
                     return;
                 }
@@ -1648,7 +1898,13 @@ ${'='.repeat(60)}
                 });
             }
             
-            table.order = table.order.filter(i=>!(i.id===itemId && i.createdBy===createdBy));
+            // Briši stavku - backward compatible
+            if (createdBy && createdBy !== '') {
+                table.order = table.order.filter(i=>!(i.id===itemId && i.createdBy===createdBy));
+            } else {
+                table.order = table.order.filter(i=>!(i.id===itemId && !i.createdBy));
+            }
+            
             save();
             render();
         }
@@ -1670,7 +1926,9 @@ ${'='.repeat(60)}
             // Filtriraj samo njegove stavke
             let myOrder = table.order;
             if (isWaiter) {
-                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+                myOrder = table.order.filter(item => 
+                    !item.createdBy || item.createdBy === currentUsername
+                );
             }
             
             if(myOrder.length === 0) {
@@ -1729,7 +1987,9 @@ ${'='.repeat(60)}
             // Filtriraj samo njegove stavke
             let myOrder = table.order;
             if (isWaiter) {
-                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+                myOrder = table.order.filter(item => 
+                    !item.createdBy || item.createdBy === currentUsername
+                );
             }
             
             if(myOrder.length === 0) { 
@@ -1750,7 +2010,9 @@ ${'='.repeat(60)}
             // Filtriraj samo njegove stavke
             let myOrder = table.order;
             if (isWaiter) {
-                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+                myOrder = table.order.filter(item => 
+                    !item.createdBy || item.createdBy === currentUsername
+                );
             }
             
             const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
@@ -1808,7 +2070,9 @@ ${'='.repeat(60)}
             // Filtriraj samo njegove stavke
             let myOrder = table.order;
             if (isWaiter) {
-                myOrder = table.order.filter(item => item.createdBy === currentUsername);
+                myOrder = table.order.filter(item => 
+                    !item.createdBy || item.createdBy === currentUsername
+                );
             }
             
             const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
@@ -2027,12 +2291,13 @@ ${'='.repeat(60)}
 
         function renderReport(c) {
             const today = new Date().toISOString().split('T')[0];
-            const isWaiter = DB.currentUser.role === 'waiter';
+            const isWaiter = DB.currentUser.role === 'waiter' || DB.currentUser.role === 'konobar';
             const currentUsername = DB.currentUser.username;
             
             console.log('DEBUG: Total orders in DB:', DB.orders.length);
             console.log('DEBUG: Today date:', today);
             console.log('DEBUG: Is waiter:', isWaiter);
+            console.log('DEBUG: Current user:', currentUsername);
             
             // Filtriraj narudžbine za danas
             let ords = DB.orders.filter(o=> {
@@ -2040,13 +2305,15 @@ ${'='.repeat(60)}
                 return orderDate === today;
             });
             
-            // Ako je konobar, prikaži SAMO njegove narudžbine
+            console.log('DEBUG: Orders today (before filtering):', ords.length);
+            
+            // Ako je konobar, prikaži SAMO njegove narudžbine + stare bez createdBy
             if (isWaiter) {
-                ords = ords.filter(o => o.createdBy === currentUsername);
+                ords = ords.filter(o => !o.createdBy || o.createdBy === currentUsername);
                 console.log('DEBUG: Filtered for waiter:', currentUsername, '- Orders:', ords.length);
             }
             
-            console.log('DEBUG: Orders today:', ords.length);
+            console.log('DEBUG: Orders today (after filtering):', ords.length);
             
             const rev = ords.reduce((s,o)=>s+o.tot,0);
             const cash = ords.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
@@ -2301,7 +2568,7 @@ ${'='.repeat(60)}
         // ============================================
         
         function renderHistory(c) {
-            const isWaiter = DB.currentUser.role === 'waiter';
+            const isWaiter = DB.currentUser.role === 'waiter' || DB.currentUser.role === 'konobar';
             const currentUsername = DB.currentUser.username;
             
             // Date filter state
@@ -2319,6 +2586,9 @@ ${'='.repeat(60)}
             
             const filter = window.historyFilter;
             
+            console.log('DEBUG renderHistory: DB.workdayHistory length:', DB.workdayHistory ? DB.workdayHistory.length : 'undefined');
+            console.log('DEBUG renderHistory: All sessions:', DB.workdayHistory);
+            
             // Filter orders by date range
             const filteredOrders = DB.orders.filter(o => {
                 const orderDate = o.time.split('T')[0];
@@ -2326,15 +2596,17 @@ ${'='.repeat(60)}
             });
             
             // Filter workday sessions by date range
-            const filteredSessions = DB.workdayHistory.filter(s => {
+            const filteredSessions = (DB.workdayHistory || []).filter(s => {
                 const sessionDate = s.loginTime.split('T')[0];
                 return sessionDate >= filter.startDate && sessionDate <= filter.endDate;
             });
             
+            console.log('DEBUG renderHistory: Filtered sessions:', filteredSessions.length);
             
-            // KONOBAR: Filtriraj SAMO njegove podatke
+            
+            // KONOBAR: Filtriraj SAMO njegove podatke + stare bez createdBy
             if (isWaiter) {
-                filteredOrders = filteredOrders.filter(o => o.createdBy === currentUsername);
+                filteredOrders = filteredOrders.filter(o => !o.createdBy || o.createdBy === currentUsername);
                 filteredSessions = filteredSessions.filter(s => s.user === currentUsername);
                 console.log('DEBUG: Waiter history filtered for:', currentUsername);
             }
@@ -2345,6 +2617,11 @@ ${'='.repeat(60)}
             const cash = filteredOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
             const card = filteredOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
             const totalSessions = filteredSessions.length;
+            
+            // NOVA STATISTIKA - Plate i bonusi iz sesija
+            const totalSalary = filteredSessions.reduce((s, session) => s + (session.salary || 0), 0);
+            const totalBonus = filteredSessions.reduce((s, session) => s + (session.bonusAmount || 0), 0);
+            const totalWorkHours = filteredSessions.reduce((s, session) => s + (session.duration || 0), 0) / 60;
             
             // Group by date
             const ordersByDate = {};
@@ -2409,7 +2686,7 @@ ${'='.repeat(60)}
             
             // Render based on view mode
             if (filter.viewMode === 'summary') {
-                h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter);
+                h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours);
             } else if (filter.viewMode === 'orders') {
                 h += renderHistoryOrders(filteredOrders);
             } else if (filter.viewMode === 'sessions') {
@@ -2420,7 +2697,7 @@ ${'='.repeat(60)}
             c.innerHTML = h;
         }
         
-        function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter) {
+        function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours) {
             const avgOrder = orders.length > 0 ? (totalRevenue / orders.length) : 0;
             
             let h = `
@@ -2446,9 +2723,34 @@ ${'='.repeat(60)}
                     </div>
                 </div>
                 
+                <!-- Plate i Bonusi -->
+                <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+                    <h3 style="color:#E94560;margin-bottom:16px">💰 Plate i Bonusi</h3>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+                        <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">💵</div>
+                            <div style="color:#4CAF50;font-size:20px;font-weight:bold;margin:8px 0">${totalSalary.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Ukupne plate (350/sat)</div>
+                            <div style="color:#B0B0B0;font-size:11px;margin-top:4px">${totalWorkHours.toFixed(1)} sati rada</div>
+                        </div>
+                        <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">🎁</div>
+                            <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${totalBonus.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Ukupni bonusi</div>
+                            <div style="color:#B0B0B0;font-size:11px;margin-top:4px">${sessions.filter(s=>s.bonusEarned).length} bonusa ostvareno</div>
+                        </div>
+                        <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                            <div style="font-size:32px">💎</div>
+                            <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${(totalSalary + totalBonus).toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:12px">Ukupna zarada</div>
+                            <div style="color:#B0B0B0;font-size:11px;margin-top:4px">Plata + Bonusi</div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Payment Methods -->
                 <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
-                    <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
+                    <h3 style="color:#E94560;margin-bottom:16px">💳 Načini Plaćanja</h3>
                     <div style="display:flex;gap:16px">
                         <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
                             <div style="font-size:32px">💵</div>
@@ -2599,15 +2901,32 @@ ${'='.repeat(60)}
                     const mins = s.duration % 60;
                     const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
                     
+                    // BONUS INDIKATOR
+                    const bonusBadge = s.bonusEarned ? 
+                        `<div style="background:linear-gradient(135deg, #FFD700 0%, #FFA500 100%);color:#000;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:bold;margin-top:8px;display:inline-block;box-shadow:0 2px 8px rgba(255,215,0,0.3)">
+                            🎁 BONUS OSTVAREN: ${s.bonusAmount.toFixed(0)} din.
+                        </div>` : '';
+                    
+                    // PLATA INDIKATOR
+                    const salaryBadge = s.salary ? 
+                        `<div style="background:#4CAF50;color:#FFF;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:bold;margin-top:8px;display:inline-block;margin-left:${s.bonusEarned ? '8px' : '0'}">
+                            💰 PLATA: ${s.salary.toFixed(0)} din.
+                        </div>` : '';
+                    
+                    const shiftBadge = s.isFirstShift ? 
+                        '<span style="background:#4CAF50;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Prva smena</span>' : 
+                        (s.isSecondShift ? '<span style="background:#9C27B0;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Druga smena</span>' : '');
+                    
                     h += `
-                        <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
+                        <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;${s.bonusEarned ? 'border:2px solid #FFD700;' : ''}">
                             <div style="display:flex;justify-content:space-between;align-items:start">
-                                <div>
-                                    <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user}</div>
+                                <div style="flex:1">
+                                    <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user}${shiftBadge}</div>
                                     <div style="color:#B0B0B0;font-size:11px">${dateStr}</div>
                                     <div style="color:#FFF;font-size:12px;margin-top:4px">
                                         🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
                                     </div>
+                                    ${bonusBadge}${salaryBadge}
                                 </div>
                                 <div style="text-align:right">
                                     <div style="color:#4CAF50;font-size:18px;font-weight:bold">${s.revenue.toFixed(0)} din.</div>
@@ -3060,18 +3379,24 @@ ${'='.repeat(60)}
                 h += '<div class="empty"><div style="font-size:64px">👨‍🍳</div><h3>Nema konobara</h3><p>Dodajte prvog konobara</p></div>';
             } else {
                 waiters.forEach(w => {
+                    // NOVO: Proveri da li je konobar trenutno aktivan
+                    const isActive = DB.workdays && DB.workdays[w.username];
+                    
                     // Statistika konobara
                     const waiterOrders = DB.orders.filter(o => o.createdBy === w.username);
                     const totalRevenue = waiterOrders.reduce((s,o)=>s+o.tot,0);
                     const waiterRemoved = DB.removedItems.filter(r => r.removedBy === w.username);
                     
-                    h += `<div class="card" style="cursor:default">
+                    h += `<div class="card" style="cursor:default;${isActive ? 'border:2px solid #4CAF50' : ''}">
                         <div style="display:flex;justify-content:space-between;align-items:start">
                             <div style="flex:1">
                                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
                                     <div style="font-size:48px">👨‍🍳</div>
                                     <div>
-                                        <h3 style="color:#FFD700">${w.username}</h3>
+                                        <div style="display:flex;align-items:center;gap:8px">
+                                            <h3 style="color:#FFD700">${w.username}</h3>
+                                            ${isActive ? '<span style="background:#4CAF50;color:#FFF;padding:4px 12px;border-radius:12px;font-size:11px;font-weight:bold">🟢 AKTIVAN</span>' : '<span style="background:#666;color:#FFF;padding:4px 12px;border-radius:12px;font-size:11px">⚪ OFFLINE</span>'}
+                                        </div>
                                         <p style="color:#B0B0B0;font-size:13px">Šifra: ${'•'.repeat(w.password.length)}</p>
                                     </div>
                                 </div>
@@ -3088,6 +3413,11 @@ ${'='.repeat(60)}
                                     <div style="background:#16213E;padding:8px;border-radius:6px;text-align:center">
                                         <div style="color:#B0B0B0;font-size:11px">Uklonjeno</div>
                                         <div style="color:#FF9800;font-size:18px;font-weight:bold">${waiterRemoved.length}</div>
+                                    </div>
+                                    <div style="background:#4CAF50;padding:8px;border-radius:6px;text-align:center">
+                                        <div style="color:#FFF;font-size:11px">💰 Satnica</div>
+                                        <div style="color:#FFD700;font-size:18px;font-weight:bold">${w.hourlyRate || 350}</div>
+                                        <div style="color:#FFF;font-size:10px">din/sat</div>
                                     </div>
                                 </div>
                             </div>
