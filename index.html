@@ -1164,7 +1164,7 @@ ${'='.repeat(60)}
             const currentUsername = DB.currentUser ? DB.currentUser.username : null;
             
             let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px"><h2>🪑 Izaberi Sto</h2>';
-            if(DB.currentUser && !isWaiter) {
+            if(DB.currentUser) {
                 h += '<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page=\'edittables\';render()">✏️ Izmeni Stolove</button>';
             }
             h += '</div><div class="table-grid">';
@@ -1182,7 +1182,7 @@ ${'='.repeat(60)}
                         t.order = []; // Fix it
                     }
                     
-                    // Filtriraj stavke za ovog konobara
+                    // Filtriraj stavke za ovog konobara (za prikaz vrednosti)
                     let myItems = t.order;
                     if (isWaiter) {
                         myItems = t.order.filter(item => item.createdBy === currentUsername);
@@ -1191,14 +1191,12 @@ ${'='.repeat(60)}
                     const isOccupied = myItems && Array.isArray(myItems) && myItems.length > 0;
                     const total = isOccupied ? myItems.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
                     
-                    // Prikaži sto samo ako admin ILI ako konobar ima stavke na njemu
-                    if (!isWaiter || isOccupied) {
-                        h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
-                            <div class="table-icon">🪑</div>
-                            <div class="table-number">${t.name || 'Sto ' + t.num}</div>
-                            <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
-                        </div>`;
-                    }
+                    // Prikaži SVE stolove (i za konobara i za admina)
+                    h += `<div class="table-card ${isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
+                        <div class="table-icon">🪑</div>
+                        <div class="table-number">${t.name || 'Sto ' + t.num}</div>
+                        <div class="table-status">${isOccupied ? total.toFixed(0)+' din.' : 'Slobodan'}</div>
+                    </div>`;
                 });
             } else {
                 console.error('❌ DB.tables is not an array:', typeof DB.tables, DB.tables);
