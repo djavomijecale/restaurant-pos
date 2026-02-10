@@ -1995,9 +1995,9 @@ ${'='.repeat(60)}
                                style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">`;
                     
                     h += `<h3>${i.name}</h3>
-                                    ${isDiscounted && table.discountPercent > 0 ? `<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px">-${table.discountPercent}%</span>` : ''}
+                                    ${isDiscounted && table.discountPercent > 0 ? '<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px'>-' + table.discountPercent + '%</span>' : ''}
                                 </div>
-                                <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.${itemDiscount > 0 ? ` (-${itemDiscount.toFixed(0)} din.)` : ''}</p>
+                                <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.${itemDiscount > 0 ? ' (-' + itemDiscount.toFixed(0) + ' din.)' : ''}</p>
                             </div>
                             <div style="display:flex;gap:8px;align-items:center">
                                 <button onclick="changeTableQty(${table.num},${i.id},-1,'${i.createdBy || ''}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
@@ -2019,7 +2019,7 @@ ${'='.repeat(60)}
                     <div style="margin:16px 0;padding:16px;background:#16213E;border-radius:8px">
                         <label style="color:#4CAF50;font-weight:bold;display:block;margin-bottom:8px">
                             💚 Popust (%)
-                            ${table.discountedItems.length > 0 ? `<span style="color:#B0B0B0;font-size:12px;font-weight:normal"> - ${table.discountedItems.length} ${table.discountedItems.length === 1 ? 'artikal' : 'artikla'} označeno</span>` : ''}
+                            ${table.discountedItems.length > 0 ? '<span style="color:#B0B0B0;font-size:12px;font-weight:normal"> - ' + table.discountedItems.length + ' ' + (table.discountedItems.length === 1 ? 'artikal' : 'artikla') + ' označeno</span>' : ''}
                         </label>
                         <input type="number" 
                                value="${table.discountPercent}" 
@@ -2033,10 +2033,7 @@ ${'='.repeat(60)}
                         </p>
                     </div>
                     
-                    ${discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50">
-                        <span>Popust (${table.discountPercent}%):</span>
-                        <span>-${discountAmount.toFixed(0)} din.</span>
-                    </div>` : ''}
+                    ${discountAmount > 0 ? '<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50"><span>Popust (' + table.discountPercent + '%):</span><span>-' + discountAmount.toFixed(0) + ' din.</span></div>' : ''}
                     
                     <div style="display:flex;justify-content:space-between;font-size:24px;font-weight:bold;border-top:2px solid #2A2A4A;padding-top:12px">
                         <span>UKUPNO:</span>
