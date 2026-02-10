@@ -35,6 +35,134 @@
         .nav-item span:last-child { font-size: clamp(9px, 2.5vw, 11px); }
         .card { background: #0F3460; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.3s; }
         .card:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3); }
+        
+        /* Grid layout za artikle - samo na većim ekranima */
+        .menu-items-container { display: flex; flex-direction: column; gap: 12px; }
+        
+        @media (min-width: 768px) {
+            .menu-items-container {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 16px;
+            }
+            
+            .menu-item-card {
+                background: #0F3460;
+                border-radius: 12px;
+                padding: 24px;
+                cursor: pointer;
+                transition: all 0.3s;
+                border: 3px solid transparent;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                min-height: 180px;
+                justify-content: space-between;
+            }
+            
+            .menu-item-card:hover {
+                border-color: #E94560;
+                transform: translateY(-4px);
+                box-shadow: 0 8px 25px rgba(233, 69, 96, 0.4);
+            }
+            
+            .menu-item-card:active {
+                transform: scale(0.98);
+            }
+            
+            .menu-item-icon {
+                font-size: 48px;
+                margin-bottom: 12px;
+            }
+            
+            .menu-item-details {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 100%;
+            }
+            
+            .menu-item-name {
+                font-size: 18px;
+                font-weight: bold;
+                margin-bottom: 8px;
+            }
+            
+            .menu-item-desc {
+                color: #B0B0B0;
+                font-size: 12px;
+                margin-bottom: 8px;
+                flex: 1;
+            }
+            
+            .menu-item-group {
+                color: #FFD700;
+                font-size: 11px;
+                margin-bottom: 8px;
+            }
+            
+            .menu-item-price {
+                color: #FFD700;
+                font-size: 24px;
+                font-weight: bold;
+                margin-top: 8px;
+            }
+        }
+        
+        /* Mobilni prikaz - lista kao i pre */
+        @media (max-width: 767px) {
+            .menu-item-card {
+                background: #0F3460;
+                border-radius: 12px;
+                padding: 16px;
+                margin-bottom: 12px;
+                cursor: pointer;
+                transition: all 0.3s;
+                display: flex;
+                align-items: center;
+                gap: 16px;
+            }
+            
+            .menu-item-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 15px rgba(233, 69, 96, 0.3);
+            }
+            
+            .menu-item-icon {
+                font-size: 40px;
+                flex-shrink: 0;
+            }
+            
+            .menu-item-details {
+                flex: 1;
+            }
+            
+            .menu-item-name {
+                font-size: 16px;
+                font-weight: bold;
+                margin-bottom: 4px;
+            }
+            
+            .menu-item-desc {
+                color: #B0B0B0;
+                font-size: 13px;
+                margin-bottom: 4px;
+            }
+            
+            .menu-item-group {
+                color: #FFD700;
+                font-size: 11px;
+            }
+            
+            .menu-item-price {
+                color: #FFD700;
+                font-size: 20px;
+                font-weight: bold;
+                text-align: right;
+                flex-shrink: 0;
+            }
+        }
         .btn { background: #E94560; color: #FFF; border: none; padding: 14px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%; transition: all 0.3s; }
         .btn:hover { background: #D63051; transform: translateY(-2px); }
         .btn:disabled { background: #555; cursor: not-allowed; transform: none; }
@@ -1802,18 +1930,48 @@ ${'='.repeat(60)}
             }
             
             // Display items
+            h += '<div class="menu-items-container">';
             items.forEach(i => {
-                h += `<div class="card" onclick="addToTable(${i.id})">
-                    <div style="display:flex;justify-content:space-between;align-items:center">
-                        <div>
-                            <h3>${i.name}</h3>
-                            <p style="color:#B0B0B0;font-size:13px">${i.desc || ''}</p>
-                            ${i.group ? `<span style="color:#FFD700;font-size:11px">📁 ${i.group}</span>` : ''}
-                        </div>
-                        <div style="color:#FFD700;font-size:20px;font-weight:bold">${i.price} din.</div>
-                    </div>
+                // Odaberi emoji na osnovu kategorije/imena
+                let emoji = '🍽️';
+                if(i.cat === 'Hrana') {
+                    if(i.name.toLowerCase().includes('ćevap')) emoji = '🥙';
+                    else if(i.name.toLowerCase().includes('pileć')) emoji = '🍗';
+                    else if(i.name.toLowerCase().includes('šiš') || i.name.toLowerCase().includes('kebab')) emoji = '🍢';
+                    else if(i.name.toLowerCase().includes('burger')) emoji = '🍔';
+                    else if(i.name.toLowerCase().includes('pizza')) emoji = '🍕';
+                    else if(i.name.toLowerCase().includes('pljeskavic')) emoji = '🥩';
+                    else emoji = '🍽️';
+                } else if(i.cat === 'Piće') {
+                    if(i.name.toLowerCase().includes('coca') || i.name.toLowerCase().includes('cola')) emoji = '🥤';
+                    else if(i.name.toLowerCase().includes('pivo')) emoji = '🍺';
+                    else if(i.name.toLowerCase().includes('ayran')) emoji = '🥛';
+                    else if(i.name.toLowerCase().includes('sok')) emoji = '🧃';
+                    else if(i.name.toLowerCase().includes('kafa') || i.name.toLowerCase().includes('coffee')) emoji = '☕';
+                    else if(i.name.toLowerCase().includes('voda')) emoji = '💧';
+                    else emoji = '🥤';
+                } else if(i.cat === 'Dezert') {
+                    if(i.name.toLowerCase().includes('baklava')) emoji = '🍰';
+                    else if(i.name.toLowerCase().includes('tulumba')) emoji = '🍩';
+                    else if(i.name.toLowerCase().includes('sladoled')) emoji = '🍦';
+                    else emoji = '🍰';
+                }
+                
+                h += `<div class="menu-item-card" onclick="addToTable(${i.id})">
+                    <div class="menu-item-icon">${emoji}</div>
+                    <div class="menu-item-details">
+                        <div class="menu-item-name">${i.name}</div>`;
+                if(i.desc) {
+                    h += `<div class="menu-item-desc">${i.desc}</div>`;
+                }
+                if(i.group) {
+                    h += `<div class="menu-item-group">📁 ${i.group}</div>`;
+                }
+                h += `</div>
+                    <div class="menu-item-price">${i.price} din.</div>
                 </div>`;
             });
+            h += '</div>';
             
             if(myOrder.length > 0) {
                 h += `<div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#E94560;padding:12px 24px;border-radius:12px;box-shadow:0 4px 20px rgba(233,69,96,0.5);max-width:400px;width:90%">
