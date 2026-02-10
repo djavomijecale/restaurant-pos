@@ -934,10 +934,17 @@
                             <h3 style="color:#000;margin-bottom:12px;font-size:24px">ČESTITAMO!</h3>
                             <p style="color:#000;font-size:16px;margin-bottom:16px">${bonusMessage}</p>
                             <div style="background:rgba(0,0,0,0.2);padding:16px;border-radius:8px">
-                                <div style="color:#000;font-size:14px;margin-bottom:8px">Prihod: ${report.totalRevenue.toFixed(0)} din.</div>
-                                ${isFirstShift ? '<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 20,000 din. ✅</div>' : ''}
-                                ${isSecondShift && report.totalRevenue >= 60000 ? '<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 60,000 din. ✅</div>' : ''}
-                                ${isSecondShift && report.totalRevenue >= 40000 && report.totalRevenue < 60000 ? '<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 40,000 din. ✅</div>' : ''}
+                                <div style="color:#000;font-size:14px;margin-bottom:8px">Prihod: ${report.totalRevenue.toFixed(0)} din.</div>`;
+                                if(isFirstShift) {
+                                    h += `<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 20,000 din. ✅</div>`;
+                                }
+                                if(isSecondShift && report.totalRevenue >= 60000) {
+                                    h += `<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 60,000 din. ✅</div>`;
+                                }
+                                if(isSecondShift && report.totalRevenue >= 40000 && report.totalRevenue < 60000) {
+                                    h += `<div style="color:#000;font-size:14px;margin-bottom:8px">Prag: 40,000 din. ✅</div>`;
+                                }
+                                h += `
                                 <div style="color:#000;font-size:32px;font-weight:bold;margin-top:12px">BONUS: ${bonusAmount.toFixed(0)} din.</div>
                             </div>
                         </div>
@@ -1994,12 +2001,18 @@ ${'='.repeat(60)}
                                onchange="toggleDiscountItem(${table.num}, ${i.id})"
                                style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">`;
                     
-                    h += `<h3>${i.name}</h3>
-                                    ${isDiscounted && table.discountPercent > 0 ? '<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px'>-' + table.discountPercent + '%</span>' : ''}
-                                </div>
-                                <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.${itemDiscount > 0 ? ' (-' + itemDiscount.toFixed(0) + ' din.)' : ''}</p>
-                            </div>
-                            <div style="display:flex;gap:8px;align-items:center">
+                    h += `<h3>${i.name}</h3>`;
+                    if(isDiscounted && table.discountPercent > 0) {
+                        h += `<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px">-${table.discountPercent}%</span>`;
+                    }
+                    h += `</div>
+                                <p style="color:#B0B0B0;font-size:13px">${i.price} × ${i.qty} = ${i.price*i.qty} din.`;
+                    if(itemDiscount > 0) {
+                        h += ` (-${itemDiscount.toFixed(0)} din.)`;
+                    }
+                    h += `</p>
+                            </div>`;
+                    h += `<div style="display:flex;gap:8px;align-items:center">
                                 <button onclick="changeTableQty(${table.num},${i.id},-1,'${i.createdBy || ''}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">−</button>
                                 <span style="color:#FFD700;font-weight:bold;min-width:24px;text-align:center">${i.qty}</span>
                                 <button onclick="changeTableQty(${table.num},${i.id},1,'${i.createdBy || ''}')" style="background:#16213E;color:#FFF;border:none;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">+</button>
@@ -2019,8 +2032,12 @@ ${'='.repeat(60)}
                     <div style="margin:16px 0;padding:16px;background:#16213E;border-radius:8px">
                         <label style="color:#4CAF50;font-weight:bold;display:block;margin-bottom:8px">
                             💚 Popust (%)
-                            ${table.discountedItems.length > 0 ? '<span style="color:#B0B0B0;font-size:12px;font-weight:normal"> - ' + table.discountedItems.length + ' ' + (table.discountedItems.length === 1 ? 'artikal' : 'artikla') + ' označeno</span>' : ''}
                         </label>
+`;
+                        if(table.discountedItems.length > 0) {
+                            h += `<span style="color:#B0B0B0;font-size:12px;font-weight:normal"> - ${table.discountedItems.length} ${table.discountedItems.length === 1 ? 'artikal' : 'artikla'} označeno</span>`;
+                        }
+                        h += `
                         <input type="number" 
                                value="${table.discountPercent}" 
                                onchange="setTableDiscountPercent(${table.num}, this.value)" 
@@ -2033,7 +2050,14 @@ ${'='.repeat(60)}
                         </p>
                     </div>
                     
-                    ${discountAmount > 0 ? '<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50"><span>Popust (' + table.discountPercent + '%):</span><span>-' + discountAmount.toFixed(0) + ' din.</span></div>' : ''}
+`;
+                    if(discountAmount > 0) {
+                        h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50">
+                            <span>Popust (${table.discountPercent}%):</span>
+                            <span>-${discountAmount.toFixed(0)} din.</span>
+                        </div>`;
+                    }
+                    h += `
                     
                     <div style="display:flex;justify-content:space-between;font-size:24px;font-weight:bold;border-top:2px solid #2A2A4A;padding-top:12px">
                         <span>UKUPNO:</span>
@@ -3692,7 +3716,13 @@ ${'='.repeat(60)}
                                     <div>
                                         <div style="display:flex;align-items:center;gap:8px">
                                             <h3 style="color:#FFD700">${w.username}</h3>
-                                            ${isActive ? '<span style="background:#4CAF50;color:#FFF;padding:4px 12px;border-radius:12px;font-size:11px;font-weight:bold">🟢 AKTIVAN</span>' : '<span style="background:#666;color:#FFF;padding:4px 12px;border-radius:12px;font-size:11px">⚪ OFFLINE</span>'}
+`;
+                                            if(isActive) {
+                                                h += `<span style="background:#4CAF50;color:#FFF;padding:4px 12px;border-radius:12px;font-size:11px;font-weight:bold">🟢 AKTIVAN</span>`;
+                                            } else {
+                                                h += `<span style="background:#666;color:#FFF;padding:4px 12px;border-radius:12px;font-size:11px">⚪ OFFLINE</span>`;
+                                            }
+                                            h += `
                                         </div>
                                         <p style="color:#B0B0B0;font-size:13px">Šifra: ${'•'.repeat(w.password.length)}</p>
                                     </div>
