@@ -8,6 +8,11 @@
     <!-- SheetJS for Excel import -->
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -162,6 +167,52 @@
             </div>
         </div>
     </div>
+    
+    <!-- MODAL ZA DEPOZIT -->
+    <div class="modal" id="depositModal">
+        <div class="modal-content">
+            <h2 style="color:#E94560;margin-bottom:16px">💰 Unesi Depozit</h2>
+            <p style="color:#B0B0B0;margin-bottom:20px">
+                Unesite početni depozit (gotovinu) sa kojim započinjete smenu. 
+                Ovaj iznos će biti sabran sa otkucanim prihodom.
+            </p>
+            <div style="margin-bottom:24px">
+                <label style="color:#FFD700;display:block;margin-bottom:8px;font-weight:bold">Depozit (din.)</label>
+                <input type="number" id="depositInput" placeholder="Npr: 5000" value="0" min="0" step="100"
+                    style="font-size:24px;text-align:center;padding:16px">
+                <p style="color:#B0B0B0;font-size:12px;margin-top:8px">💡 Možete uneti 0 ako nemate depozit</p>
+            </div>
+            <div style="display:flex;gap:12px">
+                <button class="btn btn-secondary" onclick="closeDepositModal()">Odustani</button>
+                <button class="btn" onclick="confirmDeposit()">✅ Potvrdi i Otvori Dan</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal za smanjenje keša -->
+    <div class="modal" id="cashReductionModal">
+        <div class="modal-content">
+            <h2 style="color:#E94560;margin-bottom:16px">💸 Smanji Keš</h2>
+            <p style="color:#B0B0B0;margin-bottom:20px">
+                Unesite iznos za koji želite da smanjite keš (npr. kusur, greška, povraćaj novca)
+            </p>
+            <div style="margin-bottom:16px">
+                <label style="color:#FFD700;display:block;margin-bottom:8px;font-weight:bold">Iznos (din.)</label>
+                <input type="number" id="cashReductionAmount" placeholder="Npr: 500" min="0" step="10"
+                    style="font-size:20px;text-align:center;padding:12px">
+            </div>
+            <div style="margin-bottom:24px">
+                <label style="color:#FFD700;display:block;margin-bottom:8px;font-weight:bold">Razlog *</label>
+                <textarea id="cashReductionReason" placeholder="Npr: Dat kusur gostu, greška u kasiranju..."
+                    rows="3" style="width:100%;padding:12px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:14px;resize:vertical"></textarea>
+                <p style="color:#B0B0B0;font-size:12px;margin-top:8px">⚠️ Razlog je obavezan!</p>
+            </div>
+            <div style="display:flex;gap:12px">
+                <button class="btn btn-secondary" onclick="closeCashReductionModal()">Odustani</button>
+                <button class="btn" onclick="confirmCashReduction()">✅ Potvrdi Smanjenje</button>
+            </div>
+        </div>
+    </div>
     <div class="app">
         <div class="header">
             <h1>🍽️ Restaurant POS</h1>
@@ -189,8 +240,49 @@
         // ============================================
         const FIREBASE_CONFIG = {
             apiKey: "AIzaSyC1bcysO7v34xhqLTJlTNXpK_XtCS372aE",
-            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app"
+            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app",
+            authDomain: "restaurant-pos-5ecf4.firebaseapp.com",
+            projectId: "restaurant-pos-5ecf4"
         };
+        
+        // ============================================
+        // FIREBASE INITIALIZATION & AUTHENTICATION
+        // ============================================
+        // Inicijalizuj Firebase
+        firebase.initializeApp(FIREBASE_CONFIG);
+        const auth = firebase.auth();
+        const database = firebase.database();
+        
+        // 🔒 ANONYMOUS AUTHENTICATION - Za sigurnost baze
+        let isFirebaseAuthReady = false;
+        
+        console.log('🔄 Autentifikacija u toku...');
+        auth.signInAnonymously()
+            .then(() => {
+                console.log('✅ Firebase Auth: Uspešno autentifikovan!');
+                console.log('✅ Baza je sada zaštićena - samo tvoja aplikacija može da pristupi!');
+                isFirebaseAuthReady = true;
+                
+                // Učitaj podatke nakon uspešne autentifikacije
+                loadFromFirebase();
+            })
+            .catch((error) => {
+                console.error('❌ Firebase Auth greška:', error.code, error.message);
+                showAlert('Greška u autentifikaciji. Proverite internet konekciju.');
+                isFirebaseAuthReady = false;
+            });
+        
+        // Slušaj promene auth statusa
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                console.log('✅ User ID:', user.uid);
+                console.log('✅ Anonymous:', user.isAnonymous);
+                isFirebaseAuthReady = true;
+            } else {
+                console.log('❌ Korisnik nije autentifikovan');
+                isFirebaseAuthReady = false;
+            }
+        });
         
         // ============================================
         // DATABASE OBJECT
@@ -214,7 +306,7 @@
         let isLoading = false;
         
         // ============================================
-        // FIREBASE REST API FUNCTIONS WITH AUTH
+        // FIREBASE SDK FUNCTIONS (AUTHENTICATED)
         // ============================================
         
         // Load data from Firebase
@@ -222,25 +314,23 @@
             console.log('🔄 Loading data from Firebase...');
             isLoading = true;
             
-            try {
-                // Add auth parameter to URL
-                const url = `${FIREBASE_CONFIG.databaseURL}/.json?auth=${FIREBASE_CONFIG.apiKey}`;
-                
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    mode: 'cors'
+            // Sačekaj da se autentifikacija završi
+            if (!isFirebaseAuthReady) {
+                console.log('⏳ Čekam autentifikaciju...');
+                await new Promise(resolve => {
+                    const checkAuth = setInterval(() => {
+                        if (isFirebaseAuthReady) {
+                            clearInterval(checkAuth);
+                            resolve();
+                        }
+                    }, 100);
                 });
+            }
+            
+            try {
+                const snapshot = await database.ref('/').once('value');
+                const data = snapshot.val();
                 
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('Response error:', errorText);
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
-                }
-                
-                const data = await response.json();
                 console.log('📦 Received data:', data);
                 
                 if (data && typeof data === 'object') {
@@ -324,6 +414,12 @@
         async function saveToFirebase() {
             if (isLoading) return;
             
+            // Proveri da li je auth spreman
+            if (!isFirebaseAuthReady) {
+                console.log('⏳ Autentifikacija nije spremna, čekam...');
+                return;
+            }
+            
             console.log('💾 Saving to Firebase...');
             
             const dataToSave = {
@@ -339,24 +435,7 @@
             };
             
             try {
-                // Add auth parameter to URL
-                const url = `${FIREBASE_CONFIG.databaseURL}/.json?auth=${FIREBASE_CONFIG.apiKey}`;
-                
-                const response = await fetch(url, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    mode: 'cors',
-                    body: JSON.stringify(dataToSave)
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error('Save error:', errorText);
-                    throw new Error(`HTTP ${response.status}: ${errorText}`);
-                }
-                
+                await database.ref('/').set(dataToSave);
                 console.log('✅ Saved to Firebase');
                 
             } catch (error) {
@@ -377,19 +456,17 @@
         let lastUpdate = null;
         
         async function checkForUpdates() {
+            if (!isFirebaseAuthReady) return; // Ne proveravaj ako nije autentifikovan
+            
             try {
-                const url = `${FIREBASE_CONFIG.databaseURL}/lastUpdated.json?auth=${FIREBASE_CONFIG.apiKey}`;
-                const response = await fetch(url, { mode: 'cors' });
+                const snapshot = await database.ref('/lastUpdated').once('value');
+                const serverLastUpdate = snapshot.val();
                 
-                if (response.ok) {
-                    const serverLastUpdate = await response.json();
-                    
-                    if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
-                        console.log('🔄 Updates detected, reloading...');
-                        lastUpdate = serverLastUpdate;
-                        await loadFromFirebase();
-                        render();
-                    }
+                if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
+                    console.log('🔄 Updates detected, reloading...');
+                    lastUpdate = serverLastUpdate;
+                    await loadFromFirebase();
+                    render();
                 }
             } catch (error) {
                 console.error('❌ Error checking updates:', error);
@@ -710,10 +787,22 @@
                     
                     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:20px">
                         <div class="stat-card">
-                            <div class="stat-label">Ukupan prihod</div>
+                            <div class="stat-label">Otkucano</div>
                             <div class="stat-value">${report.totalRevenue.toFixed(0)}</div>
                             <div class="stat-label">din.</div>
                         </div>
+                        ${report.deposit && report.deposit > 0 ? `
+                        <div class="stat-card" style="background:linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)">
+                            <div class="stat-label" style="color:#FFF">💵 Depozit</div>
+                            <div class="stat-value" style="color:#FFD700">${report.deposit.toFixed(0)}</div>
+                            <div class="stat-label" style="color:#FFF">din.</div>
+                        </div>
+                        <div class="stat-card" style="background:linear-gradient(135deg, #FF6F00 0%, #E65100 100%)">
+                            <div class="stat-label" style="color:#FFF">📊 Ukupan Učinak</div>
+                            <div class="stat-value" style="color:#FFD700">${report.totalPerformance.toFixed(0)}</div>
+                            <div class="stat-label" style="color:#FFF">din.</div>
+                        </div>
+                        ` : ''}
                         <div class="stat-card">
                             <div class="stat-label">Broj narudžbi</div>
                             <div class="stat-value" style="color:#E94560">${report.orderCount}</div>
@@ -744,6 +833,32 @@
                                 <div style="color:#B0B0B0;font-size:12px">Card (${report.totalRevenue > 0 ? Math.round(report.cardRevenue/report.totalRevenue*100) : 0}%)</div>
                             </div>
                         </div>
+                        
+                        ${report.cashReductions && report.cashReductions.length > 0 ? `
+                        <div style="margin-top:20px;padding:16px;background:#16213E;border-radius:8px;border-left:4px solid #FF6B6B">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                                <h4 style="color:#FF6B6B;margin:0">💸 Smanjenja Keša (${report.cashReductions.length})</h4>
+                                <span style="color:#FF6B6B;font-weight:bold">-${report.totalCashReductions.toFixed(0)} din.</span>
+                            </div>
+                            ${report.cashReductions.map(r => {
+                                const time = new Date(r.timestamp).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                                return `
+                                <div style="background:#0F3460;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px">
+                                    <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                                        <span style="color:#B0B0B0">${time}</span>
+                                        <span style="color:#FF6B6B;font-weight:bold">-${r.amount.toFixed(0)} din.</span>
+                                    </div>
+                                    <div style="color:#FFF">${r.reason}</div>
+                                </div>`;
+                            }).join('')}
+                            <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2A2A4A">
+                                <div style="display:flex;justify-content:space-between;align-items:center">
+                                    <span style="color:#B0B0B0;font-size:14px">Keš nakon smanjenja:</span>
+                                    <span style="color:#FFD700;font-weight:bold;font-size:18px">${report.finalCash.toFixed(0)} din.</span>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
                     </div>`;
             
             // BONUS SEKCIJA - Nova pravila
@@ -1198,21 +1313,119 @@ ${'='.repeat(60)}
         }
 
         function openWorkday() {
+            // Prvo otvori modal za depozit
+            const modal = document.getElementById('depositModal');
+            const input = document.getElementById('depositInput');
+            input.value = '0';
+            modal.classList.add('show');
+            input.focus();
+        }
+        
+        function closeDepositModal() {
+            document.getElementById('depositModal').classList.remove('show');
+        }
+        
+        function confirmDeposit() {
+            const depositAmount = parseFloat(document.getElementById('depositInput').value) || 0;
+            
+            if (depositAmount < 0) {
+                showAlert('Depozit ne može biti negativan');
+                return;
+            }
+            
             const username = DB.currentUser.username;
             
             // Inicijalizuj workdays ako ne postoji
             if (!DB.workdays) DB.workdays = {};
             
-            // Kreiraj workday samo za ovog konobara
+            // Kreiraj workday sa depozitom
             DB.workdays[username] = {
                 user: username,
                 startTime: new Date().toISOString(),
-                startOrders: DB.orders.length
+                startOrders: DB.orders.length,
+                deposit: depositAmount,
+                cashReductions: [] // Inicijalizuj niz za smanjenja keša
             };
             
             save();
+            closeDepositModal();
             page = 'tables';
             render();
+            
+            if (depositAmount > 0) {
+                showAlert(`✅ Radni dan otvoren sa depozitom: ${depositAmount.toFixed(0)} din.`);
+            } else {
+                showAlert(`✅ Radni dan otvoren bez depozita`);
+            }
+        }
+        
+        // SMANJENJE KEŠA
+        function openCashReductionModal() {
+            const username = DB.currentUser.username;
+            const myWorkday = DB.workdays && DB.workdays[username];
+            
+            if (!myWorkday) {
+                showAlert('Niste otvorili radni dan!');
+                return;
+            }
+            
+            const modal = document.getElementById('cashReductionModal');
+            document.getElementById('cashReductionAmount').value = '';
+            document.getElementById('cashReductionReason').value = '';
+            modal.classList.add('show');
+            document.getElementById('cashReductionAmount').focus();
+        }
+        
+        function closeCashReductionModal() {
+            document.getElementById('cashReductionModal').classList.remove('show');
+        }
+        
+        function confirmCashReduction() {
+            const amount = parseFloat(document.getElementById('cashReductionAmount').value) || 0;
+            const reason = document.getElementById('cashReductionReason').value.trim();
+            
+            // Validacija
+            if (amount <= 0) {
+                showAlert('Iznos mora biti veći od 0');
+                return;
+            }
+            
+            if (!reason) {
+                showAlert('Morate uneti razlog!');
+                return;
+            }
+            
+            if (reason.length < 5) {
+                showAlert('Razlog mora imati najmanje 5 karaktera');
+                return;
+            }
+            
+            const username = DB.currentUser.username;
+            const myWorkday = DB.workdays && DB.workdays[username];
+            
+            if (!myWorkday) {
+                showAlert('Niste otvorili radni dan!');
+                return;
+            }
+            
+            // Inicijalizuj cashReductions ako ne postoji
+            if (!myWorkday.cashReductions) {
+                myWorkday.cashReductions = [];
+            }
+            
+            // Dodaj smanjenje
+            myWorkday.cashReductions.push({
+                amount: amount,
+                reason: reason,
+                timestamp: new Date().toISOString(),
+                createdBy: username
+            });
+            
+            save();
+            closeCashReductionModal();
+            render();
+            
+            showAlert(`✅ Keš smanjen za ${amount.toFixed(0)} din.`);
         }
 
         function closeWorkday() {
@@ -1233,6 +1446,15 @@ ${'='.repeat(60)}
             const cash = dayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
             const card = dayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
             
+            // SMANJENJA KEŠA - oduzmi od keša
+            const cashReductions = myWorkday.cashReductions || [];
+            const totalCashReductions = cashReductions.reduce((sum, r) => sum + r.amount, 0);
+            const finalCash = cash - totalCashReductions; // Keš nakon smanjenja
+            
+            // DEPOZIT - dodaj na ukupan učinak
+            const deposit = myWorkday.deposit || 0;
+            const totalPerformance = totalRevenue + deposit; // Ukupan učinak = otkucano + depozit
+            
             const endTime = new Date().toISOString();
             const startTime = new Date(myWorkday.startTime);
             const duration = Math.floor((new Date(endTime) - startTime) / 1000 / 60); // minutes
@@ -1249,7 +1471,12 @@ ${'='.repeat(60)}
                 endTime: endTime,
                 orders: dayOrders,
                 totalRevenue: totalRevenue,
+                deposit: deposit,
+                totalPerformance: totalPerformance,
                 cashRevenue: cash,
+                cashReductions: cashReductions,
+                totalCashReductions: totalCashReductions,
+                finalCash: finalCash,
                 cardRevenue: card,
                 orderCount: dayOrders.length,
                 duration: duration,
@@ -1309,6 +1536,11 @@ ${'='.repeat(60)}
             
             console.log(`💰 PLATA: ${myWorkday.user}: ${salary} din (${(duration/60).toFixed(2)} sati × ${hourlyRate} din/sat)`);
             
+            if (deposit > 0) {
+                console.log(`💵 DEPOZIT: ${myWorkday.user}: ${deposit} din`);
+                console.log(`📊 UKUPAN UČINAK: ${myWorkday.user}: ${totalPerformance} din (${totalRevenue} otkucano + ${deposit} depozit)`);
+            }
+            
             // Dodaj u istoriju sesija
             DB.workdayHistory.push({
                 user: myWorkday.user,
@@ -1317,6 +1549,11 @@ ${'='.repeat(60)}
                 duration: duration,
                 orderCount: dayOrders.length,
                 revenue: totalRevenue,
+                deposit: deposit,
+                totalPerformance: totalPerformance,
+                cashReductions: cashReductions,
+                totalCashReductions: totalCashReductions,
+                finalCash: finalCash,
                 salary: salary,
                 hourlyRate: hourlyRate,
                 bonusEarned: bonusEarned,
@@ -1705,9 +1942,9 @@ ${'='.repeat(60)}
 
             const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
             
-            // Izračunaj popust (SAMO ZA ADMINA)
+            // Izračunaj popust (SVA KORISNICI MOGU DA KORISTE)
             let discountAmount = 0;
-            if(!isWaiter && table.discountPercent > 0 && table.discountedItems.length > 0) {
+            if(table.discountPercent > 0 && table.discountedItems.length > 0) {
                 myOrder.forEach(item => {
                     if(table.discountedItems.includes(item.id)) {
                         discountAmount += (item.price * item.qty * table.discountPercent / 100);
@@ -1727,7 +1964,7 @@ ${'='.repeat(60)}
                 h += '<div class="empty"><div style="font-size:64px">🍽️</div><h3>Narudžba je prazna</h3><p>Dodajte stavke</p></div>';
             } else {
                 myOrder.forEach(i => {
-                    const isDiscounted = !isWaiter && table.discountedItems.includes(i.id);
+                    const isDiscounted = table.discountedItems.includes(i.id);
                     const itemDiscount = isDiscounted ? (i.price * i.qty * table.discountPercent / 100) : 0;
                     const itemTotal = (i.price * i.qty) - itemDiscount;
                     
@@ -1736,14 +1973,12 @@ ${'='.repeat(60)}
                             <div style="flex:1">
                                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">`;
                     
-                    // Checkbox za discount SAMO ZA ADMINA
-                    if (!isWaiter) {
-                        h += `<input type="checkbox" 
-                                   id="disc_${i.id}" 
-                                   ${isDiscounted ? 'checked' : ''} 
-                                   onchange="toggleDiscountItem(${table.num}, ${i.id})"
-                                   style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">`;
-                    }
+                    // Checkbox za discount - SVI MOGU DA KORISTE
+                    h += `<input type="checkbox" 
+                               id="disc_${i.id}" 
+                               ${isDiscounted ? 'checked' : ''} 
+                               onchange="toggleDiscountItem(${table.num}, ${i.id})"
+                               style="width:20px;height:20px;cursor:pointer;accent-color:#4CAF50">`;
                     
                     h += `<h3>${i.name}</h3>
                                     ${isDiscounted && table.discountPercent > 0 ? `<span style="background:#4CAF50;color:white;padding:2px 8px;border-radius:4px;font-size:11px">-${table.discountPercent}%</span>` : ''}
@@ -1764,11 +1999,9 @@ ${'='.repeat(60)}
                     <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                         <span>Subtotal:</span>
                         <span>${sub.toFixed(0)} din.</span>
-                    </div>`;
+                    </div>
                     
-                // Discount sekcija SAMO ZA ADMINA
-                if (!isWaiter) {
-                    h += `
+                    <!-- Discount sekcija - SVI MOGU DA KORISTE -->
                     <div style="margin:16px 0;padding:16px;background:#16213E;border-radius:8px">
                         <label style="color:#4CAF50;font-weight:bold;display:block;margin-bottom:8px">
                             💚 Popust (%)
@@ -1789,9 +2022,7 @@ ${'='.repeat(60)}
                     ${discountAmount > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:8px;color:#4CAF50">
                         <span>Popust (${table.discountPercent}%):</span>
                         <span>-${discountAmount.toFixed(0)} din.</span>
-                    </div>` : ''}`;
-                }
-                    
+                    </div>` : ''}
                 h += `
                     <div style="display:flex;justify-content:space-between;font-size:24px;font-weight:bold;border-top:2px solid #2A2A4A;padding-top:12px">
                         <span>UKUPNO:</span>
@@ -2017,9 +2248,9 @@ ${'='.repeat(60)}
             
             const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
             
-            // Izračunaj popust (SAMO ZA ADMINA)
+            // Izračunaj popust (SVI MOGU DA KORISTE)
             let discountAmount = 0;
-            if(!isWaiter && table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
+            if(table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
                 myOrder.forEach(item => {
                     if(table.discountedItems.includes(item.id)) {
                         discountAmount += (item.price * item.qty * table.discountPercent / 100);
@@ -2374,8 +2605,52 @@ ${'='.repeat(60)}
                         <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${card.toFixed(0)} din.</div>
                         <div style="color:#B0B0B0;font-size:12px">Card (${rev>0?Math.round(card/rev*100):0}%)</div>
                     </div>
-                </div>
-            </div>`;
+                </div>`;
+            
+            // Prikaži smanjenja keša ako postoje (samo za konobara sa aktivnim radnim danom)
+            if (isWaiter) {
+                const myWorkday = DB.workdays && DB.workdays[currentUsername];
+                if (myWorkday && myWorkday.cashReductions && myWorkday.cashReductions.length > 0) {
+                    const totalReductions = myWorkday.cashReductions.reduce((sum, r) => sum + r.amount, 0);
+                    h += `
+                        <div style="margin-top:16px;padding:16px;background:#16213E;border-radius:8px;border-left:4px solid #FF6B6B">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                                <h4 style="color:#FF6B6B;margin:0">💸 Smanjenja Keša (${myWorkday.cashReductions.length})</h4>
+                                <span style="color:#FF6B6B;font-weight:bold">-${totalReductions.toFixed(0)} din.</span>
+                            </div>`;
+                    
+                    myWorkday.cashReductions.forEach((r, index) => {
+                        const time = new Date(r.timestamp).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+                        h += `
+                            <div style="background:#0F3460;padding:8px 12px;border-radius:6px;margin-bottom:8px;font-size:12px">
+                                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                                    <span style="color:#B0B0B0">${time}</span>
+                                    <span style="color:#FF6B6B;font-weight:bold">-${r.amount.toFixed(0)} din.</span>
+                                </div>
+                                <div style="color:#FFF">${r.reason}</div>
+                            </div>`;
+                    });
+                    
+                    h += `
+                        <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2A2A4A">
+                            <div style="display:flex;justify-content:space-between;align-items:center">
+                                <span style="color:#B0B0B0;font-size:13px">Keš nakon smanjenja:</span>
+                                <span style="color:#FFD700;font-weight:bold;font-size:16px">${(cash - totalReductions).toFixed(0)} din.</span>
+                            </div>
+                        </div>
+                    </div>`;
+                }
+                
+                // Dugme za smanjenje keša - samo ako ima otvoren radni dan
+                if (myWorkday) {
+                    h += `
+                        <button class="btn" style="margin-top:16px;width:100%;background:#FF6B6B" onclick="openCashReductionModal()">
+                            💸 Smanji Keš
+                        </button>`;
+                }
+            }
+            
+            h += `</div>`;
             
             // Prikaz po konobarima - SAMO ZA ADMINA
             if(!isWaiter && Object.keys(ordersByUser).length > 0) {
@@ -2904,7 +3179,7 @@ ${'='.repeat(60)}
                     // BONUS INDIKATOR
                     const bonusBadge = s.bonusEarned ? 
                         `<div style="background:linear-gradient(135deg, #FFD700 0%, #FFA500 100%);color:#000;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:bold;margin-top:8px;display:inline-block;box-shadow:0 2px 8px rgba(255,215,0,0.3)">
-                            🎁 BONUS OSTVAREN: ${s.bonusAmount.toFixed(0)} din.
+                            🎁 BONUS: ${s.bonusAmount.toFixed(0)} din.
                         </div>` : '';
                     
                     // PLATA INDIKATOR
@@ -2913,9 +3188,19 @@ ${'='.repeat(60)}
                             💰 PLATA: ${s.salary.toFixed(0)} din.
                         </div>` : '';
                     
+                    // DEPOZIT INDIKATOR
+                    const depositBadge = s.deposit && s.deposit > 0 ? 
+                        `<div style="background:#9C27B0;color:#FFF;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:bold;margin-top:8px;display:inline-block;margin-left:${s.bonusEarned || s.salary ? '8px' : '0'}">
+                            💵 DEPOZIT: ${s.deposit.toFixed(0)} din.
+                        </div>` : '';
+                    
                     const shiftBadge = s.isFirstShift ? 
                         '<span style="background:#4CAF50;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Prva smena</span>' : 
                         (s.isSecondShift ? '<span style="background:#9C27B0;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Druga smena</span>' : '');
+                    
+                    // Prikaži ukupan učinak ako ima depozit, inače samo revenue
+                    const displayRevenue = s.deposit && s.deposit > 0 ? s.totalPerformance : s.revenue;
+                    const revenueLabel = s.deposit && s.deposit > 0 ? '📊 Učinak' : '💰 Prihod';
                     
                     h += `
                         <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;${s.bonusEarned ? 'border:2px solid #FFD700;' : ''}">
@@ -2926,11 +3211,12 @@ ${'='.repeat(60)}
                                     <div style="color:#FFF;font-size:12px;margin-top:4px">
                                         🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
                                     </div>
-                                    ${bonusBadge}${salaryBadge}
+                                    ${bonusBadge}${salaryBadge}${depositBadge}
                                 </div>
                                 <div style="text-align:right">
-                                    <div style="color:#4CAF50;font-size:18px;font-weight:bold">${s.revenue.toFixed(0)} din.</div>
+                                    <div style="color:#4CAF50;font-size:18px;font-weight:bold">${displayRevenue.toFixed(0)} din.</div>
                                     <div style="color:#B0B0B0;font-size:11px">${s.orderCount} narudžbina</div>
+                                    ${s.deposit && s.deposit > 0 ? `<div style="color:#9C27B0;font-size:10px;margin-top:2px">(${s.revenue.toFixed(0)} + ${s.deposit.toFixed(0)} dep.)</div>` : ''}
                                 </div>
                             </div>
                         </div>
