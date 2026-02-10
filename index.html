@@ -268,8 +268,17 @@
             })
             .catch((error) => {
                 console.error('❌ Firebase Auth greška:', error.code, error.message);
-                showAlert('Greška u autentifikaciji. Proverite internet konekciju.');
+                console.warn('⚠️ Auth nije aktivan - možda nisi enable-ovao Anonymous Auth u Firebase Console');
+                console.warn('⚠️ App će raditi ali baza NIJE zaštićena!');
+                
+                // FALLBACK: Nastavi bez auth (za testiranje)
                 isFirebaseAuthReady = false;
+                
+                // Probaj da učitaš podatke i bez auth-a
+                setTimeout(() => {
+                    console.log('🔄 Pokušavam učitavanje bez auth-a...');
+                    loadFromFirebase();
+                }, 1000);
             });
         
         // Slušaj promene auth statusa
@@ -314,13 +323,18 @@
             console.log('🔄 Loading data from Firebase...');
             isLoading = true;
             
-            // Sačekaj da se autentifikacija završi
+            // Sačekaj autentifikaciju ali ne duže od 3 sekunde
             if (!isFirebaseAuthReady) {
-                console.log('⏳ Čekam autentifikaciju...');
+                console.log('⏳ Čekam autentifikaciju (max 3s)...');
+                let waited = 0;
                 await new Promise(resolve => {
                     const checkAuth = setInterval(() => {
-                        if (isFirebaseAuthReady) {
+                        waited += 100;
+                        if (isFirebaseAuthReady || waited >= 3000) {
                             clearInterval(checkAuth);
+                            if (!isFirebaseAuthReady) {
+                                console.warn('⚠️ Nastavljam bez autentifikacije (timeout)');
+                            }
                             resolve();
                         }
                     }, 100);
@@ -416,8 +430,8 @@
             
             // Proveri da li je auth spreman
             if (!isFirebaseAuthReady) {
-                console.log('⏳ Autentifikacija nije spremna, čekam...');
-                return;
+                console.warn('⚠️ Auth nije spreman - pokušavam save bez auth-a...');
+                // Probaj i bez auth-a
             }
             
             console.log('💾 Saving to Firebase...');
@@ -2023,7 +2037,7 @@ ${'='.repeat(60)}
                         <span>Popust (${table.discountPercent}%):</span>
                         <span>-${discountAmount.toFixed(0)} din.</span>
                     </div>` : ''}
-                h += `
+                    
                     <div style="display:flex;justify-content:space-between;font-size:24px;font-weight:bold;border-top:2px solid #2A2A4A;padding-top:12px">
                         <span>UKUPNO:</span>
                         <span style="color:#FFD700">${tot.toFixed(0)} din.</span>
