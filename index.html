@@ -197,6 +197,18 @@
             display: none !important;
         }
         
+        /* Kuvar role restrictions - Sakriva sve osim kuhinje */
+        body:not(.kuvar-role) .kuvar-only {
+            display: none !important;
+        }
+        
+        body.kuvar-role .admin-only,
+        body.kuvar-role .nav-item:nth-child(1), /* Menu */
+        body.kuvar-role .nav-item:nth-child(2)  /* Stolovi */
+        {
+            display: none !important;
+        }
+        
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             .header { padding: 10px 12px; }
@@ -346,6 +358,9 @@
             <h1>🍽️ Restaurant POS</h1>
             <div style="display:flex;align-items:center;gap:12px">
                 <div class="badge" id="badge">0 stolova</div>
+                <div class="badge" id="kitchenBadge" style="display:none;background:#FF9800;position:relative">
+                    0
+                </div>
                 <div class="user-info" id="userInfo"></div>
             </div>
         </div>
@@ -353,8 +368,26 @@
         <div class="nav">
             <div class="nav-item active" onclick="nav('menu')"><span style="font-size:24px">🍕</span><span style="font-size:11px">Menu</span></div>
             <div class="nav-item" onclick="nav('tables')"><span style="font-size:24px">🪑</span><span style="font-size:11px">Stolovi</span></div>
+            <div class="nav-item kuvar-only" id="navKitchen" onclick="nav('kitchen')">
+                <span style="font-size:24px;position:relative">
+                    🍳
+                    <span id="kitchenBadge" style="display:none;position:absolute;top:-8px;right:-8px;background:#E94560;color:#FFF;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center"></span>
+                </span>
+                <span style="font-size:11px">Kuhinja</span>
+            </div>
+            <div class="nav-item kuvar-only" id="navShopping" onclick="nav('shopping')">
+                <span style="font-size:24px">🛒</span>
+                <span style="font-size:11px">Nabavka</span>
+            </div>
             <div class="nav-item" id="navReport" onclick="nav('report')"><span style="font-size:24px">📊</span><span style="font-size:11px">Izveštaj</span></div>
             <div class="nav-item" id="navHistory" onclick="nav('history')"><span style="font-size:24px">📜</span><span style="font-size:11px">Istorija</span></div>
+            <div class="nav-item admin-only" id="navShoppingAdmin" onclick="nav('shopping')">
+                <span style="font-size:24px;position:relative">
+                    🛒
+                    <span id="shoppingBadge" style="display:none;position:absolute;top:-8px;right:-8px;background:#FF9800;color:#FFF;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center"></span>
+                </span>
+                <span style="font-size:11px">Nabavka</span>
+            </div>
             <div class="nav-item admin-only" id="navRemoved" onclick="nav('removed')"><span style="font-size:24px">🗑️</span><span style="font-size:11px">Uklonjeno</span></div>
             <div class="nav-item admin-only" id="navUsers" onclick="nav('users')"><span style="font-size:24px">👥</span><span style="font-size:11px">Konobari</span></div>
             <div class="nav-item admin-only" id="navEdit" onclick="nav('edit')"><span style="font-size:24px">✏️</span><span style="font-size:11px">Izmeni</span></div>
@@ -437,7 +470,9 @@
             selectedGroup: 'Sve',
             konobarName: localStorage.getItem('konobarName') || null,
             workdays: {},
-            workdayHistory: []
+            workdayHistory: [],
+            kitchenOrders: [],
+            shoppingList: []
         };
         
         let isLoading = false;
@@ -511,10 +546,26 @@
                     DB.users = data.users || [
                         {username:'admin',password:'admin',role:'admin'},
                         {username:'konobar1',password:'konobar1',role:'konobar'},
-                        {username:'konobar2',password:'konobar2',role:'konobar'}
+                        {username:'konobar2',password:'konobar2',role:'konobar'},
+                        {username:'kuvar1',password:'kuvar1',role:'kuvar'}
                     ];
                     
                     DB.workdayHistory = data.workdayHistory || [];
+                    DB.kitchenOrders = data.kitchenOrders || [];
+                    DB.shoppingList = data.shoppingList || [
+                        {id: 1, name: 'Piletina (kg)', needed: false, category: 'Meso'},
+                        {id: 2, name: 'Junećina (kg)', needed: false, category: 'Meso'},
+                        {id: 3, name: 'Svinjsko meso (kg)', needed: false, category: 'Meso'},
+                        {id: 4, name: 'Luk (kg)', needed: false, category: 'Povrće'},
+                        {id: 5, name: 'Paradajz (kg)', needed: false, category: 'Povrće'},
+                        {id: 6, name: 'Paprika (kg)', needed: false, category: 'Povrće'},
+                        {id: 7, name: 'Krompir (kg)', needed: false, category: 'Povrće'},
+                        {id: 8, name: 'Ulje (L)', needed: false, category: 'Namirnice'},
+                        {id: 9, name: 'Brašno (kg)', needed: false, category: 'Namirnice'},
+                        {id: 10, name: 'So (kg)', needed: false, category: 'Začini'},
+                        {id: 11, name: 'Biber (g)', needed: false, category: 'Začini'},
+                        {id: 12, name: 'Vegeta (g)', needed: false, category: 'Začini'}
+                    ];
                     
                     // MIGRACIJA: Ako postoji stari workday format, konvertuj ga
                     if (data.workday && !data.workdays) {
@@ -573,6 +624,8 @@
                 users: DB.users,
                 workdays: DB.workdays,
                 workdayHistory: DB.workdayHistory,
+                kitchenOrders: DB.kitchenOrders,
+                shoppingList: DB.shoppingList,
                 lastUpdated: new Date().toISOString()
             };
             
@@ -739,14 +792,22 @@
         }
 
         function nav(p) {
+            // Provera pristupa za konobare
             if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users')) {
                 showAlert('Nemate pristup ovoj stranici');
                 return;
             }
+            
+            // Provera pristupa za kuvare
+            if(DB.currentUser && DB.currentUser.role === 'kuvar' && (p === 'menu' || p === 'tables' || p === 'edit' || p === 'settings' || p === 'removed' || p === 'users')) {
+                showAlert('Nemate pristup ovoj stranici');
+                return;
+            }
+            
             page = p;
             DB.selectedTable = null;
             document.querySelectorAll('.nav-item').forEach((el,i) => {
-                el.classList.toggle('active', ['menu','tables','report','removed','users','edit','settings'][i] === p);
+                el.classList.toggle('active', ['menu','tables','kitchen','report','history','removed','users','edit','settings'][i] === p);
             });
             render();
         }
@@ -754,11 +815,16 @@
         function render() {
             const c = document.getElementById('content');
             
-            // Dodaj/ukloni waiter-role klasu na body u zavisnosti od uloge korisnika
+            // Dodaj/ukloni role klase na body u zavisnosti od uloge korisnika
             if (DB.currentUser && DB.currentUser.role === 'waiter') {
                 document.body.classList.add('waiter-role');
+                document.body.classList.remove('kuvar-role');
+            } else if (DB.currentUser && DB.currentUser.role === 'kuvar') {
+                document.body.classList.add('kuvar-role');
+                document.body.classList.remove('waiter-role');
             } else {
                 document.body.classList.remove('waiter-role');
+                document.body.classList.remove('kuvar-role');
             }
             
             if(page==='login') renderLogin(c);
@@ -777,6 +843,8 @@
             else if(page==='settings') renderSettings(c);
             else if(page==='payment') renderPayment(c);
             else if(page==='receipt') renderReceipt(c);
+            else if(page==='kitchen') renderKitchen(c);
+            else if(page==='shopping') renderShopping(c);
             
             updateBadge();
             setTimeout(() => updateUserInfo(), 0);
@@ -790,7 +858,7 @@
                 // Prikaži navigaciju samo kada je korisnik ulogovan
                 if(navBar) navBar.classList.add('show');
                 
-                const roleIcon = DB.currentUser.role === 'admin' ? '👑' : '👨‍🍳';
+                const roleIcon = DB.currentUser.role === 'admin' ? '👑' : (DB.currentUser.role === 'kuvar' ? '👨‍🍳' : '🧑‍💼');
                 const displayName = (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && DB.konobarName ? DB.konobarName : DB.currentUser.username;
                 let html = `<div class="user-badge">${roleIcon} ${displayName}</div>`;
                 
@@ -1744,6 +1812,38 @@ ${'='.repeat(60)}
             if (badgeEl) {
                 badgeEl.textContent = `${occupied} stolova`;
             }
+            
+            // Kitchen badge za kuvare i konobare
+            const kitchenBadgeEl = document.getElementById('kitchenBadge');
+            if(kitchenBadgeEl && DB.currentUser) {
+                if(DB.currentUser.role === 'kuvar') {
+                    // Kuvar vidi broj pending i preparing narudžbina
+                    const activeOrders = DB.kitchenOrders.filter(ko => 
+                        ko.status === 'pending' || ko.status === 'preparing'
+                    ).length;
+                    
+                    if(activeOrders > 0) {
+                        kitchenBadgeEl.style.display = 'inline-block';
+                        kitchenBadgeEl.textContent = `${activeOrders}`;
+                    } else {
+                        kitchenBadgeEl.style.display = 'none';
+                    }
+                } else if(DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') {
+                    // Konobar vidi broj spremnih narudžbina ZA NJEGA
+                    const myReadyOrders = DB.kitchenOrders.filter(ko => 
+                        ko.status === 'ready' && 
+                        ko.waiterUsername === DB.currentUser.username
+                    ).length;
+                    
+                    if(myReadyOrders > 0) {
+                        kitchenBadgeEl.style.display = 'inline-block';
+                        kitchenBadgeEl.textContent = `${myReadyOrders}`;
+                        kitchenBadgeEl.style.background = '#4CAF50'; // Zeleno za gotovo
+                    } else {
+                        kitchenBadgeEl.style.display = 'none';
+                    }
+                }
+            }
         }
 
         function renderTableSelect(c) {
@@ -2086,6 +2186,29 @@ ${'='.repeat(60)}
             
             if(existing) {
                 existing.qty++;
+                
+                // Ako je hrana, ažuriraj količinu u kuhinjskoj narudžbini
+                if(menuItem.cat === 'Hrana') {
+                    const kitchenOrder = DB.kitchenOrders.find(ko => 
+                        ko.status !== 'completed' && 
+                        ko.tableNum === table.num && 
+                        ko.waiterUsername === DB.currentUser.username
+                    );
+                    
+                    if(kitchenOrder) {
+                        const kitchenItem = kitchenOrder.items.find(i => i.id === itemId);
+                        if(kitchenItem) {
+                            kitchenItem.qty++;
+                        } else {
+                            kitchenOrder.items.push({
+                                id: menuItem.id,
+                                name: menuItem.name,
+                                qty: 1
+                            });
+                        }
+                        kitchenOrder.orderedAt = new Date().toISOString();
+                    }
+                }
             } else {
                 // Dodaj novu stavku sa createdBy poljem
                 table.order.push({
@@ -2094,6 +2217,46 @@ ${'='.repeat(60)}
                     createdBy: DB.currentUser.username,
                     addedAt: new Date().toISOString()
                 });
+                
+                // 🍳 Ako je hrana, pošalji u kuhinju!
+                if(menuItem.cat === 'Hrana') {
+                    // Pronađi postojeću pending narudžbinu ili kreiraj novu
+                    let kitchenOrder = DB.kitchenOrders.find(ko => 
+                        ko.status !== 'completed' && 
+                        ko.tableNum === table.num && 
+                        ko.waiterUsername === DB.currentUser.username
+                    );
+                    
+                    if(kitchenOrder) {
+                        // Dodaj u postojeću narudžbinu
+                        kitchenOrder.items.push({
+                            id: menuItem.id,
+                            name: menuItem.name,
+                            qty: 1
+                        });
+                        kitchenOrder.orderedAt = new Date().toISOString();
+                    } else {
+                        // Kreiraj novu kuhinjsku narudžbinu
+                        const newKitchenOrder = {
+                            id: Date.now(),
+                            tableNum: table.num,
+                            tableName: table.name,
+                            waiterUsername: DB.currentUser.username,
+                            waiterName: DB.konobarName || DB.currentUser.username,
+                            items: [{
+                                id: menuItem.id,
+                                name: menuItem.name,
+                                qty: 1
+                            }],
+                            status: 'pending', // 'pending', 'preparing', 'ready', 'completed'
+                            orderedAt: new Date().toISOString(),
+                            readyAt: null,
+                            completedAt: null
+                        };
+                        
+                        DB.kitchenOrders.push(newKitchenOrder);
+                    }
+                }
             }
             
             save();
@@ -2229,6 +2392,154 @@ ${'='.repeat(60)}
             }
 
             c.innerHTML = h;
+        }
+
+        // ============================================
+        // KITCHEN DISPLAY SYSTEM - KUHINJA
+        // ============================================
+        function renderKitchen(c) {
+            const pendingOrders = DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing');
+            const readyOrders = DB.kitchenOrders.filter(ko => ko.status === 'ready');
+            
+            let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+                <h2>🍳 Kuhinja</h2>
+                <div style="font-size:14px;color:#B0B0B0">
+                    ${pendingOrders.length} aktivnih narudžbina
+                </div>
+            </div>`;
+            
+            if(pendingOrders.length === 0 && readyOrders.length === 0) {
+                h += `<div class="empty">
+                    <div style="font-size:64px">✅</div>
+                    <h3>Sve narudžbine su spremne</h3>
+                    <p>Čekamo nove narudžbine...</p>
+                </div>`;
+            } else {
+                // Pending i Preparing narudžbine
+                if(pendingOrders.length > 0) {
+                    h += `<div style="margin-bottom:24px">
+                        <h3 style="color:#FFD700;margin-bottom:16px">⏰ U pripremi (${pendingOrders.length})</h3>
+                    </div>`;
+                    
+                    pendingOrders.forEach(order => {
+                        const timeAgo = getTimeAgo(order.orderedAt);
+                        const isPreparing = order.status === 'preparing';
+                        
+                        h += `<div class="card" style="border:3px solid ${isPreparing ? '#FF9800' : '#E94560'};margin-bottom:16px">
+                            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px">
+                                <div>
+                                    <h3 style="color:${isPreparing ? '#FF9800' : '#E94560'};font-size:20px">
+                                        ${order.tableName}
+                                    </h3>
+                                    <p style="color:#B0B0B0;font-size:13px;margin-top:4px">
+                                        👨‍🍳 ${order.waiterName} • ⏱️ ${timeAgo}
+                                    </p>
+                                </div>
+                                <div style="background:${isPreparing ? '#FF9800' : '#E94560'};padding:6px 12px;border-radius:8px;font-size:12px;font-weight:bold">
+                                    ${isPreparing ? '🔥 PRIPREMA SE' : '🆕 NOVO'}
+                                </div>
+                            </div>
+                            
+                            <div style="background:#16213E;padding:16px;border-radius:8px;margin-bottom:16px">`;
+                        
+                        order.items.forEach(item => {
+                            h += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2A4A">
+                                <div>
+                                    <span style="font-size:16px;font-weight:bold">${item.name}</span>
+                                </div>
+                                <div style="background:#FFD700;color:#000;padding:4px 12px;border-radius:6px;font-weight:bold">
+                                    ${item.qty}x
+                                </div>
+                            </div>`;
+                        });
+                        
+                        h += `</div>
+                            <div style="display:flex;gap:12px">`;
+                        
+                        if(order.status === 'pending') {
+                            h += `<button class="btn" style="flex:1;background:#FF9800" onclick="startPreparing(${order.id})">
+                                🔥 Počni Pripremu
+                            </button>`;
+                        }
+                        
+                        h += `<button class="btn" style="flex:1;background:#4CAF50" onclick="markAsReady(${order.id})">
+                            ✅ Spremno!
+                        </button>
+                            </div>
+                        </div>`;
+                    });
+                }
+                
+                // Ready narudžbine
+                if(readyOrders.length > 0) {
+                    h += `<div style="margin-top:32px">
+                        <h3 style="color:#4CAF50;margin-bottom:16px">✅ Spremno za servisiranje (${readyOrders.length})</h3>
+                    </div>`;
+                    
+                    readyOrders.forEach(order => {
+                        const timeAgo = getTimeAgo(order.readyAt);
+                        
+                        h += `<div class="card" style="border:3px solid #4CAF50;opacity:0.7;margin-bottom:12px">
+                            <div style="display:flex;justify-content:space-between;align-items:center">
+                                <div>
+                                    <h3 style="color:#4CAF50">${order.tableName}</h3>
+                                    <p style="color:#B0B0B0;font-size:13px">👨‍🍳 ${order.waiterName} • ✅ ${timeAgo}</p>
+                                </div>
+                                <div style="background:#4CAF50;padding:8px 16px;border-radius:8px;font-weight:bold">
+                                    SPREMNO
+                                </div>
+                            </div>
+                        </div>`;
+                    });
+                }
+            }
+            
+            c.innerHTML = h;
+        }
+        
+        function startPreparing(orderId) {
+            const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+            if(order) {
+                order.status = 'preparing';
+                save();
+                render();
+            }
+        }
+        
+        function markAsReady(orderId) {
+            const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+            if(order) {
+                order.status = 'ready';
+                order.readyAt = new Date().toISOString();
+                save();
+                render();
+                showAlert('✅ Narudžbina spremna! Konobar će dobiti obaveštenje.');
+            }
+        }
+        
+        function markOrderCompleted(orderId) {
+            const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+            if(order) {
+                order.status = 'completed';
+                order.completedAt = new Date().toISOString();
+                save();
+                render();
+            }
+        }
+        
+        function getTimeAgo(timestamp) {
+            const now = new Date();
+            const then = new Date(timestamp);
+            const diffMs = now - then;
+            const diffMins = Math.floor(diffMs / 60000);
+            
+            if(diffMins < 1) return 'Upravo sada';
+            if(diffMins === 1) return '1 minut';
+            if(diffMins < 60) return `${diffMins} minuta`;
+            
+            const diffHours = Math.floor(diffMins / 60);
+            if(diffHours === 1) return '1 sat';
+            return `${diffHours} sati`;
         }
 
         function toggleDiscountItem(tableNum, itemId) {
@@ -2756,6 +3067,47 @@ ${'='.repeat(60)}
             
             let h = `<h2>📊 ${isWaiter ? 'Moj Dnevni Izveštaj' : 'Dnevni Izveštaj'}</h2>
                 <p style="color:#B0B0B0;text-align:center;margin:8px 0 4px">${new Date().toLocaleDateString('sr-RS')}</p>`;
+            
+            // 🍳 Spremne narudžbine iz kuhinje (samo za konobare)
+            if(isWaiter) {
+                const myReadyOrders = DB.kitchenOrders.filter(ko => 
+                    ko.status === 'ready' && 
+                    ko.waiterUsername === currentUsername
+                );
+                
+                if(myReadyOrders.length > 0) {
+                    h += `<div style="background:#4CAF50;border-radius:12px;padding:20px;margin:20px 0;border:3px solid #45A049">
+                        <div style="text-align:center;margin-bottom:16px">
+                            <div style="font-size:48px;margin-bottom:8px">✅</div>
+                            <h3 style="color:#FFF;margin:0">HRANA SPREMNA!</h3>
+                            <p style="color:#FFF;opacity:0.9;margin-top:8px">
+                                ${myReadyOrders.length} ${myReadyOrders.length === 1 ? 'narudžbina' : 'narudžbine'} spremno za servisiranje
+                            </p>
+                        </div>`;
+                    
+                    myReadyOrders.forEach(order => {
+                        const timeAgo = getTimeAgo(order.readyAt);
+                        h += `<div style="background:rgba(255,255,255,0.2);border-radius:8px;padding:12px;margin-bottom:12px">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                                <h4 style="color:#FFF;margin:0">${order.tableName}</h4>
+                                <span style="color:#FFF;opacity:0.9;font-size:13px">✅ ${timeAgo}</span>
+                            </div>
+                            <div style="color:#FFF;opacity:0.9;font-size:14px">`;
+                        
+                        order.items.forEach(item => {
+                            h += `<div style="padding:4px 0">${item.qty}x ${item.name}</div>`;
+                        });
+                        
+                        h += `</div>
+                            <button class="btn" style="margin-top:12px;background:#FFF;color:#4CAF50" onclick="markOrderCompleted(${order.id})">
+                                👍 Preuzeto
+                            </button>
+                        </div>`;
+                    });
+                    
+                    h += `</div>`;
+                }
+            }
             
             if (!isWaiter) {
                 h += `<p style="color:#B0B0B0;text-align:center;margin:0 0 20px;font-size:12px">
@@ -4474,11 +4826,15 @@ ${'='.repeat(60)}
                 
                 // Set initial page
                 if(DB.currentUser) {
-                    const hasWorkday = DB.workdays && DB.workdays[DB.currentUser.username];
-                    if((DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && !hasWorkday) {
-                        page = 'workday';
+                    if(DB.currentUser.role === 'kuvar') {
+                        page = 'kitchen';
                     } else {
-                        page = 'tables';
+                        const hasWorkday = DB.workdays && DB.workdays[DB.currentUser.username];
+                        if((DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && !hasWorkday) {
+                            page = 'workday';
+                        } else {
+                            page = 'tables';
+                        }
                     }
                 } else {
                     page = 'login';
