@@ -1098,8 +1098,7 @@
                 const list = Array.isArray(existing) ? existing : Object.values(existing);
                 list.push(guestOrder);
                 await database.ref('guestOrders').set(list);
-
-                // Success
+                await database.ref('lastUpdated').set(new Date().toISOString());
                 cart = {};
                 closeCart();
                 document.getElementById('menuContainer').style.display = 'none';
@@ -1157,6 +1156,7 @@
                 // Keep only last 20 calls
                 while (list.length > 20) list.shift();
                 await database.ref('waiterCalls').set(list);
+                await database.ref('lastUpdated').set(new Date().toISOString());
             } catch (e) {
                 console.error('Call waiter error:', e);
             }
