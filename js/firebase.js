@@ -173,6 +173,11 @@ async function loadFromFirebase() {
             // Učitaj QR narudžbine gostiju
             DB.guestOrders = data.guestOrders || [];
             if (!Array.isArray(DB.guestOrders)) DB.guestOrders = Object.values(DB.guestOrders);
+            // Osiguraj da svaka narudžbina ima items kao niz
+            DB.guestOrders = DB.guestOrders.filter(o => o).map(o => {
+                if (o.items && !Array.isArray(o.items)) o.items = Object.values(o.items);
+                return o;
+            });
             
             // Učitaj pozive konobara
             DB.waiterCalls = data.waiterCalls || [];

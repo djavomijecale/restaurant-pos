@@ -100,22 +100,34 @@ function renderGuestOrderCard(order, showActions) {
     const statusColor = order.status === 'pending' ? '#FF9800' : order.status === 'confirmed' ? '#4CAF50' : '#E94560';
     const statusIcon = order.status === 'pending' ? '⏳' : order.status === 'confirmed' ? '✅' : '❌';
     
+    // Osiguraj da items bude niz
+    let items = order.items || [];
+    if (!Array.isArray(items)) items = Object.values(items);
+    
     let html = `<div class="card" style="border-left:4px solid ${statusColor};cursor:default">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <span style="font-weight:bold;font-size:16px">${statusIcon} ${order.guestName || 'Gost'}</span>
             <span style="color:#B0B0B0;font-size:12px">${timeAgo}</span>
         </div>`;
     
-    order.items.forEach(item => {
+    // Stavke - izračunaj total iz stavki
+    let calculatedTotal = 0;
+    items.forEach(item => {
+        const price = parseFloat(item.price) || 0;
+        const qty = parseInt(item.qty) || 0;
+        const itemTotal = price * qty;
+        calculatedTotal += itemTotal;
         html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #2A2A4A">
-            <span>${item.name} × ${item.qty}</span>
-            <span style="color:#FFD700">${(item.price * item.qty).toLocaleString()} din</span>
+            <span>${item.name} × ${qty}</span>
+            <span style="color:#FFD700">${itemTotal.toLocaleString()} din</span>
         </div>`;
     });
     
+    const displayTotal = calculatedTotal || parseFloat(order.total) || 0;
+    
     html += `<div style="display:flex;justify-content:space-between;margin-top:8px;font-weight:bold">
         <span style="color:#FFD700">Ukupno:</span>
-        <span style="color:#FFD700;font-size:18px">${(order.total || 0).toLocaleString()} din</span>
+        <span style="color:#FFD700;font-size:18px">${displayTotal.toLocaleString()} din</span>
     </div>`;
     
     if (order.guestNote) {
@@ -175,21 +187,30 @@ function confirmGuestOrder(orderId) {
         return;
     }
     
-    order.items.forEach(item => {
+    // Osiguraj da items bude niz
+    let orderItems = order.items || [];
+    if (!Array.isArray(orderItems)) orderItems = Object.values(orderItems);
+    
+    orderItems.forEach(item => {
         const menuItem = DB.menu.find(m => m.id == item.id);
         if (menuItem) {
-            for (let i = 0; i < item.qty; i++) {
+            const itemQty = parseInt(item.qty) || 1;
+            const existing = table.order.find(o => o.id == item.id && o.createdBy === DB.currentUser.username);
+            if (existing) {
+                existing.qty = (parseInt(existing.qty) || 0) + itemQty;
+            } else {
                 table.order.push({
                     ...menuItem,
+                    qty: itemQty,
                     createdBy: DB.currentUser.username,
-                    time: new Date().toISOString(),
+                    addedAt: new Date().toISOString(),
                     fromQR: true
                 });
             }
         }
     });
     
-    const foodItems = order.items.filter(item => {
+    const foodItems = orderItems.filter(item => {
         const menuItem = DB.menu.find(m => m.id == item.id);
         return menuItem && menuItem.cat === 'Hrana';
     });
@@ -200,7 +221,7 @@ function confirmGuestOrder(orderId) {
             tableNum: tableNum,
             items: foodItems.map(item => ({
                 name: item.name,
-                qty: item.qty,
+                qty: parseInt(item.qty) || 1,
                 note: order.guestNote || ''
             })),
             status: 'pending',
