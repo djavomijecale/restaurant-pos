@@ -613,6 +613,82 @@
             padding: 40px 20px;
             color: #555;
         }
+        /* ===== CALL WAITER ===== */
+        .call-waiter-fab {
+            position: fixed;
+            bottom: 16px;
+            bottom: max(16px, env(safe-area-inset-bottom, 16px));
+            right: 16px;
+            z-index: 250;
+            background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+            color: #FFF;
+            border: none;
+            width: 60px; height: 60px;
+            border-radius: 50%;
+            font-size: 28px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(255,152,0,0.5), 0 0 0 4px rgba(255,152,0,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.25s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Kad je cart bar vidljiv, pomeri zvonce gore */
+        body.cart-open .call-waiter-fab {
+            bottom: 80px;
+            bottom: max(80px, calc(68px + env(safe-area-inset-bottom, 12px)));
+        }
+        .call-waiter-fab:active { transform: scale(0.9); }
+        .call-waiter-fab.sent {
+            background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+            box-shadow: 0 4px 20px rgba(76,175,80,0.4);
+            pointer-events: none;
+        }
+        .call-waiter-fab.cooldown {
+            background: #333;
+            box-shadow: none;
+            pointer-events: none;
+        }
+        .call-waiter-fab .cooldown-ring {
+            position: absolute;
+            inset: -3px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            border-top-color: #FF9800;
+            animation: cooldownSpin 30s linear;
+        }
+        @keyframes cooldownSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(1080deg); }
+        }
+
+        /* Call waiter confirmation toast */
+        .call-toast {
+            position: fixed;
+            bottom: 84px;
+            right: 16px;
+            background: #1A1A1A;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 12px 16px;
+            z-index: 251;
+            display: none;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            animation: toastIn 0.3s ease;
+            max-width: 260px;
+        }
+        .call-toast.show { display: flex; }
+        body.cart-open .call-toast { bottom: 148px; }
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .call-toast-icon { font-size: 24px; flex-shrink: 0; }
+        .call-toast-text { font-size: 13px; color: #CCC; line-height: 1.4; }
+        .call-toast-text strong { color: #FFF; display: block; margin-bottom: 2px; }
     </style>
 </head>
 <body>
@@ -716,6 +792,16 @@
         <button class="submit-btn" id="submitBtn" onclick="submitOrder()" disabled>
             Pošalji narudžbinu
         </button>
+    </div>
+
+    <!-- CALL WAITER (must be after cart elements for z-index stacking) -->
+    <button class="call-waiter-fab" id="callWaiterBtn" onclick="callWaiter()">🔔</button>
+    <div class="call-toast" id="callToast">
+        <span class="call-toast-icon">✅</span>
+        <div class="call-toast-text">
+            <strong>Konobar je pozvan!</strong>
+            Dolazi za par minuta...
+        </div>
     </div>
 
     <script>
@@ -926,10 +1012,12 @@
             const count = getCartCount();
             if (count > 0) {
                 bar.classList.add('show');
+                document.body.classList.add('cart-open');
                 document.getElementById('cartBadge').textContent = count;
                 document.getElementById('cartBarTotal').textContent = getCartTotal().toLocaleString() + ' din';
             } else {
                 bar.classList.remove('show');
+                document.body.classList.remove('cart-open');
             }
         }
 
@@ -1041,6 +1129,59 @@
             document.getElementById('guestNote').value = '';
             renderCategories();
             renderMenu();
+        }
+
+        // ===== CALL WAITER =====
+        let callCooldown = false;
+
+        async function callWaiter() {
+            if (callCooldown) return;
+
+            const btn = document.getElementById('callWaiterBtn');
+            btn.classList.add('sent');
+            btn.textContent = '✅';
+
+            // Save to Firebase
+            try {
+                const snap = await database.ref('waiterCalls').once('value');
+                const existing = snap.val() || [];
+                const list = Array.isArray(existing) ? existing : Object.values(existing);
+
+                list.push({
+                    id: 'CALL' + Date.now(),
+                    guestName: document.getElementById('guestName').value.trim() || 'Gost',
+                    createdAt: new Date().toISOString(),
+                    status: 'pending'
+                });
+
+                // Keep only last 20 calls
+                while (list.length > 20) list.shift();
+                await database.ref('waiterCalls').set(list);
+            } catch (e) {
+                console.error('Call waiter error:', e);
+            }
+
+            // Show toast
+            const toast = document.getElementById('callToast');
+            toast.classList.add('show');
+
+            // Cooldown 30 sec
+            callCooldown = true;
+            setTimeout(() => {
+                btn.classList.remove('sent');
+                btn.classList.add('cooldown');
+                btn.textContent = '⏳';
+            }, 2000);
+
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 4000);
+
+            setTimeout(() => {
+                callCooldown = false;
+                btn.classList.remove('cooldown');
+                btn.textContent = '🔔';
+            }, 30000);
         }
 
         loadMenu();
