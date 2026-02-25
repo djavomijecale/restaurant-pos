@@ -4,7 +4,6 @@
 
 
 function renderTableSelect(c) {
-    console.log('🔍 renderTableSelect - DB.tables:', DB.tables);
     
     const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
     const currentUsername = DB.currentUser ? DB.currentUser.username : null;
@@ -15,60 +14,68 @@ function renderTableSelect(c) {
     }
     h += '</div><div class="table-grid">';
     
-    if (DB.tables && Array.isArray(DB.tables)) {
-        console.log('✅ DB.tables is array with length:', DB.tables.length);
-        DB.tables.forEach((t, index) => {
-            console.log(`  Table ${index}:`, t);
-            if (!t) {
-                console.warn(`  ⚠️ Table ${index} is null/undefined`);
-                return;
+    // Helper za dobijanje info o stolu
+    function getTableInfo(t) {
+        if (!t) return null;
+        if (!t.order) t.order = [];
+        
+        let myItems = t.order;
+        if (isWaiter) {
+            myItems = t.order.filter(item => 
+                !item.createdBy || item.createdBy === currentUsername
+            );
+        }
+        
+        const isOccupied = myItems && Array.isArray(myItems) && myItems.length > 0;
+        const total = isOccupied ? myItems.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
+        
+        let waiterIndicator = '';
+        if (!isWaiter && t.order.length > 0) {
+            const waitersOnTable = [...new Set(t.order.map(item => item.createdBy).filter(Boolean))];
+            if (waitersOnTable.length > 0) {
+                const waiterColors = ['#4CAF50', '#FF9800', '#9C27B0', '#2196F3', '#E91E63'];
+                waiterIndicator = '<div style="display:flex;gap:4px;margin-top:4px;justify-content:center">';
+                waitersOnTable.forEach((waiter, idx) => {
+                    const color = waiterColors[idx % waiterColors.length];
+                    waiterIndicator += `<span style="background:${color};color:#FFF;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold">${waiter}</span>`;
+                });
+                waiterIndicator += '</div>';
             }
-            if (!t.order) {
-                console.warn(`  ⚠️ Table ${index} has no order property`);
-                t.order = []; // Fix it
-            }
-            
-            // Filtriraj stavke za ovog konobara (za prikaz vrednosti)
-            let myItems = t.order;
-            if (isWaiter) {
-                // Konobar vidi svoje stavke + stare stavke bez createdBy
-                myItems = t.order.filter(item => 
-                    !item.createdBy || item.createdBy === currentUsername
-                );
-            }
-            
-            const isOccupied = myItems && Array.isArray(myItems) && myItems.length > 0;
-            const total = isOccupied ? myItems.reduce((s,i)=>s+(i.price*i.qty),0) : 0;
-            
-            // Za admina: Proveri koje konobare ima na ovom stolu
-            let waiterIndicator = '';
-            if (!isWaiter && t.order.length > 0) {
-                const waitersOnTable = [...new Set(t.order.map(item => item.createdBy).filter(Boolean))];
-                if (waitersOnTable.length > 0) {
-                    const waiterColors = ['#4CAF50', '#FF9800', '#9C27B0', '#2196F3', '#E91E63'];
-                    waiterIndicator = '<div style="display:flex;gap:4px;margin-top:4px;justify-content:center">';
-                    waitersOnTable.forEach((waiter, idx) => {
-                        const color = waiterColors[idx % waiterColors.length];
-                        waiterIndicator += `<span style="background:${color};color:#FFF;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:bold">${waiter}</span>`;
-                    });
-                    waiterIndicator += '</div>';
-                }
-            }
-            
-            // Prikaži SVE stolove (i za konobara i za admina)
-            h += `<div class="table-card ${isOccupied?'occupied':''}" data-table="${t.num}" onclick="selectTable(${t.num})">
-                <div class="table-icon">🪑</div>
-                <div class="table-number">${t.num}</div>
-                ${isOccupied ? `<div class="table-status">${total.toFixed(0)}din</div>` : ''}
-                ${waiterIndicator}
-            </div>`;
-        });
-    } else {
-        console.error('❌ DB.tables is not an array:', typeof DB.tables, DB.tables);
+        }
+        
+        return { isOccupied, total, waiterIndicator };
     }
     
-    // Dodaj šank/bar
-    h += '<div class="bar-area">🍺 ŠANK</div>';
+    if (DB.tables && Array.isArray(DB.tables)) {
+        const regularTables = DB.tables.filter(t => !t.isBar);
+        const barTables = DB.tables.filter(t => t.isBar);
+        
+        regularTables.forEach(t => {
+            const info = getTableInfo(t);
+            if (!info) return;
+            
+            h += `<div class="table-card ${info.isOccupied?'occupied':''}" data-table="${t.num}" onclick="selectTable(${t.num})">
+                <div class="table-icon">🪑</div>
+                <div class="table-number">${t.name || ('Sto ' + t.num)}</div>
+                ${info.isOccupied ? `<div class="table-status">${info.total.toFixed(0)}din</div>` : ''}
+                ${info.waiterIndicator}
+            </div>`;
+        });
+        
+        // Šank sa stolicama
+        h += '<div class="bar-area"><span class="bar-label">🍺 ŠANK</span><div class="bar-stools">';
+        barTables.forEach(t => {
+            const info = getTableInfo(t);
+            if (!info) return;
+            
+            h += `<div class="bar-stool ${info.isOccupied?'occupied':''}" onclick="selectTable(${t.num})">
+                <div class="table-icon">🍺</div>
+                <div class="table-number">${t.name || ('Šank ' + (t.num - 10))}</div>
+                ${info.isOccupied ? `<div class="table-status">${info.total.toFixed(0)}din</div>` : ''}
+            </div>`;
+        });
+        h += '</div></div>';
+    }
     
     h += '</div>';
     c.innerHTML = h;

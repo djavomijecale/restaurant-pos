@@ -167,7 +167,6 @@ async function loginAdmin() {
         console.log('🔄 Admin login - učitavam najnovije podatke iz Firebase...');
         // Učitaj najnovije podatke pre nego što admin vidi bilo šta
         await loadFromFirebase();
-        console.log('✅ Admin podaci učitani');
         
         page = 'tables';
         render();

@@ -229,6 +229,43 @@
             font-size: 20px;
             font-weight: bold;
         }
+        .bar-area .bar-label {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+            color: #FFD700;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .bar-stools {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 0 50px;
+        }
+        .bar-stool {
+            width: 65px;
+            height: 65px;
+            background: #16213E;
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 3px solid transparent;
+            position: relative;
+        }
+        .bar-stool:hover { border-color: #FFD700; transform: scale(1.1); }
+        .bar-stool.occupied { background: #E94560; }
+        .bar-stool .table-icon { font-size: 22px; }
+        .bar-stool .table-number { font-size: 11px; font-weight: bold; margin-top: 2px; }
+        .bar-stool .table-status { font-size: 9px; color: #FFF; margin-top: 1px; }
         .stat-card { background: #0F3460; padding: 16px; border-radius: 12px; text-align: center; }
         .stat-label { color: #B0B0B0; font-size: 12px; }
         .stat-value { color: #FFD700; font-size: 24px; font-weight: bold; margin: 8px 0; }

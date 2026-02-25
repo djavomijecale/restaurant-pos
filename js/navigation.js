@@ -18,9 +18,25 @@ function nav(p) {
     
     page = p;
     DB.selectedTable = null;
-    document.querySelectorAll('.nav-item').forEach((el,i) => {
-        el.classList.toggle('active', ['menu','tables','kitchen','report','history','removed','users','edit','settings'][i] === p);
+    document.querySelectorAll('.nav-item').forEach(el => {
+        el.classList.remove('active');
     });
+    const navMap = {
+        'menu': 0, 'tables': 1, 'kitchen': 'navKitchen', 'shopping': 'navShopping,navShoppingAdmin',
+        'kuvarreport': 'navKuvarReport', 'report': 'navReport', 'history': 'navHistory',
+        'guestorders': 'navGuestOrders', 'removed': 'navRemoved', 'users': 'navUsers',
+        'edit': 'navEdit', 'settings': 'navSettings'
+    };
+    const target = navMap[p];
+    if (typeof target === 'number') {
+        const items = document.querySelectorAll('.nav-item');
+        if (items[target]) items[target].classList.add('active');
+    } else if (typeof target === 'string') {
+        target.split(',').forEach(id => {
+            const el = document.getElementById(id.trim());
+            if (el) el.classList.add('active');
+        });
+    }
     render();
 }
 
@@ -60,6 +76,7 @@ function render() {
     else if(page==='kitchenready') renderKitchenReady(c);
     else if(page==='kuvarreport') renderKuvarReport(c);
     else if(page==='shopping') renderShopping(c);
+    else if(page==='guestorders') renderGuestOrders(c);
     
     updateBadge();
     setTimeout(() => updateUserInfo(), 0);
@@ -241,5 +258,8 @@ function updateBadge() {
     
     // Shopping badge za admina
     updateShoppingBadge();
+    
+    // Guest orders badge
+    updateGuestOrdersBadge();
 }
 

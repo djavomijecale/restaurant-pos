@@ -9,7 +9,6 @@
 
 // Load data from Firebase
 async function loadFromFirebase() {
-    console.log('🔄 Loading data from Firebase...');
     isLoading = true;
     
     // Sačekaj autentifikaciju ali ne duže od 3 sekunde
@@ -57,6 +56,21 @@ async function loadFromFirebase() {
                 discountPercent:0, 
                 discountedItems:[]
             }));
+            
+            // Dodaj šank stolice ako ne postoje (11-14)
+            for (let i = 11; i <= 14; i++) {
+                if (!DB.tables.find(t => t.num === i)) {
+                    DB.tables.push({
+                        num: i,
+                        name: `Šank ${i - 10}`,
+                        order: [],
+                        discount: 0,
+                        discountPercent: 0,
+                        discountedItems: [],
+                        isBar: true
+                    });
+                }
+            }
             
             DB.orders = data.orders || [];
             DB.removedItems = data.removedItems || [];
@@ -155,8 +169,14 @@ async function loadFromFirebase() {
             
             // Učitaj blacklist obrisanih stavki
             DB.deletedGroceryItems = data.deletedGroceryItems || [];
-            console.log('🚫 Učitan blacklist iz Firebase:', DB.deletedGroceryItems);
-            console.log('🚫 Blacklist dužina:', DB.deletedGroceryItems.length);
+            
+            // Učitaj QR narudžbine gostiju
+            DB.guestOrders = data.guestOrders || [];
+            if (!Array.isArray(DB.guestOrders)) DB.guestOrders = Object.values(DB.guestOrders);
+            
+            // Učitaj pozive konobara
+            DB.waiterCalls = data.waiterCalls || [];
+            if (!Array.isArray(DB.waiterCalls)) DB.waiterCalls = Object.values(DB.waiterCalls);
             
             DB.shoppingList = data.shoppingList || [
                 {id: 1, name: 'Piletina (kg)', needed: false, category: 'Meso'},
@@ -183,7 +203,6 @@ async function loadFromFirebase() {
             }
             
             const activeWorkdays = Object.keys(DB.workdays).length;
-            console.log('📋 Workdays loaded from Firebase:', activeWorkdays, 'active');
             
             // If no data exists, initialize with defaults
             if (!data || Object.keys(data).length === 0) {
@@ -203,7 +222,6 @@ async function loadFromFirebase() {
         // KLJUČNO: Primeni ručno izmenjene kategorije (da se ne prepisuju sa Firebase)
         applyManualCategoryEdits();
         
-        console.log('✅ Data loaded from Firebase');
         isLoading = false;
         return true;
         
@@ -220,17 +238,21 @@ async function loadFromFirebase() {
 
 
 // Save to Firebase
+let isSaving = false;
+let saveQueued = false;
+
 async function saveToFirebase() {
     if (isLoading) return;
     
-    // Proveri da li je auth spreman
+    if (isSaving) {
+        saveQueued = true;
+        return;
+    }
+    isSaving = true;
+    
     if (!isFirebaseAuthReady) {
         console.warn('⚠️ Auth nije spreman - pokušavam save bez auth-a...');
-        // Probaj i bez auth-a
     }
-    
-    console.log('💾 Saving to Firebase...');
-    console.log('🚫 Blacklist koji se snima:', DB.deletedGroceryItems);
     
     const dataToSave = {
         menu: DB.menu,
@@ -244,17 +266,22 @@ async function saveToFirebase() {
         kitchenOrders: DB.kitchenOrders,
         groceryList: DB.groceryList,
         shoppingList: DB.shoppingList,
-        deletedGroceryItems: DB.deletedGroceryItems || [],  // BLACKLIST!
+        deletedGroceryItems: DB.deletedGroceryItems || [],
+        guestOrders: DB.guestOrders || [],
+        waiterCalls: DB.waiterCalls || [],
         lastUpdated: new Date().toISOString()
     };
     
     try {
         await database.ref('/').update(dataToSave);
-        console.log('✅ Saved to Firebase');
-        
     } catch (error) {
         console.error('❌ Error saving to Firebase:', error);
-        showAlert('Greška pri čuvanju na server: ' + error.message);
+    } finally {
+        isSaving = false;
+        if (saveQueued) {
+            saveQueued = false;
+            saveToFirebase();
+        }
     }
 }
 
@@ -263,13 +290,15 @@ async function saveToFirebase() {
 function save() {
     localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
     localStorage.setItem('konobarName', DB.konobarName);
-    // workdays se čuvaju u Firebase kroz DB.workdays objekat
     saveToFirebase();
 }
 
 
+let isCheckingUpdates = false;
+
 async function checkForUpdates() {
-    if (!isFirebaseAuthReady) return; // Ne proveravaj ako nije autentifikovan
+    if (!isFirebaseAuthReady || isCheckingUpdates) return;
+    isCheckingUpdates = true;
     
     try {
         const snapshot = await database.ref('/lastUpdated').once('value');
@@ -288,15 +317,36 @@ async function checkForUpdates() {
                 }
             }
             
+            // Zvučno obaveštenje za konobara/admina kad stigne nova QR narudžbina
+            if (DB.currentUser && DB.currentUser.role !== 'kuvar') {
+                const newGuestPending = (DB.guestOrders || []).filter(o => o.status === 'pending').length;
+                if (newGuestPending > lastKnownGuestPendingCount && lastKnownGuestPendingCount >= 0) {
+                    playKitchenSound();
+                }
+                lastKnownGuestPendingCount = newGuestPending;
+                
+                // Poziv konobara
+                const newWaiterCalls = (DB.waiterCalls || []).filter(c => c.status === 'pending').length;
+                if (newWaiterCalls > lastKnownWaiterCallsCount && lastKnownWaiterCallsCount >= 0) {
+                    playWaiterCallSound();
+                }
+                lastKnownWaiterCallsCount = newWaiterCalls;
+            }
+            
             render();
         }
     } catch (error) {
         console.error('❌ Error checking updates:', error);
+    } finally {
+        isCheckingUpdates = false;
     }
 }
 
 
+let autoRefreshTimer = null;
+
 function startAutoRefresh() {
-    setInterval(checkForUpdates, 10000);
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    autoRefreshTimer = setInterval(checkForUpdates, 10000);
 }
 

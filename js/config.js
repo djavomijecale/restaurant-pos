@@ -76,6 +76,8 @@ const DB = {
     groceryList: [],
     shoppingList: [],
     deletedGroceryItems: [],  // Blacklist za obrisane stavke
+    guestOrders: [],  // QR narudžbine od gostiju
+    waiterCalls: [],  // Pozivi konobara od gostiju
     manuallyEditedCategories: JSON.parse(localStorage.getItem('manuallyEditedCategories') || '{}')  // Lokalno čuvanje ručnih izmena!
 };
 
@@ -92,6 +94,8 @@ let editingTableNum = null;
 let confirmCallback = null;
 let editingWaiterUsername = null;
 let lastKnownPendingCount = 0; // Za praćenje novih kuhinjskih narudžbina
+let lastKnownGuestPendingCount = 0; // Za praćenje QR narudžbina
+let lastKnownWaiterCallsCount = 0; // Za praćenje poziva konobara
 let kitchenTimeInterval = null; // Za auto-update vremena
 let selectedWaiterUsername = null;
 let editingGroceryItemId = null;

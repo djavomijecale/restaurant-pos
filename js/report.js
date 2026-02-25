@@ -125,14 +125,30 @@ function renderFinalReport(c) {
                             <div style="color:#FFF">${r.reason}</div>
                         </div>`;
                     }).join('')}
-                    <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2A2A4A">
-                        <div style="display:flex;justify-content:space-between;align-items:center">
-                            <span style="color:#B0B0B0;font-size:14px">Keš nakon smanjenja:</span>
-                            <span style="color:#FFD700;font-weight:bold;font-size:18px">${report.finalCash.toFixed(0)} din.</span>
-                        </div>
-                    </div>
                 </div>
                 ` : ''}
+                
+                <div style="margin-top:20px;padding:16px;background:#16213E;border-radius:8px;border-left:4px solid #4CAF50">
+                    <h4 style="color:#4CAF50;margin:0 0 12px">🏦 Stanje Kase</h4>
+                    ${report.deposit > 0 ? `
+                    <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
+                        <span style="color:#B0B0B0">Depozit (početno):</span>
+                        <span style="color:#FFF">${report.deposit.toFixed(0)} din.</span>
+                    </div>` : ''}
+                    <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
+                        <span style="color:#B0B0B0">+ Keš prihod:</span>
+                        <span style="color:#4CAF50">${report.cashRevenue.toFixed(0)} din.</span>
+                    </div>
+                    ${report.totalCashReductions > 0 ? `
+                    <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
+                        <span style="color:#B0B0B0">− Smanjenja:</span>
+                        <span style="color:#FF6B6B">-${report.totalCashReductions.toFixed(0)} din.</span>
+                    </div>` : ''}
+                    <div style="display:flex;justify-content:space-between;padding:8px 0 0;margin-top:8px;border-top:2px solid #2A2A4A;font-size:18px;font-weight:bold">
+                        <span style="color:#FFD700">💰 U kasi:</span>
+                        <span style="color:#FFD700">${report.finalCash.toFixed(0)} din.</span>
+                    </div>
+                </div>
             </div>`;
     
     // BONUS SEKCIJA - Nova pravila
@@ -326,7 +342,7 @@ ${'─'.repeat(40)}
         });
         reportText += `${'─'.repeat(40)}
 Ukupno smanjeno: -${report.totalCashReductions.toFixed(2)} RSD
-Finalni keš: ${report.finalCash.toFixed(2)} RSD
+Stanje kase: ${report.finalCash.toFixed(2)} RSD
 `;
     }
 
@@ -572,8 +588,8 @@ function renderReport(c) {
             h += `
                 <div style="margin-top:12px;padding-top:12px;border-top:1px solid #2A2A4A">
                     <div style="display:flex;justify-content:space-between;align-items:center">
-                        <span style="color:#B0B0B0;font-size:13px">Keš nakon smanjenja:</span>
-                        <span style="color:#FFD700;font-weight:bold;font-size:16px">${(cash - totalReductions).toFixed(0)} din.</span>
+                        <span style="color:#B0B0B0;font-size:13px">💰 U kasi:</span>
+                        <span style="color:#FFD700;font-weight:bold;font-size:16px">${((myWorkday.deposit || 0) + cash - totalReductions).toFixed(0)} din.</span>
                     </div>
                 </div>
             </div>`;

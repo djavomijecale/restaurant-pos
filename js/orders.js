@@ -217,6 +217,11 @@ function renderTableOrder(c) {
                 <button class="btn btn-secondary" onclick="clearTable(${table.num})">Očisti Sto</button>
                 <button class="btn" onclick="proceedToPayment(${table.num})">💳 Naplati</button>
             </div>
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+                <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openSplitBill(${table.num})">✂️ Podeli Račun</button>
+                <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openTransferTable(${table.num})">🔄 Prebaci Sto</button>
+                <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openTransferWaiter(${table.num})">👤 Predaj Konobaru</button>
+            </div>
         </div>`;
     }
 

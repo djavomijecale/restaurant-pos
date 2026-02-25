@@ -7,12 +7,8 @@
 // SYNC DRINKS TO GROCERY LIST
 // ============================================
 function syncDrinksToGrocery() {
-    console.log('🍺 Sinhronizacija pića iz menija u groceryList...');
     
     // DEBUG: Prikaži blacklist
-    console.log('🚫 Blacklist trenutno:', DB.deletedGroceryItems);
-    console.log('🚫 Blacklist je array?', Array.isArray(DB.deletedGroceryItems));
-    console.log('🚫 Blacklist dužina:', DB.deletedGroceryItems ? DB.deletedGroceryItems.length : 'undefined');
     
     // Pronađi sva pića u meniju
     const drinks = DB.menu.filter(item => item.cat === 'Piće');
@@ -50,19 +46,15 @@ function syncDrinksToGrocery() {
             
             DB.groceryList.push(newGroceryItem);
             addedCount++;
-            console.log(`   ✅ Dodato: ${drink.name} → ${newGroceryItem.category}`);
         }
     });
     
     if (skippedCount > 0) {
-        console.log(`⏭️ Preskočeno ${skippedCount} pića (blacklist)`);
     }
     
     if (addedCount > 0) {
-        console.log(`✅ Dodato ${addedCount} novih pića u groceryList`);
         // Nemoj snimati odmah, to će se desiti posle
     } else {
-        console.log('ℹ️ Sva pića već postoje u groceryList');
     }
 }
 
@@ -127,19 +119,15 @@ function determineDrinkCategory(name, desc) {
 // SYNC PIZZA INGREDIENTS TO GROCERY LIST
 // ============================================
 function syncPizzaIngredientsToGrocery() {
-    console.log('🍕 Sinhronizacija SVOJA PIZZA sastojaka u groceryList...');
     
     // DEBUG: Prikaži blacklist
-    console.log('🚫 Blacklist trenutno:', DB.deletedGroceryItems);
     
     // Pronađi sve stavke iz grupe "SVOJA PIZZA"
     const pizzaIngredients = DB.menu.filter(item => 
         item.group && item.group.toUpperCase() === 'SVOJA PIZZA'
     );
-    console.log(`   Pronađeno ${pizzaIngredients.length} sastojaka u SVOJA PIZZA grupi`);
     
     if (pizzaIngredients.length === 0) {
-        console.log('ℹ️ Nema stavki u SVOJA PIZZA grupi');
         return;
     }
     
@@ -175,18 +163,14 @@ function syncPizzaIngredientsToGrocery() {
             
             DB.groceryList.push(newGroceryItem);
             addedCount++;
-            console.log(`   ✅ Dodato: ${ingredient.name} → ${newGroceryItem.category}`);
         }
     });
     
     if (skippedCount > 0) {
-        console.log(`⏭️ Preskočeno ${skippedCount} sastojaka (blacklist)`);
     }
     
     if (addedCount > 0) {
-        console.log(`✅ Dodato ${addedCount} novih pizza sastojaka u groceryList`);
     } else {
-        console.log('ℹ️ Svi pizza sastojci već postoje u groceryList');
     }
 }
 
@@ -259,11 +243,9 @@ function applyManualCategoryEdits() {
 
 
 function syncDrinksFromMenu() {
-    console.log('🔄 Sinhronizacija pića iz menija...');
     
     // 1. Izvuci sva pića iz menija
     const drinksInMenu = DB.menu.filter(item => item.cat === 'Piće');
-    console.log('📋 Pronađeno pića u meniju:', drinksInMenu.length);
     
     if(drinksInMenu.length === 0) {
         showAlert('⚠️ Nema pića u meniju!');
@@ -346,7 +328,6 @@ function syncDrinksFromMenu() {
         );
         
         if (isBlacklisted) {
-            console.log('🚫 Preskočeno (u blacklist-u):', drink.name);
             blacklistedCount++;
             return; // Skip!
         }
@@ -373,7 +354,6 @@ function syncDrinksFromMenu() {
         };
         
         DB.groceryList.push(newItem);
-        console.log('✅ Dodato:', drink.name, '→', category);
         addedCount++;
     });
     
@@ -395,21 +375,17 @@ function syncDrinksFromMenu() {
     }
     
     console.log('📊 Rezultat:');
-    console.log('   Dodato:', addedCount);
     console.log('   Preskočeno:', skippedCount);
-    console.log('   🚫 Blacklist:', blacklistedCount);
     console.log('   Ukupno u meniju:', drinksInMenu.length);
 }
 
 
 function syncPizzaIngredientsFromMenu() {
-    console.log('🔄 Sinhronizacija SVOJA PIZZA sastojaka iz menija...');
     
     // 1. Izvuci sve stavke iz grupe "SVOJA PIZZA"
     const pizzaIngredients = DB.menu.filter(item => 
         item.group && item.group.toUpperCase() === 'SVOJA PIZZA'
     );
-    console.log('📋 Pronađeno sastojaka u SVOJA PIZZA grupi:', pizzaIngredients.length);
     
     if(pizzaIngredients.length === 0) {
         showAlert('⚠️ Nema stavki u SVOJA PIZZA grupi!');
@@ -428,7 +404,6 @@ function syncPizzaIngredientsFromMenu() {
         );
         
         if (isBlacklisted) {
-            console.log('🚫 Preskočeno (u blacklist-u):', ingredient.name);
             blacklistedCount++;
             return; // Skip!
         }
@@ -455,7 +430,6 @@ function syncPizzaIngredientsFromMenu() {
         };
         
         DB.groceryList.push(newItem);
-        console.log('✅ Dodato:', ingredient.name, '→', category);
         addedCount++;
     });
     
@@ -477,9 +451,6 @@ function syncPizzaIngredientsFromMenu() {
     }
     
     console.log('📊 Rezultat:');
-    console.log('   Dodato:', addedCount);
     console.log('   Preskočeno:', skippedCount);
-    console.log('   🚫 Blacklist:', blacklistedCount);
-    console.log('   Ukupno u SVOJA PIZZA:', pizzaIngredients.length);
 }
 

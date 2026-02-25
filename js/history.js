@@ -28,12 +28,14 @@ function renderHistory(c) {
     
     // Filter orders by date range
     let filteredOrders = DB.orders.filter(o => {
+        if (!o || !o.time) return false;
         const orderDate = o.time.split('T')[0];
         return orderDate >= filter.startDate && orderDate <= filter.endDate;
     });
     
     // Filter workday sessions by date range
     let filteredSessions = (DB.workdayHistory || []).filter(s => {
+        if (!s || !s.loginTime) return false;
         const sessionDate = s.loginTime.split('T')[0];
         return sessionDate >= filter.startDate && sessionDate <= filter.endDate;
     });
@@ -46,10 +48,10 @@ function renderHistory(c) {
     }
     
     // Calculate statistics
-    const totalRevenue = filteredOrders.reduce((s,o)=>s+o.tot,0);
+    const totalRevenue = filteredOrders.reduce((s,o)=>s+(o.tot||0),0);
     const totalOrders = filteredOrders.length;
-    const cash = filteredOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
-    const card = filteredOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+    const cash = filteredOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+(o.tot||0),0);
+    const card = filteredOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+(o.tot||0),0);
     const totalSessions = filteredSessions.length;
     
     // NOVA STATISTIKA - Plate i bonusi iz sesija
@@ -316,7 +318,7 @@ function renderHistoryOrders(orders) {
 
 
 function renderHistorySessions(sessions) {
-    const sortedSessions = [...sessions].sort((a, b) => b.loginTime.localeCompare(a.loginTime));
+    const sortedSessions = [...sessions].filter(s => s && s.loginTime).sort((a, b) => b.loginTime.localeCompare(a.loginTime));
     
     let h = `
         <div style="background:#0F3460;padding:20px;border-radius:12px">
@@ -327,21 +329,23 @@ function renderHistorySessions(sessions) {
         h += `<div style="text-align:center;color:#B0B0B0;padding:40px">Nema sesija za izabrani period</div>`;
     } else {
         sortedSessions.forEach(s => {
+            try {
             const loginDate = new Date(s.loginTime);
-            const logoutDate = new Date(s.logoutTime);
+            const logoutDate = s.logoutTime ? new Date(s.logoutTime) : null;
             
             const dateStr = loginDate.toLocaleDateString('sr-RS', {day: 'numeric', month: 'short', year: 'numeric'});
             const loginTime = loginDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
-            const logoutTime = logoutDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+            const logoutTime = logoutDate ? logoutDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'}) : '—';
             
-            const hours = Math.floor(s.duration / 60);
-            const mins = s.duration % 60;
+            const duration = s.duration || 0;
+            const hours = Math.floor(duration / 60);
+            const mins = duration % 60;
             const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
             
             // BONUS INDIKATOR
             const bonusBadge = s.bonusEarned ? 
                 `<div style="background:linear-gradient(135deg, #FFD700 0%, #FFA500 100%);color:#000;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:bold;margin-top:8px;display:inline-block;box-shadow:0 2px 8px rgba(255,215,0,0.3)">
-                    🎁 BONUS: ${s.bonusAmount.toFixed(0)} din.
+                    🎁 BONUS: ${(s.bonusAmount||0).toFixed(0)} din.
                 </div>` : '';
             
             // PLATA INDIKATOR
@@ -361,14 +365,14 @@ function renderHistorySessions(sessions) {
                 (s.isSecondShift ? '<span style="background:#9C27B0;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Druga smena</span>' : '');
             
             // Prikaži ukupan učinak ako ima depozit, inače samo revenue
-            const displayRevenue = s.deposit && s.deposit > 0 ? s.totalPerformance : s.revenue;
+            const displayRevenue = s.deposit && s.deposit > 0 ? (s.totalPerformance || 0) : (s.revenue || 0);
             const revenueLabel = s.deposit && s.deposit > 0 ? '📊 Učinak' : '💰 Prihod';
             
             h += `
                 <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;${s.bonusEarned ? 'border:2px solid #FFD700;' : ''}">
                     <div style="display:flex;justify-content:space-between;align-items:start">
                         <div style="flex:1">
-                            <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user}${shiftBadge}</div>
+                            <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user || 'Nepoznato'}${shiftBadge}</div>
                             <div style="color:#B0B0B0;font-size:11px">${dateStr}</div>
                             <div style="color:#FFF;font-size:12px;margin-top:4px">
                                 🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
@@ -377,12 +381,13 @@ function renderHistorySessions(sessions) {
                         </div>
                         <div style="text-align:right">
                             <div style="color:#4CAF50;font-size:18px;font-weight:bold">${displayRevenue.toFixed(0)} din.</div>
-                            <div style="color:#B0B0B0;font-size:11px">${s.orderCount} narudžbina</div>
-                            ${s.deposit && s.deposit > 0 ? `<div style="color:#9C27B0;font-size:10px;margin-top:2px">(${s.revenue.toFixed(0)} + ${s.deposit.toFixed(0)} dep.)</div>` : ''}
+                            <div style="color:#B0B0B0;font-size:11px">${s.orderCount || 0} narudžbina</div>
+                            ${s.deposit && s.deposit > 0 ? `<div style="color:#9C27B0;font-size:10px;margin-top:2px">(${(s.revenue||0).toFixed(0)} + ${(s.deposit||0).toFixed(0)} dep.)</div>` : ''}
                         </div>
                     </div>
                 </div>
             `;
+            } catch(e) { console.error('Session render error:', e, s); }
         });
     }
     
@@ -408,6 +413,7 @@ function exportHistoryToExcel() {
     
     // Filter orders
     const orders = DB.orders.filter(o => {
+        if (!o || !o.time) return false;
         const orderDate = o.time.split('T')[0];
         return orderDate >= filter.startDate && orderDate <= filter.endDate;
     });

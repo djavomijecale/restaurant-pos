@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Naruči Online</title>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #0D0D0D;
+            color: #F5F5F5;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ===== HERO HEADER ===== */
+        .hero {
+            background: linear-gradient(165deg, #1A1A2E 0%, #16213E 40%, #0F3460 100%);
+            padding: 32px 20px 24px;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::after {
+            content: '';
+            position: absolute;
+            top: -50%; right: -30%;
+            width: 300px; height: 300px;
+            background: radial-gradient(circle, rgba(233,69,96,0.15) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+        .hero-content { position: relative; z-index: 1; text-align: center; }
+        .hero-logo {
+            font-size: 42px;
+            margin-bottom: 4px;
+        }
+        .hero h1 {
+            font-size: 26px;
+            font-weight: 800;
+            color: #FFFFFF;
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+        }
+        .hero-address {
+            color: rgba(255,255,255,0.5);
+            font-size: 13px;
+            font-weight: 400;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(76,175,80,0.15);
+            border: 1px solid rgba(76,175,80,0.3);
+            color: #66BB6A;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+        .hero-badge .dot {
+            width: 6px; height: 6px;
+            background: #4CAF50;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* ===== STICKY NAV ===== */
+        .sticky-nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: #0D0D0D;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            transition: box-shadow 0.3s;
+        }
+        .sticky-nav.scrolled {
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }
+
+        /* Search */
+        .search-wrap {
+            padding: 12px 16px 0;
+        }
+        .search-box {
+            display: flex;
+            align-items: center;
+            background: #1A1A1A;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px;
+            padding: 0 14px;
+            transition: border-color 0.2s;
+        }
+        .search-box:focus-within { border-color: rgba(233,69,96,0.5); }
+        .search-box .icon { color: #555; font-size: 16px; margin-right: 10px; }
+        .search-box input {
+            background: none;
+            border: none;
+            color: #F5F5F5;
+            font-size: 15px;
+            font-family: inherit;
+            padding: 12px 0;
+            width: 100%;
+            outline: none;
+        }
+        .search-box input::placeholder { color: #555; }
+        .search-clear {
+            background: none;
+            border: none;
+            color: #777;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px;
+            display: none;
+        }
+        .search-clear.show { display: block; }
+
+        /* Categories */
+        .categories {
+            display: flex;
+            gap: 6px;
+            padding: 10px 16px 12px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .categories::-webkit-scrollbar { display: none; }
+        .cat-pill {
+            flex-shrink: 0;
+            padding: 7px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #1A1A1A;
+            color: #888;
+            border: 1px solid rgba(255,255,255,0.06);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .cat-pill.active {
+            background: #E94560;
+            color: #FFF;
+            border-color: #E94560;
+        }
+
+        /* ===== CONTENT ===== */
+        .container {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 0 16px 120px;
+        }
+
+        /* Group Headers */
+        .group-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 20px 0 10px;
+        }
+        .group-header .line {
+            flex: 1;
+            height: 1px;
+            background: rgba(255,255,255,0.06);
+        }
+        .group-header h3 {
+            color: #E94560;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            white-space: nowrap;
+        }
+
+        /* Item Cards */
+        .item-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: #141414;
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius: 16px;
+            padding: 14px;
+            margin-bottom: 8px;
+            transition: all 0.15s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .item-card:active { transform: scale(0.985); }
+        .item-card.in-cart {
+            border-color: rgba(233,69,96,0.25);
+            background: linear-gradient(135deg, #141414 0%, #1a1020 100%);
+        }
+
+        .item-emoji {
+            font-size: 34px;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.04);
+            border-radius: 12px;
+            flex-shrink: 0;
+        }
+        .item-info { flex: 1; min-width: 0; }
+        .item-name {
+            font-size: 15px;
+            font-weight: 600;
+            line-height: 1.3;
+            margin-bottom: 2px;
+        }
+        .item-desc {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .item-price {
+            font-size: 15px;
+            font-weight: 700;
+            color: #FFD700;
+            margin-top: 4px;
+        }
+        .item-right {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        /* Add button (when qty=0) */
+        .add-btn {
+            width: 40px; height: 40px;
+            border-radius: 12px;
+            border: none;
+            background: #E94560;
+            color: #FFF;
+            font-size: 22px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .add-btn:active { transform: scale(0.9); }
+
+        /* Qty stepper */
+        .qty-stepper {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            background: #1A1A1A;
+            border-radius: 12px;
+            padding: 3px;
+        }
+        .qty-stepper button {
+            width: 34px; height: 34px;
+            border-radius: 10px;
+            border: none;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .qty-stepper button:active { transform: scale(0.85); }
+        .qty-stepper .minus { background: #2A1520; color: #E94560; }
+        .qty-stepper .plus { background: #152A1A; color: #4CAF50; }
+        .qty-stepper .qty {
+            min-width: 28px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 700;
+            color: #FFF;
+        }
+
+        /* ===== CART BAR ===== */
+        .cart-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 200;
+            padding: 12px 16px;
+            padding-bottom: max(12px, env(safe-area-inset-bottom));
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .cart-bar.show { transform: translateY(0); }
+        .cart-bar-inner {
+            max-width: 640px;
+            margin: 0 auto;
+            background: #E94560;
+            border-radius: 16px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            box-shadow: 0 8px 32px rgba(233,69,96,0.35);
+            -webkit-tap-highlight-color: transparent;
+        }
+        .cart-bar-inner:active { transform: scale(0.98); }
+        .cart-bar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .cart-badge {
+            background: rgba(255,255,255,0.25);
+            color: #FFF;
+            font-size: 13px;
+            font-weight: 700;
+            width: 26px; height: 26px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cart-bar-text {
+            font-size: 15px;
+            font-weight: 600;
+            color: #FFF;
+        }
+        .cart-bar-total {
+            font-size: 17px;
+            font-weight: 800;
+            color: #FFF;
+        }
+
+        /* ===== CART SHEET ===== */
+        .sheet-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 300;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+        }
+        .sheet-overlay.show { display: block; }
+
+        .cart-sheet {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            z-index: 301;
+            background: #141414;
+            border-radius: 24px 24px 0 0;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: translateY(100%);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+        }
+        .cart-sheet.show { transform: translateY(0); }
+
+        .sheet-handle {
+            display: flex;
+            justify-content: center;
+            padding: 12px 0 8px;
+        }
+        .sheet-handle span {
+            width: 40px; height: 4px;
+            background: #333;
+            border-radius: 2px;
+        }
+
+        .sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 20px 16px;
+        }
+        .sheet-header h2 {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .sheet-close {
+            background: #1A1A1A;
+            border: none;
+            color: #888;
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .sheet-items { padding: 0 20px; }
+        .sheet-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .sheet-item:last-child { border-bottom: none; }
+        .sheet-item-info { flex: 1; min-width: 0; }
+        .sheet-item-name { font-size: 15px; font-weight: 600; }
+        .sheet-item-sub { font-size: 12px; color: #666; margin-top: 2px; }
+        .sheet-item-total {
+            font-size: 15px;
+            font-weight: 700;
+            color: #FFD700;
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+
+        .sheet-footer { padding: 16px 20px 0; }
+        .sheet-total-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-top: 2px solid rgba(255,255,255,0.08);
+        }
+        .sheet-total-label {
+            font-size: 16px;
+            font-weight: 600;
+            color: #999;
+        }
+        .sheet-total-value {
+            font-size: 24px;
+            font-weight: 800;
+            color: #FFD700;
+        }
+
+        .sheet-inputs {
+            padding: 0 20px;
+            margin-top: 8px;
+        }
+        .input-group { margin-bottom: 12px; }
+        .input-group label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .input-group input {
+            width: 100%;
+            background: #1A1A1A;
+            border: 1px solid rgba(255,255,255,0.08);
+            color: #F5F5F5;
+            font-family: inherit;
+            font-size: 15px;
+            padding: 12px 14px;
+            border-radius: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus { border-color: rgba(233,69,96,0.5); }
+        .input-group input::placeholder { color: #444; }
+
+        .submit-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            background: #4CAF50;
+            color: #FFF;
+            border: none;
+            padding: 16px;
+            border-radius: 14px;
+            font-family: inherit;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin: 16px 20px 0;
+            width: calc(100% - 40px);
+            transition: all 0.15s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .submit-btn:active { transform: scale(0.98); }
+        .submit-btn:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+        /* ===== SUCCESS ===== */
+        .success-page {
+            display: none;
+            text-align: center;
+            padding: 80px 24px 40px;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        .success-page.show { display: block; }
+        .success-check {
+            width: 80px; height: 80px;
+            border-radius: 50%;
+            background: rgba(76,175,80,0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            font-size: 40px;
+        }
+        .success-page h2 {
+            font-size: 24px;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+        .success-page p {
+            color: #888;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+        .success-id-box {
+            background: #141414;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 14px 20px;
+            margin: 24px 0;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            color: #FFD700;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        .success-steps {
+            text-align: left;
+            background: #141414;
+            border-radius: 16px;
+            padding: 20px;
+            margin: 24px 0;
+        }
+        .success-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 10px 0;
+        }
+        .success-step:not(:last-child) {
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .step-num {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: rgba(233,69,96,0.12);
+            color: #E94560;
+            font-size: 13px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .step-num.done { background: rgba(76,175,80,0.15); color: #4CAF50; }
+        .step-text { font-size: 14px; color: #999; line-height: 1.5; padding-top: 3px; }
+        .step-text strong { color: #F5F5F5; }
+
+        .again-btn {
+            background: #E94560;
+            color: #FFF;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 8px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .again-btn:active { transform: scale(0.97); }
+
+        /* ===== LOADING ===== */
+        .loading-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 20px;
+        }
+        .loader {
+            width: 48px; height: 48px;
+            border: 3px solid rgba(233,69,96,0.15);
+            border-top-color: #E94560;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-screen p { color: #666; margin-top: 16px; font-size: 14px; }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #555;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+        .empty-state p { font-size: 15px; }
+
+        /* No results */
+        .no-results {
+            text-align: center;
+            padding: 40px 20px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- HERO -->
+    <div class="hero">
+        <div class="hero-content">
+            <div class="hero-logo" id="heroLogo">🍕</div>
+            <h1 id="restaurantName">Restoran</h1>
+            <div class="hero-address" id="restaurantAddr"></div>
+            <div class="hero-badge">
+                <span class="dot"></span>
+                Primamo narudžbine
+            </div>
+        </div>
+    </div>
+
+    <!-- STICKY NAV -->
+    <div class="sticky-nav" id="stickyNav">
+        <div class="search-wrap">
+            <div class="search-box">
+                <span class="icon">🔍</span>
+                <input type="text" id="searchInput" placeholder="Pretraži meni..." oninput="onSearch()">
+                <button class="search-clear" id="searchClear" onclick="clearSearch()">✕</button>
+            </div>
+        </div>
+        <div class="categories" id="catBar"></div>
+    </div>
+
+    <!-- CONTENT -->
+    <div class="container" id="menuContainer">
+        <div class="loading-screen" id="loadingScreen">
+            <div class="loader"></div>
+            <p>Učitavanje menija...</p>
+        </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="success-page" id="successPage">
+        <div class="success-check">✅</div>
+        <h2>Narudžbina poslata!</h2>
+        <p>Vaša narudžbina je uspešno primljena i čeka potvrdu konobara.</p>
+        <div class="success-id-box" id="orderId"></div>
+        <div class="success-steps">
+            <div class="success-step">
+                <div class="step-num done">✓</div>
+                <div class="step-text"><strong>Narudžbina poslata</strong> — upravo sad</div>
+            </div>
+            <div class="success-step">
+                <div class="step-num">2</div>
+                <div class="step-text">Konobar potvrđuje i dodeljuje sto</div>
+            </div>
+            <div class="success-step">
+                <div class="step-num">3</div>
+                <div class="step-text">Kuhinja priprema vašu narudžbinu</div>
+            </div>
+            <div class="success-step">
+                <div class="step-num">4</div>
+                <div class="step-text">Uživajte u obroku! 🎉</div>
+            </div>
+        </div>
+        <button class="again-btn" onclick="newGuestOrder()">🍕 Nova Narudžbina</button>
+    </div>
+
+    <!-- CART BAR -->
+    <div class="cart-bar" id="cartBar" onclick="openCart()">
+        <div class="cart-bar-inner">
+            <div class="cart-bar-left">
+                <div class="cart-badge" id="cartBadge">0</div>
+                <span class="cart-bar-text">Pogledaj korpu</span>
+            </div>
+            <span class="cart-bar-total" id="cartBarTotal">0 din</span>
+        </div>
+    </div>
+
+    <!-- CART SHEET -->
+    <div class="sheet-overlay" id="sheetOverlay" onclick="closeCart()"></div>
+    <div class="cart-sheet" id="cartSheet">
+        <div class="sheet-handle"><span></span></div>
+        <div class="sheet-header">
+            <h2>Korpa</h2>
+            <button class="sheet-close" onclick="closeCart()">✕</button>
+        </div>
+        <div class="sheet-items" id="sheetItems"></div>
+        <div class="sheet-footer">
+            <div class="sheet-total-row">
+                <span class="sheet-total-label">Ukupno</span>
+                <span class="sheet-total-value" id="sheetTotal">0 din</span>
+            </div>
+        </div>
+        <div class="sheet-inputs">
+            <div class="input-group">
+                <label>Vaše ime (opciono)</label>
+                <input type="text" id="guestName" placeholder="Npr: Marko" maxlength="30">
+            </div>
+            <div class="input-group">
+                <label>Napomena (opciono)</label>
+                <input type="text" id="guestNote" placeholder="Bez luka, extra sir..." maxlength="100">
+            </div>
+        </div>
+        <button class="submit-btn" id="submitBtn" onclick="submitOrder()" disabled>
+            Pošalji narudžbinu
+        </button>
+    </div>
+
+    <script>
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyC1bcysO7v34xhqLTJlTNXpK_XtCS372aE",
+            databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app",
+            authDomain: "restaurant-pos-5ecf4.firebaseapp.com",
+            projectId: "restaurant-pos-5ecf4"
+        };
+
+        firebase.initializeApp(FIREBASE_CONFIG);
+        const auth = firebase.auth();
+        const database = firebase.database();
+        auth.signInAnonymously().catch(e => console.warn('Auth:', e));
+
+        let menu = [];
+        let settings = {};
+        let cart = {};
+        let selectedCat = 'Sve';
+        let searchQuery = '';
+
+        const catEmojis = {
+            'Hrana': '🍽️', 'Piće': '🍺', 'Desert': '🍰',
+            'Ostalo': '📦', 'Sve': '📋'
+        };
+        const defaultIcons = {
+            'Hrana': '🍕', 'Piće': '🥤', 'Desert': '🍰', 'Ostalo': '📦'
+        };
+
+        // Sticky nav shadow
+        window.addEventListener('scroll', () => {
+            document.getElementById('stickyNav').classList.toggle('scrolled', window.scrollY > 80);
+        });
+
+        let menuLoaded = false;
+
+        function loadMenu() {
+            // Real-time listener — meni se automatski ažurira kad admin promeni stavke
+            database.ref('menu').on('value', snap => {
+                menu = snap.val() || [];
+                if (menuLoaded) {
+                    // Proveri da li su artikli u korpi još uvek validni
+                    const validIds = new Set(menu.map(m => m.id));
+                    for (const id of Object.keys(cart)) {
+                        if (!validIds.has(Number(id))) delete cart[id];
+                    }
+                }
+                renderCategories();
+                renderMenu();
+                menuLoaded = true;
+            }, err => {
+                console.error('Menu listener error:', err);
+                if (!menuLoaded) {
+                    document.getElementById('menuContainer').innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">😕</div>
+                            <p>Greška pri učitavanju. <br><a href="#" onclick="location.reload()" style="color:#E94560">Pokušaj ponovo</a></p>
+                        </div>`;
+                }
+            });
+
+            // Settings listener (ime restorana, adresa)
+            database.ref('settings').on('value', snap => {
+                settings = snap.val() || {};
+                document.getElementById('restaurantName').textContent = settings.name || 'Restoran';
+                if (settings.addr) {
+                    document.getElementById('restaurantAddr').textContent =
+                        settings.addr + (settings.phone ? '  •  ' + settings.phone : '');
+                }
+            });
+        }
+
+        function renderCategories() {
+            const cats = ['Sve', ...new Set(menu.map(m => m.cat))];
+            const bar = document.getElementById('catBar');
+            bar.innerHTML = cats.map(cat => {
+                const emoji = catEmojis[cat] || '📦';
+                const count = cat === 'Sve' ? menu.length : menu.filter(m => m.cat === cat).length;
+                return `<button class="cat-pill ${cat === selectedCat ? 'active' : ''}"
+                    onclick="selectCat('${cat}')">${emoji} ${cat} <span style="opacity:0.6;font-size:11px">(${count})</span></button>`;
+            }).join('');
+        }
+
+        function selectCat(cat) {
+            selectedCat = cat;
+            renderCategories();
+            renderMenu();
+            // Scroll to top of menu
+            document.getElementById('menuContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function onSearch() {
+            searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+            document.getElementById('searchClear').classList.toggle('show', searchQuery.length > 0);
+            renderMenu();
+        }
+
+        function clearSearch() {
+            document.getElementById('searchInput').value = '';
+            searchQuery = '';
+            document.getElementById('searchClear').classList.remove('show');
+            renderMenu();
+        }
+
+        function renderMenu() {
+            const container = document.getElementById('menuContainer');
+
+            if (!menu.length) {
+                container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Meni je trenutno prazan.</p></div>';
+                return;
+            }
+
+            // Filter
+            let items = selectedCat === 'Sve' ? [...menu] : menu.filter(m => m.cat === selectedCat);
+
+            if (searchQuery) {
+                items = items.filter(m =>
+                    m.name.toLowerCase().includes(searchQuery) ||
+                    (m.desc && m.desc.toLowerCase().includes(searchQuery)) ||
+                    (m.group && m.group.toLowerCase().includes(searchQuery))
+                );
+            }
+
+            if (items.length === 0) {
+                container.innerHTML = `<div class="no-results">
+                    <p style="font-size:32px;margin-bottom:8px">🔍</p>
+                    <p>Nema rezultata za "${document.getElementById('searchInput').value}"</p>
+                </div>`;
+                return;
+            }
+
+            // Group by group
+            const groups = {};
+            items.forEach(item => {
+                const g = item.group || item.cat || 'Ostalo';
+                if (!groups[g]) groups[g] = [];
+                groups[g].push(item);
+            });
+
+            let html = '';
+            for (const [group, groupItems] of Object.entries(groups)) {
+                html += `<div class="group-header">
+                    <span class="line"></span>
+                    <h3>${group}</h3>
+                    <span class="line"></span>
+                </div>`;
+
+                groupItems.forEach(item => {
+                    const qty = cart[item.id] || 0;
+                    const icon = item.icon || defaultIcons[item.cat] || '🍽️';
+                    const inCart = qty > 0;
+
+                    html += `<div class="item-card ${inCart ? 'in-cart' : ''}">
+                        <div class="item-emoji">${icon}</div>
+                        <div class="item-info">
+                            <div class="item-name">${item.name}</div>
+                            ${item.desc ? `<div class="item-desc">${item.desc}</div>` : ''}
+                            <div class="item-price">${item.price.toLocaleString()} din</div>
+                        </div>
+                        <div class="item-right">`;
+
+                    if (qty === 0) {
+                        html += `<button class="add-btn" onclick="addItem(${item.id})">+</button>`;
+                    } else {
+                        html += `<div class="qty-stepper">
+                            <button class="minus" onclick="removeItem(${item.id})">−</button>
+                            <span class="qty">${qty}</span>
+                            <button class="plus" onclick="addItem(${item.id})">+</button>
+                        </div>`;
+                    }
+
+                    html += `</div></div>`;
+                });
+            }
+
+            container.innerHTML = html;
+            updateCartBar();
+        }
+
+        function addItem(id) {
+            cart[id] = (cart[id] || 0) + 1;
+            renderMenu();
+        }
+
+        function removeItem(id) {
+            if (cart[id]) {
+                cart[id]--;
+                if (cart[id] <= 0) delete cart[id];
+            }
+            renderMenu();
+        }
+
+        function getCartTotal() {
+            let total = 0;
+            for (const [id, qty] of Object.entries(cart)) {
+                const item = menu.find(m => m.id == id);
+                if (item) total += item.price * qty;
+            }
+            return total;
+        }
+
+        function getCartCount() {
+            return Object.values(cart).reduce((s, q) => s + q, 0);
+        }
+
+        function updateCartBar() {
+            const bar = document.getElementById('cartBar');
+            const count = getCartCount();
+            if (count > 0) {
+                bar.classList.add('show');
+                document.getElementById('cartBadge').textContent = count;
+                document.getElementById('cartBarTotal').textContent = getCartTotal().toLocaleString() + ' din';
+            } else {
+                bar.classList.remove('show');
+            }
+        }
+
+        function openCart() {
+            const overlay = document.getElementById('sheetOverlay');
+            const sheet = document.getElementById('cartSheet');
+            overlay.classList.add('show');
+            setTimeout(() => sheet.classList.add('show'), 10);
+
+            const itemsEl = document.getElementById('sheetItems');
+            let html = '';
+            for (const [id, qty] of Object.entries(cart)) {
+                const item = menu.find(m => m.id == id);
+                if (!item) continue;
+                const icon = item.icon || defaultIcons[item.cat] || '🍽️';
+                html += `<div class="sheet-item">
+                    <div class="item-emoji" style="width:40px;height:40px;font-size:24px;border-radius:10px">${icon}</div>
+                    <div class="sheet-item-info">
+                        <div class="sheet-item-name">${item.name}</div>
+                        <div class="sheet-item-sub">${item.price.toLocaleString()} din × ${qty}</div>
+                    </div>
+                    <div class="qty-stepper" style="transform:scale(0.85)">
+                        <button class="minus" onclick="removeItem(${id});openCart()">−</button>
+                        <span class="qty">${qty}</span>
+                        <button class="plus" onclick="addItem(${id});openCart()">+</button>
+                    </div>
+                    <span class="sheet-item-total">${(item.price * qty).toLocaleString()}</span>
+                </div>`;
+            }
+
+            itemsEl.innerHTML = html || '<p style="color:#555;text-align:center;padding:24px">Korpa je prazna</p>';
+            document.getElementById('sheetTotal').textContent = getCartTotal().toLocaleString() + ' din';
+            document.getElementById('submitBtn').disabled = getCartCount() === 0;
+        }
+
+        function closeCart() {
+            document.getElementById('cartSheet').classList.remove('show');
+            setTimeout(() => {
+                document.getElementById('sheetOverlay').classList.remove('show');
+            }, 300);
+            renderMenu();
+        }
+
+        async function submitOrder() {
+            const count = getCartCount();
+            if (count === 0) return;
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Šaljem...';
+
+            const items = [];
+            for (const [id, qty] of Object.entries(cart)) {
+                const item = menu.find(m => m.id == id);
+                if (item) {
+                    items.push({
+                        id: item.id, name: item.name,
+                        price: item.price, qty, cat: item.cat
+                    });
+                }
+            }
+
+            const orderId = 'QR' + Date.now();
+            const guestOrder = {
+                id: orderId,
+                items,
+                total: getCartTotal(),
+                guestName: document.getElementById('guestName').value.trim() || 'Gost',
+                guestNote: document.getElementById('guestNote').value.trim() || '',
+                status: 'pending',
+                createdAt: new Date().toISOString(),
+                itemCount: count
+            };
+
+            try {
+                const snap = await database.ref('guestOrders').once('value');
+                const existing = snap.val() || [];
+                const list = Array.isArray(existing) ? existing : Object.values(existing);
+                list.push(guestOrder);
+                await database.ref('guestOrders').set(list);
+
+                // Success
+                cart = {};
+                closeCart();
+                document.getElementById('menuContainer').style.display = 'none';
+                document.getElementById('cartBar').classList.remove('show');
+
+                const sp = document.getElementById('successPage');
+                sp.classList.add('show');
+                document.getElementById('orderId').textContent = '🆔  ' + orderId;
+
+            } catch (e) {
+                console.error(e);
+                alert('Greška. Pokušajte ponovo.');
+                btn.disabled = false;
+                btn.textContent = 'Pošalji narudžbinu';
+            }
+        }
+
+        function newGuestOrder() {
+            cart = {};
+            selectedCat = 'Sve';
+            searchQuery = '';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('searchClear').classList.remove('show');
+            document.getElementById('successPage').classList.remove('show');
+            document.getElementById('menuContainer').style.display = 'block';
+            document.getElementById('guestName').value = '';
+            document.getElementById('guestNote').value = '';
+            renderCategories();
+            renderMenu();
+        }
+
+        loadMenu();
+    </script>
+</body>
+</html>

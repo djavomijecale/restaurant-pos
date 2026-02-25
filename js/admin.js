@@ -196,6 +196,7 @@ function renderEdit(c) {
             <div style="display:flex;justify-content:space-between;align-items:center">
                 <div style="flex:1">
                     <span style="background:#E94560;color:white;padding:2px 8px;border-radius:4px;font-size:11px">${i.cat}</span>
+                    ${i.group ? `<span style="background:#0F3460;color:#B0B0B0;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:4px">📂 ${i.group}</span>` : ''}
                     <h3 style="margin-top:8px">${i.name}</h3>
                     ${i.desc?'<p style="color:#B0B0B0;font-size:13px">'+i.desc+'</p>':''}
                 </div>
@@ -211,6 +212,14 @@ function renderEdit(c) {
 }
 
 
+function populateGroupList() {
+    const groups = [...new Set(DB.menu.map(m => m.group).filter(Boolean))].sort();
+    const datalist = document.getElementById('menuGroupList');
+    if (datalist) {
+        datalist.innerHTML = groups.map(g => `<option value="${g}">`).join('');
+    }
+}
+
 function addMenuItem() {
     editingMenuItemId = null;
     document.getElementById('menuItemModalTitle').textContent = '➕ Dodaj Stavku';
@@ -218,6 +227,8 @@ function addMenuItem() {
     document.getElementById('menuItemDescInput').value = '';
     document.getElementById('menuItemPriceInput').value = '';
     document.getElementById('menuItemCatInput').value = 'Hrana';
+    document.getElementById('menuItemGroupInput').value = '';
+    populateGroupList();
     document.getElementById('menuItemModal').classList.add('show');
     document.getElementById('menuItemNameInput').focus();
 }
@@ -234,6 +245,7 @@ function saveMenuItem() {
     const desc = document.getElementById('menuItemDescInput').value.trim();
     const price = parseFloat(document.getElementById('menuItemPriceInput').value);
     const cat = document.getElementById('menuItemCatInput').value;
+    const group = document.getElementById('menuItemGroupInput').value.trim();
     
     if(!name) {
         showAlert('⚠️ Molimo unesite naziv stavke');
@@ -246,23 +258,23 @@ function saveMenuItem() {
     }
     
     if(editingMenuItemId) {
-        // Izmena postojeće stavke
         const item = DB.menu.find(i => i.id === editingMenuItemId);
         if(item) {
             item.name = name;
             item.desc = desc;
             item.price = price;
             item.cat = cat;
+            item.group = group || item.group || '';
             showAlert(`✅ Stavka "${name}" je ažurirana!`);
         }
     } else {
-        // Dodavanje nove stavke
         DB.menu.push({
             id: Date.now(),
             name: name,
             desc: desc,
             price: price,
-            cat: cat
+            cat: cat,
+            group: group || ''
         });
         showAlert(`✅ Stavka "${name}" je dodata! ${cat === 'Hrana' ? '🍳 Biće slana u kuhinju.' : ''}`);
     }
@@ -283,6 +295,8 @@ function editItem(id) {
     document.getElementById('menuItemDescInput').value = i.desc || '';
     document.getElementById('menuItemPriceInput').value = i.price;
     document.getElementById('menuItemCatInput').value = i.cat;
+    document.getElementById('menuItemGroupInput').value = i.group || '';
+    populateGroupList();
     document.getElementById('menuItemModal').classList.add('show');
     document.getElementById('menuItemNameInput').focus();
 }
@@ -719,7 +733,8 @@ function changePassword() {
     }
     
     // Proveri staru šifru
-    if (DB.currentUser.password !== oldPass) {
+    const userInDb = DB.users.find(u => u.username === DB.currentUser.username);
+    if (!userInDb || userInDb.password !== oldPass) {
         showAlert('❌ Stara šifra nije tačna!');
         return;
     }
@@ -769,27 +784,42 @@ function resetAllData() {
     showConfirm('⚠️ BRISANJE PODATAKA', 'Da li ste POTPUNO sigurni?\n\nOvo će obrisati SVE narudžbine, istoriju i radne dane!\n\nOvo se NE MOŽE poništiti!', (confirmed) => {
         if (!confirmed) return;
         
-        // Drugi nivo potvrde
-        showConfirm('🔴 POSLEDNJA ŠANSA', 'Zaista želite da obrišete SVE podatke?\n\nOstaju samo: Meni, Korisnici, Podešavanja, Nabavka', (confirmed2) => {
+        showConfirm('🔴 POSLEDNJA ŠANSA', 'Zaista želite da obrišete SVE podatke?\n\nOstaju samo: Meni, Korisnici, Podešavanja, Nabavka', async (confirmed2) => {
             if (!confirmed2) return;
             
-            // Briši sve osim menija, korisnika, podešavanja i nabavke
-            DB.orders = [];
-            DB.removedItems = [];
-            DB.workdays = {};
-            DB.workdayHistory = [];
-            DB.kitchenOrders = [];
-            
-            // Očisti stolove (ukloni narudžbine sa stolova)
-            DB.tables.forEach(table => {
-                table.order = [];
-                table.discountPercent = 0;
-                table.discountedItems = [];
-            });
-            
-            save();
-            render();
-            showAlert('✅ Svi podaci su obrisani!\n\nOstali su: Meni, Korisnici, Podešavanja, Nabavka.');
+            try {
+                // Eksplicitno obriši svaki node u Firebase
+                await database.ref('orders').set(null);
+                await database.ref('removedItems').set(null);
+                await database.ref('workdays').set(null);
+                await database.ref('workdayHistory').set(null);
+                await database.ref('kitchenOrders').set(null);
+                await database.ref('guestOrders').set(null);
+                
+                // Očisti stolove (samo narudžbine, zadrži imena)
+                const cleanTables = DB.tables.map(table => ({
+                    ...table,
+                    order: [],
+                    discountPercent: 0,
+                    discountedItems: []
+                }));
+                await database.ref('tables').set(cleanTables);
+                
+                // Ažuriraj lokalni DB
+                DB.orders = [];
+                DB.removedItems = [];
+                DB.workdays = {};
+                DB.workdayHistory = [];
+                DB.kitchenOrders = [];
+                DB.guestOrders = [];
+                DB.tables = cleanTables;
+                
+                render();
+                showAlert('✅ Svi podaci su obrisani!\n\nOstali su: Meni, Korisnici, Podešavanja, Nabavka.');
+            } catch (error) {
+                console.error('❌ Greška pri brisanju:', error);
+                showAlert('❌ Greška pri brisanju: ' + error.message);
+            }
         });
     });
 }

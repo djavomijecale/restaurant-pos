@@ -271,7 +271,6 @@ function deleteGroceryItem(itemId) {
         if(item.type === 'Piće') {
             if(!DB.deletedGroceryItems.includes(item.name)) {
                 DB.deletedGroceryItems.push(item.name);
-                console.log(`🚫 Dodato u blacklist: ${item.name}`);
             }
         }
         

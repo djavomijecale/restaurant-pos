@@ -86,12 +86,41 @@ function renderWorkday(c) {
 
 
 function openWorkday() {
-    // Prvo otvori modal za depozit
     const modal = document.getElementById('depositModal');
     const input = document.getElementById('depositInput');
-    input.value = '0';
+    const hint = document.getElementById('depositHint');
+    
+    // Nađi poslednju zatvorenu smenu (bilo kog konobara)
+    let suggestedDeposit = 0;
+    let lastShiftInfo = '';
+    
+    if (DB.workdayHistory && DB.workdayHistory.length > 0) {
+        const sorted = [...DB.workdayHistory].sort((a, b) => 
+            new Date(b.logoutTime) - new Date(a.logoutTime)
+        );
+        const lastShift = sorted[0];
+        
+        if (lastShift && lastShift.finalCash !== undefined) {
+            suggestedDeposit = Math.max(0, lastShift.finalCash);
+            const logoutDate = new Date(lastShift.logoutTime);
+            const timeStr = logoutDate.toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+            lastShiftInfo = `💡 Prethodna smena (${lastShift.user}, ${timeStr}) završila sa <strong style="color:#FFD700">${suggestedDeposit.toLocaleString()} din</strong> keša u kasi`;
+        }
+    }
+    
+    input.value = suggestedDeposit > 0 ? suggestedDeposit : '0';
+    
+    if (hint) {
+        if (lastShiftInfo) {
+            hint.innerHTML = lastShiftInfo;
+        } else {
+            hint.innerHTML = '💡 Možete uneti 0 ako nemate depozit';
+        }
+    }
+    
     modal.classList.add('show');
     input.focus();
+    input.select();
 }
 
 
@@ -228,10 +257,10 @@ function closeWorkday() {
     // SMANJENJA KEŠA - oduzmi od keša
     const cashReductions = myWorkday.cashReductions || [];
     const totalCashReductions = cashReductions.reduce((sum, r) => sum + r.amount, 0);
-    const finalCash = cash - totalCashReductions; // Keš nakon smanjenja
     
     // DEPOZIT - dodaj na ukupan učinak
     const deposit = myWorkday.deposit || 0;
+    const finalCash = deposit + cash - totalCashReductions; // Stvarno stanje kase: depozit + keš prihod - smanjenja
     const totalPerformance = totalRevenue + deposit; // Ukupan učinak = otkucano + depozit
     
     const endTime = new Date().toISOString();

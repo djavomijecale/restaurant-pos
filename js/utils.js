@@ -24,6 +24,33 @@ function playKitchenSound() {
     } catch(e) {}
 }
 
+// Zvučno obaveštenje za poziv konobara (zvono - drugačiji ton)
+function playWaiterCallSound() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const notes = [
+            { freq: 1047, start: 0, dur: 0.2 },
+            { freq: 1319, start: 0.25, dur: 0.2 },
+            { freq: 1568, start: 0.5, dur: 0.3 },
+            { freq: 1319, start: 0.9, dur: 0.15 },
+            { freq: 1568, start: 1.1, dur: 0.3 }
+        ];
+        notes.forEach(n => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = n.freq;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.35, ctx.currentTime + n.start);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + n.start + n.dur);
+            osc.start(ctx.currentTime + n.start);
+            osc.stop(ctx.currentTime + n.start + n.dur);
+        });
+        if (navigator.vibrate) navigator.vibrate([300, 150, 300, 150, 500]);
+    } catch(e) {}
+}
+
 
 function showConfirm(title, message, callback) {
     document.getElementById('confirmTitle').textContent = title;
