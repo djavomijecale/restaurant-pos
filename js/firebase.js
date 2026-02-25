@@ -173,11 +173,28 @@ async function loadFromFirebase() {
             // Učitaj QR narudžbine gostiju
             DB.guestOrders = data.guestOrders || [];
             if (!Array.isArray(DB.guestOrders)) DB.guestOrders = Object.values(DB.guestOrders);
-            // Osiguraj da svaka narudžbina ima items kao niz
-            DB.guestOrders = DB.guestOrders.filter(o => o).map(o => {
+            // Osiguraj da svaka narudžbina ima items kao niz i očisti korumpirane
+            let hadCorrupted = false;
+            DB.guestOrders = DB.guestOrders.filter(o => {
+                if (!o || !o.id) return false;
                 if (o.items && !Array.isArray(o.items)) o.items = Object.values(o.items);
-                return o;
+                if (!o.items || !Array.isArray(o.items) || o.items.length === 0) {
+                    hadCorrupted = true;
+                    return false;
+                }
+                const hasValidItems = o.items.some(i => i && i.name && !isNaN(parseFloat(i.price)));
+                if (!hasValidItems) {
+                    hadCorrupted = true;
+                    return false;
+                }
+                if (!o.total || isNaN(o.total)) {
+                    o.total = o.items.reduce((s, i) => s + (parseFloat(i.price) || 0) * (parseInt(i.qty) || 0), 0);
+                }
+                return true;
             });
+            if (hadCorrupted) {
+                database.ref('guestOrders').set(DB.guestOrders);
+            }
             
             // Učitaj pozive konobara
             DB.waiterCalls = data.waiterCalls || [];
