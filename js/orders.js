@@ -126,7 +126,7 @@ function renderTableOrder(c) {
     const tot = Math.max(0, sub - discountAmount);
 
     let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tables';render()">← ${table.name}</button>
+        <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='${table.isGarden ? 'garden' : 'tables'}';render()">← ${table.name}</button>
         <h2>${isWaiter ? 'Moja Narudžba' : 'Narudžba'}</h2>
         <div style="width:80px"></div>
     </div>`;

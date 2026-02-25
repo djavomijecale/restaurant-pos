@@ -77,6 +77,7 @@ function render() {
     else if(page==='kuvarreport') renderKuvarReport(c);
     else if(page==='shopping') renderShopping(c);
     else if(page==='guestorders') renderGuestOrders(c);
+    else if(page==='garden') renderGarden(c);
     
     updateBadge();
     setTimeout(() => updateUserInfo(), 0);

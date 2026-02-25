@@ -8,11 +8,12 @@ function renderTableSelect(c) {
     const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
     const currentUsername = DB.currentUser ? DB.currentUser.username : null;
     
-    let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px"><h2>🪑 Izaberi Sto</h2>';
+    let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px"><h2>🪑 Izaberi Sto</h2><div style="display:flex;gap:8px">';
+    h += '<button class="btn" style="width:auto;padding:8px 16px;background:#2E7D32" onclick="page=\'garden\';render()">🌿 Bašta</button>';
     if(DB.currentUser) {
-        h += '<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page=\'edittables\';render()">✏️ Izmeni Stolove</button>';
+        h += '<button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page=\'edittables\';render()">✏️ Izmeni</button>';
     }
-    h += '</div><div class="table-grid">';
+    h += '</div></div><div class="table-grid">';
     
     // Helper za dobijanje info o stolu
     function getTableInfo(t) {
@@ -47,7 +48,7 @@ function renderTableSelect(c) {
     }
     
     if (DB.tables && Array.isArray(DB.tables)) {
-        const regularTables = DB.tables.filter(t => !t.isBar);
+        const regularTables = DB.tables.filter(t => !t.isBar && !t.isGarden);
         const barTables = DB.tables.filter(t => t.isBar);
         
         regularTables.forEach(t => {
@@ -86,6 +87,145 @@ function selectTable(num) {
     DB.selectedTable = num;
     page = 'tables';
     render();
+}
+
+// ============================================
+// BAŠTA - GARDEN TABLES
+// ============================================
+function renderGarden(c) {
+    const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+    const currentUsername = DB.currentUser ? DB.currentUser.username : null;
+    const gardenTables = DB.tables.filter(t => t.isGarden);
+    
+    function gInfo(t) {
+        if (!t || !t.order) return { occ: false, tot: 0 };
+        let items = isWaiter ? t.order.filter(i => !i.createdBy || i.createdBy === currentUsername) : t.order;
+        const occ = items.length > 0;
+        const tot = occ ? items.reduce((s,i) => s + ((parseFloat(i.price)||0) * (parseInt(i.qty)||0)), 0) : 0;
+        return { occ, tot };
+    }
+    
+    function gBtn(num) {
+        const t = gardenTables.find(x => x.num === num);
+        if (!t) return '';
+        const info = gInfo(t);
+        const name = t.name || ('B' + (num - 20));
+        return `<div class="g-table ${info.occ ? 'g-occ' : ''}" onclick="selectTable(${num})">
+            <div class="g-icon">🪑</div>
+            <div class="g-name">${name}</div>
+            ${info.occ ? `<div class="g-total">${info.tot.toFixed(0)}</div>` : ''}
+        </div>`;
+    }
+    
+    let h = `
+    <style>
+        .garden-wrap {
+            position: relative;
+            width: 100%;
+            max-width: 520px;
+            margin: 0 auto;
+            aspect-ratio: 1 / 1.1;
+            background: linear-gradient(180deg, #1B3A1B 0%, #0D260D 100%);
+            border-radius: 16px;
+            border: 2px solid #2E7D32;
+            overflow: hidden;
+            padding: 12px;
+        }
+        .garden-wrap::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at 30% 20%, rgba(76,175,80,0.08) 0%, transparent 60%),
+                        radial-gradient(ellipse at 70% 80%, rgba(76,175,80,0.05) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        .g-table {
+            position: absolute;
+            width: 64px; height: 64px;
+            background: #1A3D1A;
+            border: 2px solid #388E3C;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s;
+            z-index: 2;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .g-table:active { transform: scale(0.93); }
+        .g-table.g-occ {
+            background: #2E4B1A;
+            border-color: #FFD700;
+            box-shadow: 0 0 12px rgba(255,215,0,0.25);
+        }
+        .g-icon { font-size: 18px; }
+        .g-name { font-size: 10px; font-weight: 700; color: #A5D6A7; margin-top: 1px; }
+        .g-occ .g-name { color: #FFD700; }
+        .g-total { font-size: 10px; font-weight: 800; color: #FFD700; }
+        .g-entrance {
+            position: absolute;
+            background: rgba(46,125,50,0.25);
+            border: 1px dashed rgba(76,175,80,0.4);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.35);
+            font-size: 11px;
+            font-weight: 600;
+            z-index: 1;
+            pointer-events: none;
+        }
+    </style>
+    
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:12px">
+            <button class="btn btn-secondary" style="width:auto;padding:8px 16px" onclick="page='tables';DB.selectedTable=null;render()">← Unutra</button>
+            <h2 style="color:#4CAF50">🌿 Bašta</h2>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#388E3C"></span><span style="color:#888;font-size:12px">Slobodan</span>
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FFD700;margin-left:8px"></span><span style="color:#888;font-size:12px">Zauzet</span>
+        </div>
+    </div>
+    
+    <div class="garden-wrap">
+        <!-- Ulaz -->
+        <div class="g-entrance" style="left:2%;top:2%;width:18%;height:10%">🚪 Ulaz</div>
+        
+        <!-- Ulaz iz bašte -->
+        <div class="g-entrance" style="left:28%;top:52%;width:22%;height:6%;font-size:10px">🌿 Ulaz iz bašte</div>
+        
+        <!-- Gornji levi: B1(21), B2(22) -->
+        <div style="position:absolute;left:3%;top:3%">${gBtn(21)}</div>
+        <div style="position:absolute;left:17%;top:3%">${gBtn(22)}</div>
+        
+        <!-- Gornji centar: B3(23) -->
+        <div style="position:absolute;left:38%;top:2%">${gBtn(23)}</div>
+        
+        <!-- Desna kolona: B4(24) - B9(29) -->
+        <div style="position:absolute;right:14%;top:4%">${gBtn(24)}</div>
+        <div style="position:absolute;right:14%;top:16%">${gBtn(25)}</div>
+        <div style="position:absolute;right:14%;top:28%">${gBtn(26)}</div>
+        <div style="position:absolute;right:14%;top:40%">${gBtn(27)}</div>
+        <div style="position:absolute;right:14%;top:52%">${gBtn(28)}</div>
+        <div style="position:absolute;right:14%;top:64%">${gBtn(29)}</div>
+        
+        <!-- Srednji levi: B10(30) -->
+        <div style="position:absolute;left:28%;top:30%">${gBtn(30)}</div>
+        
+        <!-- Blizu ulaza iz bašte: B11(31) -->
+        <div style="position:absolute;left:28%;top:60%">${gBtn(31)}</div>
+        
+        <!-- Donji red: B12(32), B13(33), B14(34) -->
+        <div style="position:absolute;left:28%;top:78%">${gBtn(32)}</div>
+        <div style="position:absolute;left:46%;top:78%">${gBtn(33)}</div>
+        <div style="position:absolute;left:64%;top:78%">${gBtn(34)}</div>
+    </div>`;
+    
+    c.innerHTML = h;
 }
 
 

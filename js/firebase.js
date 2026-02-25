@@ -72,6 +72,51 @@ async function loadFromFirebase() {
                 }
             }
             
+            // Dodaj bašta stolove ako ne postoje (21-34)
+            const gardenDef = [
+                {num:21, name:'Bašta 1'}, {num:22, name:'Bašta 2'},
+                {num:23, name:'Bašta 3'}, {num:24, name:'Bašta 4'},
+                {num:25, name:'Bašta 5'}, {num:26, name:'Bašta 6'},
+                {num:27, name:'Bašta 7'}, {num:28, name:'Bašta 8'},
+                {num:29, name:'Bašta 9'}, {num:30, name:'Bašta 10'},
+                {num:31, name:'Bašta 11'}, {num:32, name:'Bašta 12'},
+                {num:33, name:'Bašta 13'}, {num:34, name:'Bašta 14'}
+            ];
+            gardenDef.forEach(g => {
+                if (!DB.tables.find(t => t.num === g.num)) {
+                    DB.tables.push({
+                        num: g.num, name: g.name, order: [],
+                        discount: 0, discountPercent: 0, discountedItems: [],
+                        isGarden: true
+                    });
+                }
+            });
+            
+            // Očisti korumpirane stavke na stolovima (bez qty ili sa NaN)
+            let tablesHadCorrupted = false;
+            DB.tables.forEach(t => {
+                if (!t.order) { t.order = []; return; }
+                if (!Array.isArray(t.order)) t.order = Object.values(t.order);
+                const before = t.order.length;
+                t.order = t.order.filter(item => {
+                    if (!item || !item.name) return false;
+                    if (!item.qty || isNaN(item.qty)) item.qty = 1;
+                    else item.qty = parseInt(item.qty);
+                    if (!item.price || isNaN(item.price)) {
+                        const menuItem = (DB.menu || []).find(m => m.id == item.id);
+                        if (menuItem) item.price = menuItem.price;
+                        else return false;
+                    }
+                    item.price = parseFloat(item.price);
+                    return true;
+                });
+                if (t.order.length !== before) tablesHadCorrupted = true;
+            });
+            if (tablesHadCorrupted) {
+                console.log('🧹 Očišćene korumpirane stavke sa stolova');
+                database.ref('tables').set(DB.tables);
+            }
+            
             DB.orders = data.orders || [];
             DB.removedItems = data.removedItems || [];
             
