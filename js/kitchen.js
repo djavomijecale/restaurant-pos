@@ -111,12 +111,12 @@ function renderKitchen(c) {
                     <div style="display:flex;gap:12px">`;
                 
                 if(order.status === 'pending') {
-                    h += `<button class="btn" style="flex:1;background:#FF9800" onclick="startPreparing(${order.id})">
+                    h += `<button class="btn" style="flex:1;background:#FF9800" onclick="startPreparing('${order.id}')">
                         🔥 Počni Pripremu
                     </button>`;
                 }
                 
-                h += `<button class="btn" style="flex:1;background:#4CAF50" onclick="markAsReady(${order.id})">
+                h += `<button class="btn" style="flex:1;background:#4CAF50" onclick="markAsReady('${order.id}')">
                     ✅ Spremno!
                 </button>
                     </div>
@@ -134,7 +134,7 @@ function renderKitchen(c) {
                 const timeAgo = getTimeAgo(order.readyAt);
                 const totalItems = order.items.reduce((s, i) => s + i.qty, 0);
                 
-                h += `<div class="card" style="border:3px solid #4CAF50;opacity:0.7;margin-bottom:12px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
+                h += `<div class="card" style="border:3px solid #4CAF50;opacity:0.7;margin-bottom:12px;cursor:pointer" onclick="toggleOrderDetails('${order.id}')">
                     <div style="display:flex;justify-content:space-between;align-items:center">
                         <div>
                             <h3 style="color:#4CAF50">${order.tableName}</h3>
@@ -158,7 +158,7 @@ function renderKitchen(c) {
                     </div>`;
                 });
                 
-                h += `<button class="btn" style="margin-top:12px;background:#FF9800;font-size:14px" onclick="event.stopPropagation();revertToPreparing(${order.id})">
+                h += `<button class="btn" style="margin-top:12px;background:#FF9800;font-size:14px" onclick="event.stopPropagation();revertToPreparing('${order.id}')">
                         ↩️ Vrati u pripremu
                     </button>`;
                 
@@ -184,7 +184,7 @@ function renderKitchen(c) {
 
 
 function startPreparing(orderId) {
-    const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+    const order = DB.kitchenOrders.find(ko => ko.id == orderId);
     if(order) {
         order.status = 'preparing';
         save();
@@ -194,7 +194,7 @@ function startPreparing(orderId) {
 
 
 function markAsReady(orderId) {
-    const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+    const order = DB.kitchenOrders.find(ko => ko.id == orderId);
     if(order) {
         order.status = 'ready';
         order.readyAt = new Date().toISOString();
@@ -206,7 +206,7 @@ function markAsReady(orderId) {
 
 
 function revertToPreparing(orderId) {
-    const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+    const order = DB.kitchenOrders.find(ko => ko.id == orderId);
     if(order) {
         order.status = 'preparing';
         order.readyAt = null;
@@ -217,7 +217,7 @@ function revertToPreparing(orderId) {
 
 
 function markOrderCompleted(orderId) {
-    const order = DB.kitchenOrders.find(ko => ko.id === orderId);
+    const order = DB.kitchenOrders.find(ko => ko.id == orderId);
     if(order) {
         order.status = 'completed';
         order.completedAt = new Date().toISOString();
@@ -271,7 +271,7 @@ function renderKitchenReady(c) {
             });
             
             h += '</div>';
-            h += '<button class="btn" style="margin-top:16px;background:#FFF;color:#4CAF50;font-size:18px" onclick="markOrderCompleted(' + order.id + ')">👍 Preuzeto</button>';
+            h += '<button class="btn" style="margin-top:16px;background:#FFF;color:#4CAF50;font-size:18px" onclick="markOrderCompleted(\'' + order.id + '\')">👍 Preuzeto</button>';
             h += '</div>';
         });
         

@@ -219,6 +219,9 @@ function confirmGuestOrder(orderId) {
         const kitchenOrder = {
             id: 'ko_' + Date.now(),
             tableNum: tableNum,
+            tableName: table.name || ('Sto ' + tableNum),
+            waiterUsername: DB.currentUser.username,
+            waiterName: DB.konobarName || DB.currentUser.username,
             items: foodItems.map(item => ({
                 name: item.name,
                 qty: parseInt(item.qty) || 1,
@@ -227,6 +230,8 @@ function confirmGuestOrder(orderId) {
             status: 'pending',
             orderedAt: new Date().toISOString(),
             orderedBy: DB.currentUser.username,
+            readyAt: null,
+            completedAt: null,
             fromQR: true,
             guestName: order.guestName || 'Gost'
         };

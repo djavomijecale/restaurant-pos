@@ -137,6 +137,19 @@ async function loadFromFirebase() {
             
             DB.workdayHistory = data.workdayHistory || [];
             DB.kitchenOrders = data.kitchenOrders || [];
+            // Popravi kuhinjske narudžbine kojima nedostaje tableName/waiterName
+            DB.kitchenOrders.forEach(ko => {
+                if (!ko.tableName && ko.tableNum) {
+                    const t = DB.tables.find(tb => tb.num == ko.tableNum);
+                    ko.tableName = t ? t.name : ('Sto ' + ko.tableNum);
+                }
+                if (!ko.waiterName) {
+                    ko.waiterName = ko.orderedBy || ko.waiterUsername || 'Konobar';
+                }
+                if (!ko.waiterUsername) {
+                    ko.waiterUsername = ko.orderedBy || '';
+                }
+            });
             DB.groceryList = data.groceryList || [
                 // Default lista namirnica - HRANA (za kuvare)
                 {id:1, name:'Paradajz', category:'Povrće', type:'Hrana', needed:false},
