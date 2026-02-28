@@ -783,7 +783,7 @@ function showEditInventoryItem(itemId) {
     
     const modal = document.createElement('div');
     modal.id = 'editInvModalDynamic';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px';
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
     
     modal.innerHTML = `<div style="background:#1A1A2E;padding:24px;border-radius:16px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto">

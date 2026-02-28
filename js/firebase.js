@@ -155,6 +155,12 @@ async function loadFromFirebase() {
             DB.inventory = data.inventory || [];
             DB.invoices = data.invoices || [];
             DB.debts = data.debts || [];
+            // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
+            DB.debts.forEach(debt => {
+                if (!debt.payments) debt.payments = [];
+                if (typeof debt.remaining !== 'number') debt.remaining = debt.originalTotal || 0;
+                if (typeof debt.originalTotal !== 'number') debt.originalTotal = debt.remaining || 0;
+            });
             DB.groceryList = data.groceryList || [
                 // Default lista namirnica - HRANA (za kuvare)
                 {id:1, name:'Paradajz', category:'Povrće', type:'Hrana', needed:false},

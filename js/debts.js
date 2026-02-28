@@ -140,7 +140,7 @@ function showDebtModal() {
     
     const modal = document.createElement('div');
     modal.id = 'debtModal';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px';
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
     
     let nameButtons = '';
@@ -276,7 +276,7 @@ function payPartialDebt(debtId) {
     
     const modal = document.createElement('div');
     modal.id = 'partialDebtModal';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px';
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
     
     modal.innerHTML = `<div style="background:#1A1A2E;padding:24px;border-radius:16px;width:100%;max-width:360px">
@@ -319,7 +319,7 @@ function showDebtPaymentMethod(debtId, amount) {
     
     const modal = document.createElement('div');
     modal.id = 'debtPayMethodModal';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px';
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
     
     modal.innerHTML = `<div style="background:#1A1A2E;padding:24px;border-radius:16px;width:100%;max-width:360px;text-align:center">
@@ -349,6 +349,7 @@ function processDebtPayment(debtId, amount, method) {
     const debt = DB.debts.find(d => d.id === debtId);
     if (!debt) return;
     
+    if (!debt.payments) debt.payments = [];
     amount = Math.min(amount, debt.remaining);
     
     // Record payment
@@ -366,11 +367,15 @@ function processDebtPayment(debtId, amount, method) {
     }
     
     // Dodaj u dnevni pazar kao narudžbinu
+    const orderItems = (debt.remaining <= 0 && debt.items && debt.items.length > 0) 
+        ? debt.items 
+        : [{name: 'Vraćen dug - ' + debt.debtorName, price: amount, qty: 1}];
+    
     DB.orders.push({
         id: Date.now(),
         table: debt.table || 0,
         tableName: debt.tableName || 'Dug',
-        items: debt.items || [{name: 'Vraćen dug - ' + debt.debtorName, price: amount, qty: 1}],
+        items: orderItems,
         sub: amount,
         disc: 0,
         discountPercent: 0,
@@ -409,7 +414,7 @@ function payAllDebts(debtorName) {
             // Show payment method for total
             const modal = document.createElement('div');
             modal.id = 'debtPayAllModal';
-            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px';
+            modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:1001;display:flex;align-items:center;justify-content:center;padding:16px';
             modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
             
             modal.innerHTML = `<div style="background:#1A1A2E;padding:24px;border-radius:16px;width:100%;max-width:360px;text-align:center">
@@ -443,6 +448,7 @@ function processAllDebtPayments(debtorName, method) {
         const amount = debt.remaining;
         totalPaid += amount;
         
+        if (!debt.payments) debt.payments = [];
         debt.payments.push({
             amount: amount,
             method: method,
