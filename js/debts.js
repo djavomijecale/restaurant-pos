@@ -3,15 +3,18 @@
 // ============================================
 
 let debtSearch = '';
+let debtsTab = 'active';
 
 function renderDebts(c) {
     if (!DB.debts) DB.debts = [];
     
-    // Aktivna dugovanja (nepodmirena)
-    const active = DB.debts.filter(d => d.remaining > 0);
+    const active = DB.debts.filter(d => d.remaining > 0 && !d.deleted);
+    const cleared = DB.debts.filter(d => d.remaining <= 0 && !d.deleted);
+    const deleted = DB.debts.filter(d => d.deleted);
     const totalDebt = active.reduce((s, d) => s + d.remaining, 0);
+    const totalCleared = cleared.reduce((s, d) => s + (d.originalTotal || 0), 0);
     
-    // Grupiši po dužniku
+    // Grupiši aktivna po dužniku
     const byDebtor = {};
     active.forEach(d => {
         const name = d.debtorName || 'Nepoznat';
@@ -22,9 +25,7 @@ function renderDebts(c) {
     
     const debtorCount = Object.keys(byDebtor).length;
     
-    let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h2>📝 Dugovanja</h2>
-    </div>`;
+    let h = `<h2 style="margin-bottom:16px">📝 Dugovanja</h2>`;
     
     // Stats
     h += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px">
@@ -37,13 +38,30 @@ function renderDebts(c) {
             <div style="color:#B0B0B0;font-size:10px">Dužnika</div>
         </div>
         <div style="background:#0F3460;padding:12px;border-radius:8px;text-align:center">
-            <div style="color:#FF9800;font-size:22px;font-weight:bold">${active.length}</div>
-            <div style="color:#B0B0B0;font-size:10px">Dugovanja</div>
+            <div style="color:#4CAF50;font-size:22px;font-weight:bold">${totalCleared.toFixed(0)}</div>
+            <div style="color:#B0B0B0;font-size:10px">Vraćeno (din)</div>
         </div>
     </div>`;
     
-    // Search
-    if (active.length > 3) {
+    // Tabs
+    h += `<div style="display:flex;gap:6px;margin-bottom:16px">
+        <button onclick="debtsTab='active';render()" style="flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;
+            background:${debtsTab==='active' ? '#E94560' : '#16213E'};color:${debtsTab==='active' ? '#FFF' : '#888'}">
+            🔴 Aktivna (${active.length})
+        </button>
+        <button onclick="debtsTab='cleared';render()" style="flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;
+            background:${debtsTab==='cleared' ? '#4CAF50' : '#16213E'};color:${debtsTab==='cleared' ? '#FFF' : '#888'}">
+            ✅ Vraćena (${cleared.length})
+        </button>
+        <button onclick="debtsTab='deleted';render()" style="flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;font-weight:bold;font-size:13px;
+            background:${debtsTab==='deleted' ? '#888' : '#16213E'};color:${debtsTab==='deleted' ? '#FFF' : '#888'}">
+            🗑️ Obrisana (${deleted.length})
+        </button>
+    </div>`;
+    
+    // Search (for all tabs)
+    const allForTab = debtsTab === 'active' ? active : debtsTab === 'cleared' ? cleared : deleted;
+    if (allForTab.length > 3) {
         h += `<div style="margin-bottom:12px">
             <input type="text" id="debtSearch" placeholder="🔍 Pretraži po imenu..." value="${debtSearch}" 
                 oninput="debtSearch=this.value;render()" 
@@ -51,83 +69,179 @@ function renderDebts(c) {
         </div>`;
     }
     
-    if (active.length === 0) {
-        h += `<div class="empty">
-            <div style="font-size:64px">✅</div>
-            <h3>Nema dugovanja</h3>
-            <p>Svi su podmirili račune</p>
-        </div>`;
-    } else {
-        // Sort debtors by total debt descending
-        const sortedDebtors = Object.entries(byDebtor)
-            .sort((a, b) => b[1].total - a[1].total);
-        
-        sortedDebtors.forEach(([name, data]) => {
-            // Filter by search
-            if (debtSearch && !name.toLowerCase().includes(debtSearch.toLowerCase())) return;
-            
-            h += `<div class="card" style="margin-bottom:12px;border-left:4px solid #E94560">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                    <div>
-                        <h3 style="font-size:18px">👤 ${name}</h3>
-                        <span style="color:#888;font-size:12px">${data.debts.length} ${data.debts.length === 1 ? 'dugovanje' : 'dugovanja'}</span>
-                    </div>
-                    <div style="text-align:right">
-                        <div style="font-size:22px;font-weight:bold;color:#E94560">${data.total.toFixed(0)} din</div>
-                        <button class="btn" style="width:auto;padding:4px 12px;background:#4CAF50;font-size:12px;margin-top:4px" 
-                            onclick="payAllDebts('${name.replace(/'/g, "\\'")}')">💰 Vrati Sve</button>
-                    </div>
-                </div>`;
-            
-            // Show individual debts
-            data.debts.sort((a, b) => new Date(b.time) - new Date(a.time));
-            data.debts.forEach(debt => {
-                const date = new Date(debt.time);
-                const dateStr = date.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit'});
-                const timeStr = date.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
-                const itemNames = debt.items ? debt.items.map(i => i.qty + 'x ' + i.name).join(', ') : '';
-                
-                h += `<div style="background:#16213E;padding:10px 12px;border-radius:8px;margin-bottom:6px">
-                    <div style="display:flex;justify-content:space-between;align-items:center">
-                        <div style="flex:1;min-width:0">
-                            <div style="font-size:13px;font-weight:bold;color:#FFD700">${debt.remaining.toFixed(0)} din${debt.remaining < debt.originalTotal ? ` <span style="color:#4CAF50;font-size:11px">(od ${debt.originalTotal.toFixed(0)})</span>` : ''}</div>
-                            <div style="color:#888;font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${itemNames}">
-                                ${debt.tableName || 'Sto'} · ${dateStr} ${timeStr}${itemNames ? ' · ' + itemNames : ''}
-                            </div>
-                        </div>
-                        <div style="display:flex;gap:6px;margin-left:8px">
-                            <button onclick="payPartialDebt('${debt.id}')" style="background:#FF9800;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Uplati deo">💰</button>
-                            <button onclick="payFullDebt('${debt.id}')" style="background:#4CAF50;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Vrati ceo dug">✅</button>
-                            <button onclick="deleteDebt('${debt.id}')" style="background:#E94560;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Obriši (bez naplate)">🗑️</button>
-                        </div>
-                    </div>
-                </div>`;
-            });
-            
-            h += '</div>';
-        });
-    }
-    
-    // Cleared debts history (last 20)
-    const cleared = DB.debts.filter(d => d.remaining <= 0).sort((a, b) => new Date(b.clearedAt || b.time) - new Date(a.clearedAt || a.time)).slice(0, 20);
-    if (cleared.length > 0) {
-        h += `<details style="margin-top:24px">
-            <summary style="color:#888;cursor:pointer;font-weight:bold;font-size:14px;padding:8px 0">📜 Vraćena dugovanja (${cleared.length})</summary>
-            <div style="margin-top:8px">`;
-        
-        cleared.forEach(debt => {
-            const date = new Date(debt.clearedAt || debt.time);
-            const dateStr = date.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit', year:'numeric'});
-            h += `<div style="display:flex;justify-content:space-between;padding:8px;background:#16213E;border-radius:6px;margin-bottom:4px;opacity:0.7">
-                <span style="color:#888;font-size:13px">👤 ${debt.debtorName} · ${dateStr}</span>
-                <span style="color:#4CAF50;font-size:13px;font-weight:bold">${debt.originalTotal.toFixed(0)} din ✅</span>
-            </div>`;
-        });
-        
-        h += '</div></details>';
+    switch(debtsTab) {
+        case 'active': h += renderActiveDebts(active, byDebtor); break;
+        case 'cleared': h += renderClearedDebts(cleared); break;
+        case 'deleted': h += renderDeletedDebts(deleted); break;
     }
     
     c.innerHTML = h;
+}
+
+// ============================================
+// TAB: ACTIVE DEBTS
+// ============================================
+function renderActiveDebts(active, byDebtor) {
+    let h = '';
+    
+    if (active.length === 0) {
+        return `<div class="empty">
+            <div style="font-size:64px">✅</div>
+            <h3>Nema aktivnih dugovanja</h3>
+            <p>Svi su podmirili račune</p>
+        </div>`;
+    }
+    
+    const sortedDebtors = Object.entries(byDebtor).sort((a, b) => b[1].total - a[1].total);
+    
+    sortedDebtors.forEach(([name, data]) => {
+        if (debtSearch && !name.toLowerCase().includes(debtSearch.toLowerCase())) return;
+        
+        h += `<div class="card" style="margin-bottom:12px;border-left:4px solid #E94560">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <div>
+                    <h3 style="font-size:18px">👤 ${name}</h3>
+                    <span style="color:#888;font-size:12px">${data.debts.length} ${data.debts.length === 1 ? 'dugovanje' : 'dugovanja'}</span>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-size:22px;font-weight:bold;color:#E94560">${data.total.toFixed(0)} din</div>
+                    <button class="btn" style="width:auto;padding:4px 12px;background:#4CAF50;font-size:12px;margin-top:4px" 
+                        onclick="payAllDebts('${name.replace(/'/g, "\\'")}')">💰 Vrati Sve</button>
+                </div>
+            </div>`;
+        
+        data.debts.sort((a, b) => new Date(b.time) - new Date(a.time));
+        data.debts.forEach(debt => {
+            const date = new Date(debt.time);
+            const dateStr = date.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit'});
+            const timeStr = date.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+            const itemNames = debt.items ? debt.items.map(i => i.qty + 'x ' + i.name).join(', ') : '';
+            
+            h += `<div style="background:#16213E;padding:10px 12px;border-radius:8px;margin-bottom:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                    <div style="flex:1;min-width:0">
+                        <div style="font-size:13px;font-weight:bold;color:#FFD700">${debt.remaining.toFixed(0)} din${debt.remaining < debt.originalTotal ? ` <span style="color:#4CAF50;font-size:11px">(od ${debt.originalTotal.toFixed(0)})</span>` : ''}</div>
+                        <div style="color:#888;font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${itemNames}">
+                            ${debt.tableName || 'Sto'} · ${dateStr} ${timeStr}${itemNames ? ' · ' + itemNames : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:6px;margin-left:8px">
+                        <button onclick="payPartialDebt('${debt.id}')" style="background:#FF9800;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Uplati deo">💰</button>
+                        <button onclick="payFullDebt('${debt.id}')" style="background:#4CAF50;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Vrati ceo dug">✅</button>
+                        <button onclick="deleteDebt('${debt.id}')" style="background:#E94560;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Obriši (bez naplate)">🗑️</button>
+                    </div>
+                </div>
+            </div>`;
+        });
+        
+        h += '</div>';
+    });
+    
+    return h;
+}
+
+// ============================================
+// TAB: CLEARED (PAID) DEBTS
+// ============================================
+function renderClearedDebts(cleared) {
+    if (cleared.length === 0) {
+        return `<div class="empty">
+            <div style="font-size:64px">📜</div>
+            <h3>Nema vraćenih dugovanja</h3>
+            <p>Ovde će se pojaviti dugovi koji su podmireni</p>
+        </div>`;
+    }
+    
+    let h = '';
+    const sorted = [...cleared].sort((a, b) => new Date(b.clearedAt || b.time) - new Date(a.clearedAt || a.time));
+    
+    sorted.forEach(debt => {
+        if (debtSearch && !(debt.debtorName || '').toLowerCase().includes(debtSearch.toLowerCase())) return;
+        
+        const createdDate = new Date(debt.time);
+        const clearedDate = new Date(debt.clearedAt || debt.time);
+        const createdStr = createdDate.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit', year:'numeric'}) + ' ' + createdDate.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+        const clearedStr = clearedDate.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit', year:'numeric'}) + ' ' + clearedDate.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+        const itemNames = debt.items ? debt.items.map(i => i.qty + 'x ' + i.name).join(', ') : '';
+        
+        // Payments history
+        const payments = debt.payments ? debt.payments.filter(p => p.method !== 'init') : [];
+        let paymentsHtml = '';
+        if (payments.length > 0) {
+            paymentsHtml = '<div style="margin-top:8px;border-top:1px solid #2A2A4A;padding-top:8px">';
+            paymentsHtml += '<div style="color:#888;font-size:11px;margin-bottom:4px;font-weight:bold">Uplate:</div>';
+            payments.forEach(p => {
+                const pDate = new Date(p.date);
+                const pStr = pDate.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit'}) + ' ' + pDate.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+                paymentsHtml += `<div style="display:flex;justify-content:space-between;font-size:12px;color:#B0B0B0;padding:2px 0">
+                    <span>${pStr} · ${p.method === 'Cash' ? '💵' : '💳'} ${p.method} · ${p.by || ''}</span>
+                    <span style="color:#4CAF50;font-weight:bold">${(p.amount || 0).toFixed(0)} din</span>
+                </div>`;
+            });
+            paymentsHtml += '</div>';
+        }
+        
+        h += `<div class="card" style="margin-bottom:8px;border-left:4px solid #4CAF50">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:16px;font-weight:bold">👤 ${debt.debtorName} <span style="color:#4CAF50;font-size:13px">✅ Podmireno</span></div>
+                    <div style="color:#888;font-size:12px;margin-top:4px">${debt.tableName || 'Sto'} · Zapisano: ${createdStr}</div>
+                    <div style="color:#4CAF50;font-size:12px">Vraćeno: ${clearedStr}</div>
+                    ${itemNames ? `<div style="color:#888;font-size:11px;margin-top:4px">${itemNames}</div>` : ''}
+                    ${paymentsHtml}
+                </div>
+                <div style="text-align:right;margin-left:12px">
+                    <div style="font-size:20px;font-weight:bold;color:#4CAF50">${(debt.originalTotal || 0).toFixed(0)} din</div>
+                    <div style="color:#888;font-size:11px">Ukupno</div>
+                </div>
+            </div>
+        </div>`;
+    });
+    
+    return h;
+}
+
+// ============================================
+// TAB: DELETED DEBTS
+// ============================================
+function renderDeletedDebts(deleted) {
+    if (deleted.length === 0) {
+        return `<div class="empty">
+            <div style="font-size:64px">🗑️</div>
+            <h3>Nema obrisanih dugovanja</h3>
+            <p>Dugovi koji se obrišu bez naplate pojave se ovde</p>
+        </div>`;
+    }
+    
+    let h = '';
+    const sorted = [...deleted].sort((a, b) => new Date(b.deletedAt || b.time) - new Date(a.deletedAt || a.time));
+    
+    sorted.forEach(debt => {
+        if (debtSearch && !(debt.debtorName || '').toLowerCase().includes(debtSearch.toLowerCase())) return;
+        
+        const createdDate = new Date(debt.time);
+        const deletedDate = new Date(debt.deletedAt || debt.time);
+        const createdStr = createdDate.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit', year:'numeric'}) + ' ' + createdDate.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+        const deletedStr = deletedDate.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit', year:'numeric'}) + ' ' + deletedDate.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+        const itemNames = debt.items ? debt.items.map(i => i.qty + 'x ' + i.name).join(', ') : '';
+        
+        h += `<div class="card" style="margin-bottom:8px;border-left:4px solid #888;opacity:0.8">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div style="flex:1;min-width:0">
+                    <div style="font-size:16px;font-weight:bold">👤 ${debt.debtorName} <span style="color:#888;font-size:13px">🗑️ Obrisano</span></div>
+                    <div style="color:#888;font-size:12px;margin-top:4px">${debt.tableName || 'Sto'} · Zapisano: ${createdStr}</div>
+                    <div style="color:#E94560;font-size:12px">Obrisano: ${deletedStr}${debt.deletedBy ? ' · ' + debt.deletedBy : ''}</div>
+                    ${itemNames ? `<div style="color:#888;font-size:11px;margin-top:4px">${itemNames}</div>` : ''}
+                </div>
+                <div style="text-align:right;margin-left:12px">
+                    <div style="font-size:20px;font-weight:bold;color:#888;text-decoration:line-through">${(debt.originalTotal || 0).toFixed(0)} din</div>
+                    <button onclick="restoreDebt('${debt.id}')" class="btn" style="width:auto;padding:4px 10px;background:#FF9800;font-size:11px;margin-top:4px">♻️ Vrati</button>
+                </div>
+            </div>
+        </div>`;
+    });
+    
+    return h;
 }
 
 
@@ -136,7 +250,7 @@ function renderDebts(c) {
 // ============================================
 function showDebtModal() {
     // Get existing debtor names for autocomplete
-    const existingNames = [...new Set((DB.debts || []).filter(d => d.remaining > 0).map(d => d.debtorName).filter(Boolean))];
+    const existingNames = [...new Set((DB.debts || []).filter(d => d.remaining > 0 && !d.deleted).map(d => d.debtorName).filter(Boolean))];
     
     const modal = document.createElement('div');
     modal.id = 'debtModal';
@@ -222,7 +336,7 @@ function confirmDebtPayment() {
         disc: discountAmount,
         originalTotal: tot,
         remaining: tot,
-        payments: [],
+        payments: [{amount: 0, method: 'init', date: new Date().toISOString(), by: 'system'}],
         createdBy: DB.konobarName || DB.currentUser.username,
         time: new Date().toISOString(),
         clearedAt: null
@@ -401,7 +515,7 @@ function processDebtPayment(debtId, amount, method) {
 // PAY ALL DEBTS FOR A DEBTOR
 // ============================================
 function payAllDebts(debtorName) {
-    const debts = DB.debts.filter(d => d.debtorName === debtorName && d.remaining > 0);
+    const debts = DB.debts.filter(d => d.debtorName === debtorName && d.remaining > 0 && !d.deleted);
     if (debts.length === 0) return;
     
     const total = debts.reduce((s, d) => s + d.remaining, 0);
@@ -441,7 +555,7 @@ function payAllDebts(debtorName) {
 }
 
 function processAllDebtPayments(debtorName, method) {
-    const debts = DB.debts.filter(d => d.debtorName === debtorName && d.remaining > 0);
+    const debts = DB.debts.filter(d => d.debtorName === debtorName && d.remaining > 0 && !d.deleted);
     let totalPaid = 0;
     
     debts.forEach(debt => {
@@ -492,13 +606,35 @@ function deleteDebt(debtId) {
     if (!debt) return;
     
     showConfirm('🗑️ Obriši Dug', 
-        `Obrisati dug od ${debt.debtorName} (${debt.remaining.toFixed(0)} din)?\n\n⚠️ Ovo NE dodaje u pazar - koristite samo ako je dug pogrešno unesen.`,
+        `Obrisati dug od ${debt.debtorName} (${debt.remaining.toFixed(0)} din)?\n\n⚠️ Ovo NE dodaje u pazar - koristite samo ako je dug pogrešno unesen.\n\nDug ostaje vidljiv u tabu "Obrisana".`,
         (confirmed) => {
             if (!confirmed) return;
-            DB.debts = DB.debts.filter(d => d.id !== debtId);
+            debt.deleted = true;
+            debt.deletedAt = new Date().toISOString();
+            debt.deletedBy = DB.konobarName || (DB.currentUser ? DB.currentUser.username : 'admin');
             save();
             render();
-            showAlert('🗑️ Dug obrisan.');
+            showAlert('🗑️ Dug obrisan. Možete ga videti u tabu "Obrisana".');
+        }
+    );
+}
+
+function restoreDebt(debtId) {
+    const debt = DB.debts.find(d => d.id === debtId);
+    if (!debt) return;
+    
+    showConfirm('♻️ Vrati Dug', 
+        `Vratiti dug od ${debt.debtorName} (${(debt.originalTotal || 0).toFixed(0)} din) u aktivna dugovanja?`,
+        (confirmed) => {
+            if (!confirmed) return;
+            debt.deleted = false;
+            debt.deletedAt = null;
+            debt.deletedBy = null;
+            debt.remaining = debt.originalTotal || 0;
+            save();
+            debtsTab = 'active';
+            render();
+            showAlert('♻️ Dug vraćen u aktivna dugovanja.');
         }
     );
 }

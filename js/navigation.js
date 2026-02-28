@@ -268,7 +268,7 @@ function updateBadge() {
     // Debts badge
     const debtsBadgeEl = document.getElementById('debtsBadge');
     if (debtsBadgeEl) {
-        const activeDebts = (DB.debts || []).filter(d => d.remaining > 0).length;
+        const activeDebts = (DB.debts || []).filter(d => d.remaining > 0 && !d.deleted).length;
         if (activeDebts > 0) {
             debtsBadgeEl.style.display = 'inline-block';
             debtsBadgeEl.textContent = activeDebts;
