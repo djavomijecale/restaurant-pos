@@ -11,7 +11,7 @@ function nav(p) {
     }
     
     // Provera pristupa za kuvare
-    if(DB.currentUser && DB.currentUser.role === 'kuvar' && (p === 'menu' || p === 'tables' || p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'report' || p === 'history')) {
+    if(DB.currentUser && DB.currentUser.role === 'kuvar' && (p === 'menu' || p === 'tables' || p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'report' || p === 'history' || p === 'inventory' || p === 'debts')) {
         showAlert('Nemate pristup ovoj stranici');
         return;
     }
@@ -25,7 +25,7 @@ function nav(p) {
         'menu': 0, 'tables': 1, 'kitchen': 'navKitchen', 'shopping': 'navShopping,navShoppingAdmin',
         'kuvarreport': 'navKuvarReport', 'report': 'navReport', 'history': 'navHistory',
         'guestorders': 'navGuestOrders', 'removed': 'navRemoved', 'users': 'navUsers',
-        'edit': 'navEdit', 'settings': 'navSettings'
+        'edit': 'navEdit', 'settings': 'navSettings', 'inventory': 'navInventory', 'debts': 'navDebts'
     };
     const target = navMap[p];
     if (typeof target === 'number') {
@@ -78,6 +78,8 @@ function render() {
     else if(page==='shopping') renderShopping(c);
     else if(page==='guestorders') renderGuestOrders(c);
     else if(page==='garden') renderGarden(c);
+    else if(page==='inventory') renderInventory(c);
+    else if(page==='debts') renderDebts(c);
     
     updateBadge();
     setTimeout(() => updateUserInfo(), 0);
@@ -262,5 +264,17 @@ function updateBadge() {
     
     // Guest orders badge
     updateGuestOrdersBadge();
+    
+    // Debts badge
+    const debtsBadgeEl = document.getElementById('debtsBadge');
+    if (debtsBadgeEl) {
+        const activeDebts = (DB.debts || []).filter(d => d.remaining > 0).length;
+        if (activeDebts > 0) {
+            debtsBadgeEl.style.display = 'inline-block';
+            debtsBadgeEl.textContent = activeDebts;
+        } else {
+            debtsBadgeEl.style.display = 'none';
+        }
+    }
 }
 

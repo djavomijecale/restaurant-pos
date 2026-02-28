@@ -236,6 +236,13 @@
                 </span>
                 <span style="font-size:11px">Nabavka</span>
             </div>
+            <div class="nav-item admin-only" id="navInventory" onclick="nav('inventory')"><span style="font-size:24px">📦</span><span style="font-size:11px">Lager</span></div>
+            <div class="nav-item staff-only" id="navDebts" onclick="nav('debts')">
+                <span style="font-size:24px;position:relative">📝
+                    <span id="debtsBadge" style="display:none;position:absolute;top:-8px;right:-8px;background:#E94560;color:#FFF;border-radius:50%;width:20px;height:20px;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center"></span>
+                </span>
+                <span style="font-size:11px">Dugovi</span>
+            </div>
             <div class="nav-item admin-only" id="navRemoved" onclick="nav('removed')"><span style="font-size:24px">🗑️</span><span style="font-size:11px">Uklonjeno</span></div>
             <div class="nav-item admin-only" id="navUsers" onclick="nav('users')"><span style="font-size:24px">👥</span><span style="font-size:11px">Osoblje</span></div>
             <div class="nav-item admin-only" id="navEdit" onclick="nav('edit')"><span style="font-size:24px">✏️</span><span style="font-size:11px">Izmeni</span></div>
@@ -288,6 +295,59 @@
             <div style="display:flex;gap:12px">
                 <button class="btn btn-secondary" onclick="closeAddGroceryModal()">Odustani</button>
                 <button class="btn" onclick="saveGroceryItem()">Sačuvaj</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal za dodavanje stavke u lager -->
+    <div id="addInventoryModal" class="modal">
+        <div class="modal-content">
+            <h2 style="color:#4CAF50;margin-bottom:16px">📦 Nova Stavka Lagera</h2>
+            <div style="display:flex;flex-direction:column;gap:12px">
+                <div>
+                    <label style="color:#B0B0B0;display:block;margin-bottom:4px;font-size:13px">Naziv</label>
+                    <input type="text" id="newInvName" placeholder="Npr: Coca Cola 0.33l">
+                </div>
+                <div style="display:flex;gap:8px">
+                    <div style="flex:1">
+                        <label style="color:#B0B0B0;display:block;margin-bottom:4px;font-size:13px">Stanje</label>
+                        <input type="number" id="newInvStock" placeholder="0" min="0" step="0.1">
+                    </div>
+                    <div style="flex:1">
+                        <label style="color:#B0B0B0;display:block;margin-bottom:4px;font-size:13px">Jedinica</label>
+                        <select id="newInvUnit" style="width:100%">
+                            <option value="kom">kom</option>
+                            <option value="kg">kg</option>
+                            <option value="l">l</option>
+                            <option value="g">g</option>
+                            <option value="ml">ml</option>
+                            <option value="pak">pak</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px">
+                    <div style="flex:1">
+                        <label style="color:#B0B0B0;display:block;margin-bottom:4px;font-size:13px">Min. stanje</label>
+                        <input type="number" id="newInvMin" placeholder="0" min="0">
+                    </div>
+                    <div style="flex:1">
+                        <label style="color:#B0B0B0;display:block;margin-bottom:4px;font-size:13px">Nabavna cena</label>
+                        <input type="number" id="newInvCost" placeholder="0" min="0" step="0.01">
+                    </div>
+                </div>
+                <div>
+                    <label style="color:#B0B0B0;display:block;margin-bottom:4px;font-size:13px">Kategorija</label>
+                    <select id="newInvCat" style="width:100%">
+                        <option value="Piće">Piće</option>
+                        <option value="Hrana">Hrana</option>
+                        <option value="Namirnice">Namirnice</option>
+                        <option value="Ostalo">Ostalo</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:12px;margin-top:8px">
+                    <button class="btn btn-secondary" onclick="hideModal('addInventoryModal')">Odustani</button>
+                    <button class="btn" style="background:#4CAF50" onclick="saveNewInventoryItem()">💾 Sačuvaj</button>
+                </div>
             </div>
         </div>
     </div>
@@ -394,6 +454,8 @@
     <script src="js/shopping.js"></script>
     <script src="js/guest-orders.js"></script>
     <script src="js/table-actions.js"></script>
+    <script src="js/inventory.js"></script>
+    <script src="js/debts.js"></script>
     <script src="js/report.js"></script>
     <script src="js/history.js"></script>
     <script src="js/admin.js"></script>

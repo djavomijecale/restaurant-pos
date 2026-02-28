@@ -78,6 +78,9 @@ const DB = {
     deletedGroceryItems: [],  // Blacklist za obrisane stavke
     guestOrders: [],  // QR narudžbine od gostiju
     waiterCalls: [],  // Pozivi konobara od gostiju
+    inventory: [],  // Lager - stavke sa stanjem
+    invoices: [],  // Istorija faktura
+    debts: [],  // Dugovanja
     manuallyEditedCategories: JSON.parse(localStorage.getItem('manuallyEditedCategories') || '{}')  // Lokalno čuvanje ručnih izmena!
 };
 

@@ -150,6 +150,11 @@ async function loadFromFirebase() {
                     ko.waiterUsername = ko.orderedBy || '';
                 }
             });
+            
+            // Lager
+            DB.inventory = data.inventory || [];
+            DB.invoices = data.invoices || [];
+            DB.debts = data.debts || [];
             DB.groceryList = data.groceryList || [
                 // Default lista namirnica - HRANA (za kuvare)
                 {id:1, name:'Paradajz', category:'Povrće', type:'Hrana', needed:false},
@@ -349,6 +354,9 @@ async function saveToFirebase() {
         deletedGroceryItems: DB.deletedGroceryItems || [],
         guestOrders: DB.guestOrders || [],
         waiterCalls: DB.waiterCalls || [],
+        inventory: DB.inventory || [],
+        invoices: DB.invoices || [],
+        debts: DB.debts || [],
         lastUpdated: new Date().toISOString()
     };
     

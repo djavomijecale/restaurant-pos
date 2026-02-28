@@ -486,7 +486,8 @@ function renderPayment(c) {
                 <div style="font-size:48px">💳</div><h3>Card</h3>
             </div>
         </div>
-        <button class="btn" style="margin-top:24px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>`;
+        <button class="btn" style="margin-top:24px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>
+        <button class="btn" style="margin-top:12px;background:#E94560" onclick="showDebtModal()">📝 Zapiši na Dug</button>`;
 }
 
 
@@ -535,6 +536,11 @@ function confirmPay() {
     };
     
     DB.orders.push(newOrder);
+    
+    // Oduzmi iz lagera
+    if (typeof deductInventoryOnPayment === 'function') {
+        deductInventoryOnPayment(myOrder);
+    }
     
     // KONOBAR: Briši samo njegove stavke
     // ADMIN: Briši sve

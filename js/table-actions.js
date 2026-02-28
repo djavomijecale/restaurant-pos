@@ -225,6 +225,11 @@ function confirmSplitPay(tableNum) {
         isSplitBill: true
     });
     
+    // Oduzmi iz lagera
+    if (typeof deductInventoryOnPayment === 'function') {
+        deductInventoryOnPayment(selectedItems);
+    }
+    
     table.order = table.order.filter(i => !splitBillItems.includes(i.id));
     
     if (table.order.length === 0) {
