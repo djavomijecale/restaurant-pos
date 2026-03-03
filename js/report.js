@@ -138,8 +138,35 @@ function renderFinalReport(c) {
                     <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
                         <span style="color:#B0B0B0">+ Keš prihod:</span>
                         <span style="color:#4CAF50">${report.cashRevenue.toFixed(0)} din.</span>
-                    </div>
-                    ${report.totalCashReductions > 0 ? `
+                    </div>`;
+    
+    // Vraćeni dugovi u ovoj smeni
+    const reportDebtPayments = report.orders ? report.orders.filter(o => o.isDebtPayment) : [];
+    const reportDebtTotal = reportDebtPayments.reduce((s,o) => s + o.tot, 0);
+    const reportDebtCash = reportDebtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
+    const reportDebtCard = reportDebtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+    
+    if (reportDebtTotal > 0) {
+        h += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
+                        <span style="color:#B0B0B0">📝 Vraćeni dugovi:</span>
+                        <span style="color:#FF9800">${reportDebtTotal.toFixed(0)} din. (${reportDebtCash > 0 ? '💵' + reportDebtCash.toFixed(0) : ''}${reportDebtCash > 0 && reportDebtCard > 0 ? ' + ' : ''}${reportDebtCard > 0 ? '💳' + reportDebtCard.toFixed(0) : ''})</span>
+                    </div>`;
+    }
+    
+    // Zapisano na dug u ovoj smeni
+    const reportNewDebts = (DB.debts || []).filter(d => 
+        d.time >= report.startTime && d.time <= report.endTime && d.createdBy === report.user
+    );
+    const reportNewDebtsTotal = reportNewDebts.reduce((s,d) => s + (d.originalTotal || 0), 0);
+    
+    if (reportNewDebtsTotal > 0) {
+        h += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
+                        <span style="color:#B0B0B0">📝 Zapisano na dug:</span>
+                        <span style="color:#E94560">${reportNewDebtsTotal.toFixed(0)} din. (${reportNewDebts.length})</span>
+                    </div>`;
+    }
+    
+    h += `${report.totalCashReductions > 0 ? `
                     <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px">
                         <span style="color:#B0B0B0">− Smanjenja:</span>
                         <span style="color:#FF6B6B">-${report.totalCashReductions.toFixed(0)} din.</span>
@@ -327,6 +354,29 @@ Card: ${report.cardRevenue.toFixed(2)} RSD (${report.totalRevenue > 0 ? Math.rou
 Depozit: ${report.deposit.toFixed(2)} RSD
 Ukupan učinak (otkucano + depozit): ${report.totalPerformance.toFixed(2)} RSD
 `;
+    }
+
+    // Dugovanja info
+    const textDebtPayments = report.orders ? report.orders.filter(o => o.isDebtPayment) : [];
+    const textDebtTotal = textDebtPayments.reduce((s,o) => s + o.tot, 0);
+    const textNewDebts = (DB.debts || []).filter(d => 
+        d.time >= report.startTime && d.time <= report.endTime && d.createdBy === report.user
+    );
+    const textNewDebtsTotal = textNewDebts.reduce((s,d) => s + (d.originalTotal || 0), 0);
+    
+    if (textDebtTotal > 0 || textNewDebtsTotal > 0) {
+        reportText += `
+📝 DUGOVANJA
+${'─'.repeat(40)}
+`;
+        if (textDebtTotal > 0) {
+            reportText += `Vraćeni dugovi: +${textDebtTotal.toFixed(2)} RSD (${textDebtPayments.length} uplata)
+`;
+        }
+        if (textNewDebtsTotal > 0) {
+            reportText += `Zapisano na dug: ${textNewDebtsTotal.toFixed(2)} RSD (${textNewDebts.length} dugovanja)
+`;
+        }
     }
 
     // Smanjenja keša
@@ -518,6 +568,12 @@ function renderReport(c) {
     }
     
     // ===== 2. NAČINI PLAĆANJA =====
+    const debtPayments = ords.filter(o => o.isDebtPayment);
+    const debtTotal = debtPayments.reduce((s,o) => s + o.tot, 0);
+    const regularRev = rev - debtTotal;
+    const regularCash = ords.filter(o => o.method==='Cash' && !o.isDebtPayment).reduce((s,o) => s + o.tot, 0);
+    const regularCard = ords.filter(o => o.method==='Card' && !o.isDebtPayment).reduce((s,o) => s + o.tot, 0);
+    
     h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
         <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
         <div style="display:flex;gap:16px">
@@ -531,8 +587,60 @@ function renderReport(c) {
                 <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${card.toFixed(0)} din.</div>
                 <div style="color:#B0B0B0;font-size:12px">Card (${rev>0?Math.round(card/rev*100):0}%)</div>
             </div>
-        </div>
-    </div>`;
+        </div>`;
+    
+    // Debt payments info
+    if (debtTotal > 0) {
+        h += `<div style="margin-top:12px;padding:12px;background:#16213E;border-radius:8px;border-left:4px solid #FF9800">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <span style="color:#FF9800;font-weight:bold;font-size:14px">📝 Vraćeni dugovi</span>
+                    <span style="color:#888;font-size:12px;margin-left:8px">(${debtPayments.length})</span>
+                </div>
+                <span style="color:#FF9800;font-weight:bold;font-size:16px">+${debtTotal.toFixed(0)} din.</span>
+            </div>
+            <div style="color:#888;font-size:12px;margin-top:4px">
+                Uračunato u ukupan prihod${regularRev > 0 ? ' · Bez dugova: ' + regularRev.toFixed(0) + ' din.' : ''}
+            </div>
+        </div>`;
+    }
+    
+    // New debts today
+    const todayDebts = (DB.debts || []).filter(d => {
+        const dDate = d.time ? d.time.split('T')[0] : '';
+        return dDate === today && d.remaining > 0 && !d.deleted;
+    });
+    const todayDebtsTotal = todayDebts.reduce((s,d) => s + (d.originalTotal || 0), 0);
+    
+    if (todayDebtsTotal > 0) {
+        h += `<div style="margin-top:8px;padding:12px;background:#16213E;border-radius:8px;border-left:4px solid #E94560">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <span style="color:#E94560;font-weight:bold;font-size:14px">📝 Zapisano na dug danas</span>
+                    <span style="color:#888;font-size:12px;margin-left:8px">(${todayDebts.length})</span>
+                </div>
+                <span style="color:#E94560;font-weight:bold;font-size:16px">${todayDebtsTotal.toFixed(0)} din.</span>
+            </div>
+        </div>`;
+    }
+    
+    // Total active debts
+    const allActiveDebts = (DB.debts || []).filter(d => d.remaining > 0 && !d.deleted);
+    const allActiveDebtsTotal = allActiveDebts.reduce((s,d) => s + d.remaining, 0);
+    
+    if (allActiveDebtsTotal > 0 && !isWaiter) {
+        h += `<div style="margin-top:8px;padding:12px;background:#16213E;border-radius:8px;border-left:4px solid #FFD700">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="color:#FFD700;font-weight:bold;font-size:14px">📝 Ukupno nenaplaćeni dugovi</span>
+                <span style="color:#FFD700;font-weight:bold;font-size:16px">${allActiveDebtsTotal.toFixed(0)} din.</span>
+            </div>
+            <div style="color:#888;font-size:12px;margin-top:4px">
+                ${allActiveDebts.length} ${allActiveDebts.length === 1 ? 'dugovanje' : 'dugovanja'} · Pogledajte tab Dugovi za detalje
+            </div>
+        </div>`;
+    }
+    
+    h += `</div>`;
     
     // ===== 3. STAT KARTICE =====
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0">
@@ -825,8 +933,48 @@ function renderReport(c) {
                 <div style="display:flex;justify-content:space-between;margin-bottom:8px">
                     <span style="color:#B0B0B0;font-size:13px">💵 Otkucani keš:</span>
                     <span style="color:#4CAF50;font-weight:bold">+${totalDailyCash.toFixed(0)} din.</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #2A2A4A">
+                </div>`;
+        
+        // Vraćeni dugovi
+        const dailyDebtPayments = allTodayOrders.filter(o => o.isDebtPayment);
+        const dailyDebtCash = dailyDebtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
+        const dailyDebtCard = dailyDebtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+        const dailyDebtTotal = dailyDebtPayments.reduce((s,o) => s + o.tot, 0);
+        
+        if (dailyDebtTotal > 0) {
+            h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                    <span style="color:#B0B0B0;font-size:13px">📝 Vraćeni dugovi:</span>
+                    <span style="color:#FF9800;font-weight:bold">+${dailyDebtTotal.toFixed(0)} din.</span>
+                </div>`;
+            if (dailyDebtCash > 0) {
+                h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px;padding-left:16px">
+                    <span style="color:#888;font-size:12px">↳ Keš:</span>
+                    <span style="color:#888;font-size:12px">${dailyDebtCash.toFixed(0)} din.</span>
+                </div>`;
+            }
+            if (dailyDebtCard > 0) {
+                h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px;padding-left:16px">
+                    <span style="color:#888;font-size:12px">↳ Kartica:</span>
+                    <span style="color:#888;font-size:12px">${dailyDebtCard.toFixed(0)} din.</span>
+                </div>`;
+            }
+        }
+        
+        // Aktivna dugovanja danas
+        const todayNewDebts = (DB.debts || []).filter(d => {
+            const dDate = d.time ? d.time.split('T')[0] : '';
+            return dDate === today && !d.deleted;
+        });
+        const todayNewDebtsTotal = todayNewDebts.reduce((s,d) => s + (d.originalTotal || 0), 0);
+        
+        if (todayNewDebtsTotal > 0) {
+            h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                    <span style="color:#B0B0B0;font-size:13px">📝 Zapisano na dug:</span>
+                    <span style="color:#E94560;font-weight:bold">${todayNewDebtsTotal.toFixed(0)} din. (${todayNewDebts.length})</span>
+                </div>`;
+        }
+        
+        h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #2A2A4A">
                     <span style="color:#B0B0B0;font-size:13px">💸 Smanjen keš:</span>
                     <span style="color:#FF6B6B;font-weight:bold">${totalCashReductions > 0 ? '-' : ''}${totalCashReductions.toFixed(0)} din.</span>
                 </div>

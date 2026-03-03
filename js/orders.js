@@ -537,6 +537,27 @@ function confirmPay() {
     
     DB.orders.push(newOrder);
     
+    // 🧾 OCTOPOS INTEGRACIJA - automatski pošalji fiskalni račun
+    if (typeof sendToOctopos === 'function' && OCTOPOS_CONFIG && OCTOPOS_CONFIG.enabled) {
+        sendToOctopos(newOrder).then(result => {
+            if (result.success) {
+                console.log('✅ OctoPOS fiskalni račun kreiran:', result.receiptId);
+                // Ažuriraj order sa OctoPOS ID-jem
+                save();
+            } else if (result.error && !result.error.includes('isključeno')) {
+                console.warn('⚠️ OctoPOS:', result.error);
+                // Prikaži upozorenje samo ako je greška (ne ako je isključeno za taj tip)
+                if (OCTOPOS_CONFIG.enabled) {
+                    setTimeout(() => {
+                        showAlert('⚠️ OctoPOS: ' + result.error + '\n\nRačun je sačuvan u aplikaciji.');
+                    }, 1500);
+                }
+            }
+        }).catch(err => {
+            console.error('❌ OctoPOS error:', err);
+        });
+    }
+    
     // Oduzmi iz lagera
     if (typeof deductInventoryOnPayment === 'function') {
         deductInventoryOnPayment(myOrder);
@@ -582,6 +603,7 @@ function renderReceipt(c) {
         </div>
         <hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">
         <div style="display:flex;justify-content:space-between"><span>Plaćanje:</span><span>${o.method==='Cash'?'💵':'💳'} ${o.method}</span></div>
+        ${o.octoposSent ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#4CAF50"><span>🧾 Fiskalni račun:</span><span>✅ Poslat na OctoPOS</span></div>' : (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#FF9800"><span>🧾 Fiskalni račun:</span><span>⏳ Šalje se...</span></div>' : '')}
     </div>
     <button class="btn" style="max-width:400px;margin:24px auto 0" onclick="newOrder()">Nazad na Stolove</button>
 </div>`;

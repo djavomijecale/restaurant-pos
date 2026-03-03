@@ -699,6 +699,9 @@ function renderSettings(c) {
             <label style="color:#E94560;font-weight:bold">IP Adresa štampača</label>
             <input type="text" id="sip" value="${DB.settings.ip}">
             <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Štampanje dostupno samo u Android verziji</p>
+            
+            ${typeof renderOctoposSettings === 'function' ? renderOctoposSettings() : ''}
+            
             <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
             
             <div style="border-top:3px solid #E94560;margin:32px 0;padding-top:24px">
