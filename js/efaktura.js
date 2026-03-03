@@ -27,58 +27,77 @@ async function efakturaApiCall(method, endpoint, body) {
     }
     
     const baseUrl = useDemo ? EFAKTURA_DEMO_URL : EFAKTURA_PROD_URL;
-    let url = baseUrl + endpoint;
+    const targetUrl = baseUrl + endpoint;
+    let fetchUrl = targetUrl;
     
     // If proxy is configured, route through it
+    // Proxy format: https://proxy.workers.dev/<target_url> (NOT encoded)
     if (proxyUrl) {
-        // Proxy format: proxyUrl?url=<encoded_target_url>
-        // Or if proxy ends with /, append the target URL
-        if (proxyUrl.includes('?')) {
-            url = proxyUrl + '&url=' + encodeURIComponent(url);
-        } else if (proxyUrl.endsWith('/')) {
-            url = proxyUrl + encodeURIComponent(url);
-        } else {
-            url = proxyUrl + '/' + encodeURIComponent(url);
+        let cleanProxy = proxyUrl.replace(/\/+$/, ''); // Remove trailing slashes
+        // Auto-add https:// if missing
+        if (!cleanProxy.startsWith('http://') && !cleanProxy.startsWith('https://')) {
+            cleanProxy = 'https://' + cleanProxy;
         }
+        fetchUrl = cleanProxy + '/' + targetUrl;
     }
     
+    console.log('eFaktura API:', method, fetchUrl);
+    
     const headers = {
-        'ApiKey': apiKey,
         'Accept': 'application/json',
         'Content-Type': 'application/json'
     };
     
+    // Pass ApiKey - both as header and custom header (proxy forwards it)
+    headers['ApiKey'] = apiKey;
+    headers['X-EFaktura-ApiKey'] = apiKey;
+    
     const options = {
         method: method,
-        headers: headers,
-        mode: 'cors'
+        headers: headers
     };
     
     if (body && (method === 'POST' || method === 'PUT')) {
         options.body = JSON.stringify(body);
     }
     
-    const response = await fetch(url, options);
-    
-    if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        if (response.status === 401) {
-            throw new Error('Neispravan API ključ (401). Proverite ključ u podešavanjima.');
-        } else if (response.status === 403) {
-            throw new Error('Pristup odbijen (403). Proverite da li je API aktiviran na eFaktura portalu.');
-        } else if (response.status === 0 || response.type === 'opaque') {
-            throw new Error('CORS blokiran. Potreban je proxy server. Pogledajte uputstvo u podešavanjima.');
+    try {
+        const response = await fetch(fetchUrl, options);
+        
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            if (response.status === 401) {
+                throw new Error('Neispravan API ključ (401). Proverite ključ u podešavanjima.');
+            } else if (response.status === 403) {
+                throw new Error('Pristup odbijen (403). Proverite da li je API aktiviran na portalu.');
+            } else if (response.status === 404) {
+                throw new Error('Endpoint nije pronađen (404). Proverite URL i API verziju.');
+            }
+            throw new Error(`API greška ${response.status}: ${errorText.substring(0, 300)}`);
         }
-        throw new Error(`API greška ${response.status}: ${errorText.substring(0, 200)}`);
-    }
-    
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('json')) {
-        return await response.json();
-    } else if (contentType.includes('xml') || contentType.includes('text')) {
+        
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('json')) {
+            return await response.json();
+        }
         return await response.text();
+        
+    } catch (err) {
+        // Detect CORS / network errors
+        if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
+            if (proxyUrl) {
+                throw new Error(
+                    'Proxy nije dostupan ili ne prosleđuje zahteve. Proverite:\n' +
+                    '1. Da li je Worker deployovan i aktivan\n' +
+                    '2. Da li URL proxy-ja tačan: ' + proxyUrl + '\n' +
+                    '3. Otvorite konzolu pregledača za više detalja (F12)'
+                );
+            } else {
+                throw new Error('CORS blokiran - pregledač ne dozvoljava direktan pristup. Podesite CORS proxy u Admin podešavanjima.');
+            }
+        }
+        throw err;
     }
-    return await response.text();
 }
 
 
@@ -482,25 +501,22 @@ function efakturaFetchBtn() {
 async function efakturaTestConnection() {
     try {
         efakturaLoading = true;
+        efakturaError = '';
         render();
         
-        // Try to fetch unit measures as a simple test
+        // Try to fetch unit measures as a simple test (GET, no body)
         const result = await efakturaApiCall('GET', '/api/publicApi/get-unit-measures');
         
         efakturaLoading = false;
         efakturaError = '';
         render();
-        showAlert('✅ Konekcija uspešna!\n\nAPI ključ je validan i server je dostupan.');
+        
+        const count = Array.isArray(result) ? result.length : Object.keys(result || {}).length;
+        showAlert(`✅ Konekcija uspešna!\n\nAPI ključ je validan.\nPrimljeno ${count} jedinica mere.`);
         
     } catch (err) {
         efakturaLoading = false;
-        
-        // Check if it's CORS error
-        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('CORS')) {
-            efakturaError = 'CORS blokiran - pregledač ne dozvoljava direktan pristup eFaktura API-ju. Koristite proxy ili XML upload.';
-        } else {
-            efakturaError = err.message;
-        }
+        efakturaError = err.message;
         render();
     }
 }
@@ -538,7 +554,7 @@ function renderEfakturaSettings() {
             <div>
                 <label style="color:#888;font-size:12px;display:block;margin-bottom:4px">🌐 CORS Proxy URL (opciono)</label>
                 <input type="text" id="efkProxyUrl" value="${settings.efakturaProxyUrl || ''}" 
-                    placeholder="https://vas-proxy.workers.dev/?url="
+                    placeholder="https://shiny-block-9ea0.dusan-radanovic.workers.dev"
                     style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:13px;font-family:monospace">
                 <div style="color:#888;font-size:11px;margin-top:4px">
                     Potreban samo ako API pozivi ne rade direktno (CORS blokada). Ostavite prazno za direktan pristup.
@@ -555,29 +571,66 @@ function renderEfakturaSettings() {
                     2. Kreirajte novi Worker sa kodom:<br>
                     <pre style="background:#0F3460;padding:8px;border-radius:6px;color:#4CAF50;font-size:11px;margin:6px 0;white-space:pre-wrap;overflow-x:auto">export default {
   async fetch(request) {
+    // Handle CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': '*',
+          'Access-Control-Allow-Headers': '*',
+          'Access-Control-Max-Age': '86400',
+        }
+      });
+    }
+
+    // Extract target URL from path
+    // Browser collapses // so https://x becomes https:/x
     const url = new URL(request.url);
-    const target = url.searchParams.get('url');
-    if (!target) return new Response('Missing url param', {status:400});
+    let target = url.pathname.substring(1) + url.search;
+    // Fix collapsed double slash
+    target = target.replace(/^(https?:\/)([^\/])/, '$1/$2');
     
+    if (!target || !target.startsWith('http')) {
+      return new Response('Proxy OK. Dodaj URL posle /', 
+        { status: 200 });
+    }
+
+    // Forward headers (skip browser-only ones)
     const headers = new Headers();
-    request.headers.forEach((v,k) => {
-      if (k !== 'host' && k !== 'origin') headers.set(k,v);
-    });
-    
-    const resp = await fetch(target, {
-      method: request.method,
-      headers: headers,
-      body: request.method !== 'GET' ? await request.text() : undefined
-    });
-    
-    const newResp = new Response(resp.body, resp);
-    newResp.headers.set('Access-Control-Allow-Origin', '*');
-    newResp.headers.set('Access-Control-Allow-Headers', '*');
-    return newResp;
+    for (const [k, v] of request.headers) {
+      const kl = k.toLowerCase();
+      if (!['host','origin','referer','cf-connecting-ip',
+            'cf-ray','cf-ipcountry'].includes(kl)) {
+        headers.set(k, v);
+      }
+    }
+
+    try {
+      const resp = await fetch(target, {
+        method: request.method,
+        headers: headers,
+        body: ['GET','HEAD'].includes(request.method)
+          ? undefined : await request.arrayBuffer()
+      });
+
+      const newResp = new Response(resp.body, {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: resp.headers
+      });
+      newResp.headers.set('Access-Control-Allow-Origin','*');
+      newResp.headers.set('Access-Control-Allow-Headers','*');
+      return newResp;
+    } catch (e) {
+      return new Response('Proxy error: ' + e.message, 
+        { status: 502,
+          headers: {'Access-Control-Allow-Origin':'*'}
+        });
+    }
   }
 }</pre>
-                    3. Deploy i kopirajte URL (npr. <strong style="color:#FFF">https://efaktura-proxy.vasdomen.workers.dev/?url=</strong>)<br>
-                    4. Nalepite URL gore u "CORS Proxy URL" polje<br><br>
+                    3. Deploy i kopirajte URL (npr. <strong style="color:#FFF">https://shiny-block-9ea0.dusan-radanovic.workers.dev</strong>)<br>
+                    4. Nalepite URL gore u "CORS Proxy URL" polje (BEZ trailing slash)<br><br>
                     
                     <strong style="color:#FFF">B) Koristite XML Upload:</strong><br>
                     Ako ne želite proxy, uvek možete ručno skinuti XML sa eFaktura portala i uvesti ga u app kroz "📄 Ručni XML Upload".
