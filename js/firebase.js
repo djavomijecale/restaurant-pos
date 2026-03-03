@@ -155,6 +155,7 @@ async function loadFromFirebase() {
             DB.inventory = data.inventory || [];
             DB.invoices = data.invoices || [];
             DB.debts = data.debts || [];
+            DB.houseOrders = data.houseOrders || [];
             // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
             DB.debts.forEach(debt => {
                 if (!debt.payments) debt.payments = [];
@@ -363,6 +364,7 @@ async function saveToFirebase() {
         inventory: DB.inventory || [],
         invoices: DB.invoices || [],
         debts: DB.debts || [],
+        houseOrders: DB.houseOrders || [],
         lastUpdated: new Date().toISOString()
     };
     

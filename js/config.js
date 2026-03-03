@@ -81,6 +81,7 @@ const DB = {
     inventory: [],  // Lager - stavke sa stanjem
     invoices: [],  // Istorija faktura
     debts: [],  // Dugovanja
+    houseOrders: [],  // Kuća - artikli koji se ne naplaćuju
     manuallyEditedCategories: JSON.parse(localStorage.getItem('manuallyEditedCategories') || '{}')  // Lokalno čuvanje ručnih izmena!
 };
 

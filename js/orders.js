@@ -487,7 +487,10 @@ function renderPayment(c) {
             </div>
         </div>
         <button class="btn" style="margin-top:24px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>
-        <button class="btn" style="margin-top:12px;background:#E94560" onclick="showDebtModal()">📝 Zapiši na Dug</button>`;
+        <div style="display:flex;gap:12px;margin-top:12px">
+            <button class="btn" style="flex:1;background:#E94560" onclick="showDebtModal()">📝 Zapiši na Dug</button>
+            <button class="btn" style="flex:1;background:#FF9800" onclick="showHouseModal()">🏠 Kuća</button>
+        </div>`;
 }
 
 

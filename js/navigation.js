@@ -11,7 +11,7 @@ function nav(p) {
     }
     
     // Provera pristupa za kuvare
-    if(DB.currentUser && DB.currentUser.role === 'kuvar' && (p === 'menu' || p === 'tables' || p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'report' || p === 'history' || p === 'inventory' || p === 'debts')) {
+    if(DB.currentUser && DB.currentUser.role === 'kuvar' && (p === 'menu' || p === 'tables' || p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'report' || p === 'history' || p === 'inventory' || p === 'debts' || p === 'house')) {
         showAlert('Nemate pristup ovoj stranici');
         return;
     }
@@ -25,7 +25,8 @@ function nav(p) {
         'menu': 0, 'tables': 1, 'kitchen': 'navKitchen', 'shopping': 'navShopping,navShoppingAdmin',
         'kuvarreport': 'navKuvarReport', 'report': 'navReport', 'history': 'navHistory',
         'guestorders': 'navGuestOrders', 'removed': 'navRemoved', 'users': 'navUsers',
-        'edit': 'navEdit', 'settings': 'navSettings', 'inventory': 'navInventory', 'debts': 'navDebts'
+        'edit': 'navEdit', 'settings': 'navSettings', 'inventory': 'navInventory', 'debts': 'navDebts',
+        'house': 'navHouse'
     };
     const target = navMap[p];
     if (typeof target === 'number') {
@@ -80,6 +81,8 @@ function render() {
     else if(page==='garden') renderGarden(c);
     else if(page==='inventory') renderInventory(c);
     else if(page==='debts') renderDebts(c);
+    else if(page==='house') renderHouse(c);
+    else if(page==='houseReceipt') renderHouseReceipt(c);
     
     updateBadge();
     setTimeout(() => updateUserInfo(), 0);
