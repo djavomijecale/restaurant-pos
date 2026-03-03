@@ -9,6 +9,12 @@
 
 // Load data from Firebase
 async function loadFromFirebase() {
+    // ✅ ZAŠTITA: Ne učitavaj dok se čuva - prepisalo bi lokalne promene
+    if (isSaving || saveQueued) {
+        console.log('⏳ loadFromFirebase odložen - save u toku');
+        return false;
+    }
+    
     isLoading = true;
     
     // Sačekaj autentifikaciju ali ne duže od 3 sekunde
@@ -96,12 +102,23 @@ async function loadFromFirebase() {
             let tablesHadCorrupted = false;
             DB.tables.forEach(t => {
                 if (!t.order) { t.order = []; return; }
-                if (!Array.isArray(t.order)) t.order = Object.values(t.order);
+                // Firebase konvertuje nizove u objekte - UVEK konvertuj nazad
+                if (!Array.isArray(t.order)) {
+                    console.log(`🔧 Sto ${t.num}: Konvertujem order iz objekta u niz`);
+                    t.order = Object.values(t.order);
+                }
                 const before = t.order.length;
                 t.order = t.order.filter(item => {
                     if (!item || !item.name) return false;
-                    if (!item.qty || isNaN(item.qty)) item.qty = 1;
-                    else item.qty = parseInt(item.qty);
+                    // ✅ POPRAVKA: Sačuvaj qty kao broj, ali NE resetuj na 1 ako je validan
+                    if (item.qty === undefined || item.qty === null || item.qty === '' || isNaN(Number(item.qty))) {
+                        console.warn(`⚠️ Sto ${t.num}, ${item.name}: qty bio '${item.qty}', resetujem na 1`);
+                        item.qty = 1;
+                    } else {
+                        item.qty = parseInt(item.qty);
+                        // Zaštita od qty=0 ili negativnog
+                        if (item.qty <= 0) item.qty = 1;
+                    }
                     if (!item.price || isNaN(item.price)) {
                         const menuItem = (DB.menu || []).find(m => m.id == item.id);
                         if (menuItem) item.price = menuItem.price;
@@ -111,6 +128,10 @@ async function loadFromFirebase() {
                     return true;
                 });
                 if (t.order.length !== before) tablesHadCorrupted = true;
+                
+                // Firebase ne čuva prazne nizove - osiguraj da discountedItems postoji
+                if (!t.discountedItems) t.discountedItems = [];
+                if (!Array.isArray(t.discountedItems)) t.discountedItems = Object.values(t.discountedItems);
             });
             if (tablesHadCorrupted) {
                 console.log('🧹 Očišćene korumpirane stavke sa stolova');
@@ -332,6 +353,7 @@ async function loadFromFirebase() {
 // Save to Firebase
 let isSaving = false;
 let saveQueued = false;
+let hasPendingChanges = false; // Flag: imamo lokalne promene koje čekaju save
 
 async function saveToFirebase() {
     if (isLoading) return;
@@ -341,10 +363,14 @@ async function saveToFirebase() {
         return;
     }
     isSaving = true;
+    hasPendingChanges = true;
     
     if (!isFirebaseAuthReady) {
         console.warn('⚠️ Auth nije spreman - pokušavam save bez auth-a...');
     }
+    
+    // VAŽNO: Generišemo timestamp PRE slanja i čuvamo ga lokalno
+    const saveTimestamp = new Date().toISOString();
     
     const dataToSave = {
         menu: DB.menu,
@@ -365,13 +391,19 @@ async function saveToFirebase() {
         invoices: DB.invoices || [],
         debts: DB.debts || [],
         houseOrders: DB.houseOrders || [],
-        lastUpdated: new Date().toISOString()
+        lastUpdated: saveTimestamp
     };
     
     try {
         await database.ref('/').update(dataToSave);
+        // ✅ KLJUČNA POPRAVKA: Ažuriraj lokalni lastUpdate POSLE uspešnog save-a
+        // Tako checkForUpdates neće misliti da je neko drugi promenio podatke
+        lastUpdate = saveTimestamp;
+        hasPendingChanges = false;
+        console.log('✅ Saved to Firebase, lastUpdate synced:', saveTimestamp);
     } catch (error) {
         console.error('❌ Error saving to Firebase:', error);
+        hasPendingChanges = false;
     } finally {
         isSaving = false;
         if (saveQueued) {
@@ -383,10 +415,27 @@ async function saveToFirebase() {
 
 
 // Main save function
+let _saveDebounceTimer = null;
+
 function save() {
     localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
     localStorage.setItem('konobarName', DB.konobarName);
+    hasPendingChanges = true; // Odmah markiraj da imamo nesačuvane promene
     saveToFirebase();
+}
+
+// Debounced save - za brzo dodavanje stavki (klik-klik-klik)
+// Čeka 500ms pre nego pošalje, tako da 10 brzih klikova = 1 save
+function saveDebounced() {
+    localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
+    localStorage.setItem('konobarName', DB.konobarName);
+    hasPendingChanges = true;
+    
+    if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer);
+    _saveDebounceTimer = setTimeout(() => {
+        _saveDebounceTimer = null;
+        saveToFirebase();
+    }, 500);
 }
 
 
@@ -394,11 +443,25 @@ let isCheckingUpdates = false;
 
 async function checkForUpdates() {
     if (!isFirebaseAuthReady || isCheckingUpdates) return;
+    
+    // ✅ KLJUČNA POPRAVKA: Ne učitavaj dok imamo nesačuvane lokalne promene
+    // ili dok je save u toku - to bi prepisalo naše podatke
+    if (isSaving || saveQueued || hasPendingChanges) {
+        console.log('⏳ Preskačem update check - save u toku ili pending changes');
+        return;
+    }
+    
     isCheckingUpdates = true;
     
     try {
         const snapshot = await database.ref('/lastUpdated').once('value');
         const serverLastUpdate = snapshot.val();
+        
+        // Ponovo proveri da save nije počeo dok smo čekali odgovor
+        if (isSaving || saveQueued || hasPendingChanges) {
+            console.log('⏳ Save započeo tokom check-a, preskačem load');
+            return;
+        }
         
         if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
             const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;

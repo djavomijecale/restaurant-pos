@@ -87,7 +87,13 @@ function addToTable(itemId) {
         }
     }
     
-    save();
+    // Koristi debounced save za brzo dodavanje stavki (klik-klik-klik)
+    // Sprečava 10 brzih klikova = 10 Firebase upisa, umesto toga 1 upis
+    if (typeof saveDebounced === 'function') {
+        saveDebounced();
+    } else {
+        save();
+    }
     render();
 }
 
@@ -280,7 +286,11 @@ function changeTableQty(tableNum, itemId, delta, createdBy) {
         
         item.qty += delta;
         if(item.qty <= 0) delTableItem(tableNum, itemId, createdBy);
-        else { save(); render(); }
+        else { 
+            if (typeof saveDebounced === 'function') saveDebounced(); 
+            else save(); 
+            render(); 
+        }
     }
 }
 
