@@ -397,8 +397,8 @@ function renderTableMenu(c) {
     h += '</div>';
     
     if(myOrder.length > 0) {
-        h += `<div style="position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:#E94560;padding:12px 24px;border-radius:12px;box-shadow:0 4px 20px rgba(233,69,96,0.5);max-width:400px;width:90%">
-            <div style="display:flex;justify-content:space-between;align-items:center">
+        h += `<div style="position:sticky;bottom:0;background:#E94560;padding:12px 24px;border-radius:12px 12px 0 0;box-shadow:0 -4px 20px rgba(233,69,96,0.5);margin:16px -16px 0 -16px;z-index:100">
+            <div style="display:flex;justify-content:space-between;align-items:center;max-width:500px;margin:0 auto">
                 <div>
                     <div style="font-size:12px;opacity:0.9">${myOrder.length} stavki</div>
                     <div style="font-size:20px;font-weight:bold">${tot.toFixed(0)} din.</div>
