@@ -44,6 +44,7 @@ function renderInventory(c) {
     const tabs = [
         {id:'stock', label:'📋 Stanje', color:'#FFD700'},
         {id:'invoice', label:'📄 Faktura', color:'#4CAF50'},
+        {id:'efaktura', label:'📥 eFaktura', color:'#9C27B0'},
         {id:'links', label:'🔗 Veze', color:'#2196F3'},
         {id:'history', label:'📜 Istorija', color:'#B0B0B0'}
     ];
@@ -60,6 +61,7 @@ function renderInventory(c) {
     switch(inventoryTab) {
         case 'stock': h += renderStockList(); break;
         case 'invoice': h += renderInvoiceEntry(); break;
+        case 'efaktura': h += (typeof renderEfakturaTab === 'function') ? renderEfakturaTab() : '<p style="color:#888">eFaktura modul nije učitan.</p>'; break;
         case 'links': h += renderInventoryLinks(); break;
         case 'history': h += renderInvoiceHistory(); break;
     }
@@ -149,9 +151,10 @@ function renderStockList() {
 // TAB 2: INVOICE ENTRY
 // ============================================
 function renderInvoiceEntry() {
-    let h = `<div style="display:flex;gap:8px;margin-bottom:16px">
-        <button class="btn" style="flex:1;background:#FF9800" onclick="showOCRInvoice()">📸 Skeniraj Fakturu</button>
-        <button class="btn" style="flex:1;background:#2196F3" onclick="showManualInvoice()">✏️ Ručni Unos</button>
+    let h = `<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn" style="flex:1;min-width:120px;background:#FF9800" onclick="showOCRInvoice()">📸 Skeniraj</button>
+        <button class="btn" style="flex:1;min-width:120px;background:#2196F3" onclick="showManualInvoice()">✏️ Ručni Unos</button>
+        <button class="btn" style="flex:1;min-width:120px;background:#9C27B0" onclick="showEfakturaUpload()">📥 eFaktura XML</button>
     </div>`;
     
     h += `<div id="invoiceFormArea"></div>`;
@@ -719,9 +722,11 @@ function renderInvoiceHistory() {
         h += `<div class="card" style="margin-bottom:8px;cursor:pointer" onclick="toggleInvoiceDetails('${inv.id}')">
             <div style="display:flex;justify-content:space-between;align-items:center">
                 <div>
-                    <div style="font-weight:bold;font-size:15px">📄 Faktura</div>
+                    <div style="font-weight:bold;font-size:15px">${inv.source === 'eFaktura' ? '📥' : '📄'} ${inv.source === 'eFaktura' ? 'eFaktura' : 'Faktura'}</div>
                     <div style="color:#888;font-size:12px;margin-top:2px">
                         ${dateStr} ${timeStr} · ${inv.items ? inv.items.length : 0} stavki · ${inv.addedBy || 'admin'}
+                        ${inv.supplierName ? '<br>🏢 ' + inv.supplierName : ''}
+                        ${inv.invoiceNumber ? ' · #' + inv.invoiceNumber : ''}
                     </div>
                 </div>
                 <div style="text-align:right">
@@ -919,4 +924,497 @@ function deductInventoryOnPayment(paidItems) {
     });
     
     return deducted;
+}
+
+
+// ============================================
+// eFAKTURA XML IMPORT
+// ============================================
+
+function showEfakturaUpload() {
+    const area = document.getElementById('invoiceFormArea');
+    if (!area) return;
+    
+    area.innerHTML = `
+        <div class="card" style="border:2px solid #9C27B0">
+            <h3 style="color:#9C27B0;margin-bottom:12px">📥 Uvoz eFaktura XML</h3>
+            <p style="color:#888;font-size:13px;margin-bottom:12px">
+                Skinite XML fakturu sa <strong style="color:#FFF">efaktura.mfin.gov.rs</strong> portala i izaberite ovde.
+            </p>
+            
+            <div style="background:#16213E;border-radius:10px;padding:14px;margin-bottom:14px">
+                <div style="color:#9C27B0;font-weight:bold;font-size:13px;margin-bottom:8px">📋 Kako skinuti XML:</div>
+                <div style="color:#888;font-size:12px;line-height:1.6">
+                    1. Otvorite <strong style="color:#FFF">efaktura.mfin.gov.rs</strong><br>
+                    2. Idite na <strong style="color:#FFF">Ulazne fakture</strong><br>
+                    3. Otvorite željenu fakturu<br>
+                    4. Kliknite na <strong style="color:#FFF">⬇ Preuzmi XML</strong> (UBL)<br>
+                    5. Sačuvajte fajl i izaberite ovde
+                </div>
+            </div>
+            
+            <label style="display:flex;align-items:center;justify-content:center;padding:40px 16px;background:#16213E;border:2px dashed #9C27B0;border-radius:12px;cursor:pointer;text-align:center">
+                <input type="file" accept=".xml,text/xml,application/xml" onchange="processEfakturaXML(this.files[0])" style="display:none" id="efakturaFileInput">
+                <div>
+                    <div style="font-size:48px">📄</div>
+                    <div style="color:#9C27B0;font-weight:bold;margin-top:8px">Izaberi XML fajl</div>
+                    <div style="color:#888;font-size:11px;margin-top:4px">UBL 2.1 format sa eFaktura portala</div>
+                </div>
+            </label>
+            
+            <div id="efakturaStatus" style="display:none;margin-top:12px"></div>
+            <div id="efakturaResults" style="display:none;margin-top:12px"></div>
+        </div>`;
+}
+
+
+function processEfakturaXML(file) {
+    if (!file) return;
+    
+    const status = document.getElementById('efakturaStatus');
+    if (status) {
+        status.style.display = 'block';
+        status.innerHTML = `<div style="text-align:center;padding:12px">
+            <div style="font-size:28px">⏳</div>
+            <p style="color:#9C27B0;margin-top:6px;font-weight:bold">Čitam XML fajl...</p>
+        </div>`;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const xmlText = e.target.result;
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+            
+            // Check for parse errors
+            const parseError = xmlDoc.getElementsByTagName('parsererror');
+            if (parseError.length > 0) {
+                showEfakturaError('XML fajl nije validan. Proverite da li ste skinuli ispravan fajl.');
+                return;
+            }
+            
+            // Parse UBL 2.1 invoice
+            const result = parseUBLInvoice(xmlDoc, xmlText);
+            
+            if (result.items.length === 0) {
+                showEfakturaError('Nisu pronađene stavke u fakturi. Proverite format XML fajla.', xmlText);
+                return;
+            }
+            
+            showEfakturaResults(result);
+            
+        } catch (err) {
+            console.error('eFaktura XML error:', err);
+            showEfakturaError('Greška pri obradi: ' + err.message);
+        }
+    };
+    reader.onerror = function() {
+        showEfakturaError('Greška pri čitanju fajla.');
+    };
+    reader.readAsText(file);
+}
+
+
+function parseUBLInvoice(xmlDoc, xmlText) {
+    const items = [];
+    const info = {};
+    
+    // UBL 2.1 namespaces used in Serbian eFaktura
+    // Try multiple approaches since namespace handling varies
+    
+    // Extract invoice metadata
+    info.invoiceNumber = getXMLText(xmlDoc, 'ID', 0) || '';
+    info.issueDate = getXMLText(xmlDoc, 'IssueDate') || '';
+    info.dueDate = getXMLText(xmlDoc, 'DueDate') || '';
+    info.currency = getXMLAttr(xmlDoc, 'DocumentCurrencyCode') || 'RSD';
+    
+    // Supplier info
+    const supplierParty = xmlDoc.getElementsByTagNameNS('*', 'AccountingSupplierParty')[0];
+    if (supplierParty) {
+        info.supplierName = getNestedText(supplierParty, 'PartyName', 'Name') 
+            || getNestedText(supplierParty, 'PartyLegalEntity', 'RegistrationName')
+            || '';
+        info.supplierPIB = getNestedText(supplierParty, 'PartyTaxScheme', 'CompanyID') || '';
+    }
+    
+    // Total
+    const lma = xmlDoc.getElementsByTagNameNS('*', 'LegalMonetaryTotal')[0];
+    if (lma) {
+        info.totalWithTax = parseFloat(getChildText(lma, 'TaxInclusiveAmount')) || 0;
+        info.totalWithoutTax = parseFloat(getChildText(lma, 'TaxExclusiveAmount')) || 0;
+        info.payableAmount = parseFloat(getChildText(lma, 'PayableAmount')) || 0;
+    }
+    
+    // Parse invoice lines
+    const lines = xmlDoc.getElementsByTagNameNS('*', 'InvoiceLine');
+    // Also try CreditNoteLine for credit notes
+    const creditLines = xmlDoc.getElementsByTagNameNS('*', 'CreditNoteLine');
+    const allLines = lines.length > 0 ? lines : creditLines;
+    
+    for (let i = 0; i < allLines.length; i++) {
+        const line = allLines[i];
+        
+        // Get item name
+        const itemEl = line.getElementsByTagNameNS('*', 'Item')[0];
+        let name = '';
+        if (itemEl) {
+            name = getChildText(itemEl, 'Name') || getChildText(itemEl, 'Description') || '';
+        }
+        if (!name) continue;
+        
+        // Get quantity
+        const qtyEl = line.getElementsByTagNameNS('*', 'InvoicedQuantity')[0] 
+            || line.getElementsByTagNameNS('*', 'CreditedQuantity')[0];
+        let qty = 0;
+        let unitCode = 'kom';
+        if (qtyEl) {
+            qty = parseFloat(qtyEl.textContent) || 0;
+            unitCode = qtyEl.getAttribute('unitCode') || 'H87';
+        }
+        
+        // Map UBL unit codes to our units
+        const unit = mapUBLUnit(unitCode);
+        
+        // Get price per unit
+        const priceEl = line.getElementsByTagNameNS('*', 'Price')[0];
+        let unitPrice = 0;
+        if (priceEl) {
+            unitPrice = parseFloat(getChildText(priceEl, 'PriceAmount')) || 0;
+        }
+        
+        // Line total (for verification)
+        let lineTotal = parseFloat(getChildText(line, 'LineExtensionAmount')) || 0;
+        
+        // If no unit price but have total, calculate
+        if (unitPrice === 0 && lineTotal > 0 && qty > 0) {
+            unitPrice = lineTotal / qty;
+        }
+        
+        // Get seller item ID if available
+        const sellerId = itemEl ? getNestedText(itemEl, 'SellersItemIdentification', 'ID') : '';
+        
+        // Get tax info
+        let taxPercent = 0;
+        const classifiedTax = itemEl ? itemEl.getElementsByTagNameNS('*', 'ClassifiedTaxCategory')[0] : null;
+        if (classifiedTax) {
+            taxPercent = parseFloat(getChildText(classifiedTax, 'Percent')) || 0;
+        }
+        
+        // Calculate price without tax if price includes tax
+        // Serbian invoices typically show prices without PDV in line items
+        
+        items.push({
+            name: name.trim(),
+            qty: Math.abs(qty), // Credit notes may have negative
+            unit: unit,
+            unitPrice: Math.round(unitPrice * 100) / 100,
+            lineTotal: Math.round(lineTotal * 100) / 100,
+            taxPercent: taxPercent,
+            sellerId: sellerId,
+            category: guessCategory(name)
+        });
+    }
+    
+    return { info, items };
+}
+
+
+// Helper functions for XML parsing
+function getXMLText(doc, tagName, index) {
+    const els = doc.getElementsByTagNameNS('*', tagName);
+    const idx = index || 0;
+    return els[idx] ? els[idx].textContent.trim() : '';
+}
+
+function getXMLAttr(doc, tagName, attrName) {
+    const el = doc.getElementsByTagNameNS('*', tagName)[0];
+    if (!el) return '';
+    if (attrName) return el.getAttribute(attrName) || '';
+    return el.textContent.trim();
+}
+
+function getChildText(parent, childTagName) {
+    const children = parent.getElementsByTagNameNS('*', childTagName);
+    // Get the first DIRECT or near-direct child with this tag
+    for (let i = 0; i < children.length; i++) {
+        return children[i].textContent.trim();
+    }
+    return '';
+}
+
+function getNestedText(parent, midTag, childTag) {
+    const mid = parent.getElementsByTagNameNS('*', midTag)[0];
+    if (!mid) return '';
+    const child = mid.getElementsByTagNameNS('*', childTag)[0];
+    return child ? child.textContent.trim() : '';
+}
+
+
+// Map UBL/UN-ECE unit codes to Serbian units
+function mapUBLUnit(code) {
+    const unitMap = {
+        // Pieces/items
+        'H87': 'kom', 'EA': 'kom', 'PCE': 'kom', 'C62': 'kom', 'XPP': 'kom', 'NAR': 'kom',
+        // Weight
+        'KGM': 'kg', 'GRM': 'g', 'TNE': 'kg',
+        // Volume
+        'LTR': 'l', 'MLT': 'ml', 'HLT': 'l',
+        // Packages
+        'XPK': 'pak', 'XBX': 'pak', 'XCT': 'pak', 'XCS': 'pak', 'XBG': 'pak',
+        // Bottles
+        'XBO': 'kom', 'XBT': 'kom',
+        // Other
+        'MTR': 'kom', 'MTK': 'kom', 'DAY': 'kom', 'HUR': 'kom',
+        // Fallback Serbian codes
+        'KOM': 'kom', 'KG': 'kg', 'LIT': 'l', 'PAK': 'pak',
+    };
+    return unitMap[code?.toUpperCase()] || 'kom';
+}
+
+
+function showEfakturaError(msg, xmlText) {
+    const status = document.getElementById('efakturaStatus');
+    if (!status) return;
+    
+    let h = `<div class="card" style="border:2px solid #E94560">
+        <h3 style="color:#E94560">⚠️ Greška</h3>
+        <p style="color:#888;margin:8px 0">${msg}</p>`;
+    
+    if (xmlText) {
+        h += `<details style="margin-top:8px">
+            <summary style="color:#888;cursor:pointer;font-size:12px">Prikaži XML sadržaj</summary>
+            <pre style="background:#16213E;padding:12px;border-radius:8px;color:#888;font-size:10px;white-space:pre-wrap;margin-top:8px;max-height:200px;overflow-y:auto">${xmlText.substring(0, 3000).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+        </details>`;
+    }
+    
+    h += '</div>';
+    status.innerHTML = h;
+}
+
+
+function showEfakturaResults(result) {
+    const status = document.getElementById('efakturaStatus');
+    const results = document.getElementById('efakturaResults');
+    if (!status || !results) return;
+    
+    const info = result.info;
+    const items = result.items;
+    
+    // Show invoice info
+    status.style.display = 'block';
+    status.innerHTML = `<div class="card" style="border:2px solid #4CAF50;padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <h3 style="color:#4CAF50;margin:0">✅ Faktura učitana</h3>
+            <span style="color:#FFD700;font-weight:bold;font-size:16px">${(info.payableAmount || info.totalWithTax || 0).toFixed(0)} ${info.currency || 'RSD'}</span>
+        </div>
+        <div style="color:#888;font-size:12px;line-height:1.6">
+            ${info.supplierName ? `<div>🏢 <strong style="color:#FFF">${escapeHtml(info.supplierName)}</strong>${info.supplierPIB ? ' · PIB: ' + info.supplierPIB.replace('RS','') : ''}</div>` : ''}
+            ${info.invoiceNumber ? `<div>📄 Broj: <strong style="color:#FFF">${escapeHtml(info.invoiceNumber)}</strong></div>` : ''}
+            ${info.issueDate ? `<div>📅 Datum: ${info.issueDate}</div>` : ''}
+        </div>
+    </div>`;
+    
+    // Show items with matching to existing inventory
+    results.style.display = 'block';
+    let h = `<div class="card" style="border:2px solid #9C27B0">
+        <h3 style="color:#9C27B0;margin-bottom:12px">📋 ${items.length} stavki pronađeno</h3>
+        <p style="color:#888;font-size:12px;margin-bottom:12px">Proverite stavke. 🟢 = postoji u lageru, 🔵 = nova stavka.</p>`;
+    
+    items.forEach((item, idx) => {
+        // Try to match with existing inventory
+        const existingMatch = findInventoryMatch(item.name);
+        const isExisting = !!existingMatch;
+        const matchColor = isExisting ? '#4CAF50' : '#2196F3';
+        const matchIcon = isExisting ? '🟢' : '🔵';
+        const matchLabel = isExisting ? `→ ${existingMatch.name} (stanje: ${existingMatch.stock} ${existingMatch.unit})` : 'Nova stavka';
+        
+        h += `<div style="background:#16213E;border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:4px solid ${matchColor}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <input type="checkbox" id="efk_check_${idx}" checked style="accent-color:${matchColor};width:16px;height:16px">
+                        <input type="text" value="${escapeHtml(item.name)}" id="efk_name_${idx}" 
+                            style="flex:1;padding:6px 8px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px;min-width:0">
+                    </div>
+                    <div style="color:${matchColor};font-size:11px;margin:4px 0 0 22px">${matchIcon} ${matchLabel}</div>
+                </div>
+                <div style="text-align:right;white-space:nowrap">
+                    <div style="font-weight:bold;color:#FFD700">${item.lineTotal.toFixed(0)} din</div>
+                </div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:8px;margin-left:22px;flex-wrap:wrap">
+                <div style="flex:1;min-width:55px">
+                    <div style="color:#888;font-size:10px">Količina</div>
+                    <input type="number" value="${item.qty}" id="efk_qty_${idx}" step="0.1" min="0"
+                        style="width:100%;padding:5px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px;text-align:center">
+                </div>
+                <div style="flex:1;min-width:55px">
+                    <div style="color:#888;font-size:10px">Jedinica</div>
+                    <select id="efk_unit_${idx}" style="width:100%;padding:5px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px">
+                        ${['kom','kg','l','g','ml','pak'].map(u => `<option value="${u}" ${item.unit===u?'selected':''}>${u}</option>`).join('')}
+                    </select>
+                </div>
+                <div style="flex:1;min-width:55px">
+                    <div style="color:#888;font-size:10px">Cena/jed</div>
+                    <input type="number" value="${item.unitPrice}" id="efk_price_${idx}" step="0.01" min="0"
+                        style="width:100%;padding:5px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px;text-align:right">
+                </div>
+                <div style="flex:1;min-width:55px">
+                    <div style="color:#888;font-size:10px">Kategorija</div>
+                    <select id="efk_cat_${idx}" style="width:100%;padding:5px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px">
+                        ${['Piće','Hrana','Namirnice','Ostalo'].map(c => `<option value="${c}" ${item.category===c?'selected':''}>${c}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>`;
+    });
+    
+    // Summary
+    const totalNet = items.reduce((s, i) => s + i.lineTotal, 0);
+    h += `<div style="display:flex;justify-content:space-between;padding:12px;background:#0F3460;border-radius:8px;margin-top:8px">
+        <span style="font-weight:bold;font-size:15px">Ukupno (${items.length} stavki):</span>
+        <span style="font-weight:bold;font-size:15px;color:#FFD700">${totalNet.toFixed(0)} din (bez PDV)</span>
+    </div>`;
+    
+    h += `<div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-secondary" style="flex:1" onclick="document.getElementById('efakturaResults').style.display='none';document.getElementById('efakturaStatus').style.display='none'">✕ Otkaži</button>
+        <button class="btn" style="flex:1;background:#4CAF50" onclick="confirmEfakturaImport(${items.length}, '${escapeHtml(info.supplierName || '')}', '${info.invoiceNumber || ''}')">✅ Dodaj u Lager</button>
+    </div>`;
+    
+    h += '</div>';
+    results.innerHTML = h;
+}
+
+
+function findInventoryMatch(name) {
+    if (!DB.inventory || DB.inventory.length === 0) return null;
+    
+    const nameLower = name.toLowerCase().trim();
+    
+    // 1. Exact match
+    let match = DB.inventory.find(i => i.name.toLowerCase().trim() === nameLower);
+    if (match) return match;
+    
+    // 2. One contains the other
+    match = DB.inventory.find(i => {
+        const invName = i.name.toLowerCase().trim();
+        return invName.includes(nameLower) || nameLower.includes(invName);
+    });
+    if (match) return match;
+    
+    // 3. Fuzzy match - remove common suffixes/prefixes and compare
+    const normalize = (s) => s.toLowerCase()
+        .replace(/\s+/g, ' ')
+        .replace(/[0-9,.]+\s*(l|ml|g|kg|kom|pak|lit)\b/gi, '')
+        .replace(/\b(0\.33|0\.5|1\.0|1\.5|2\.0|0,33|0,5)\b/g, '')
+        .trim();
+    
+    const normalized = normalize(nameLower);
+    if (normalized.length >= 3) {
+        match = DB.inventory.find(i => {
+            const invNorm = normalize(i.name.toLowerCase());
+            return invNorm === normalized || 
+                   (invNorm.length >= 3 && normalized.length >= 3 && 
+                    (invNorm.includes(normalized) || normalized.includes(invNorm)));
+        });
+    }
+    
+    return match || null;
+}
+
+
+function confirmEfakturaImport(count, supplierName, invoiceNumber) {
+    const checkedItems = [];
+    
+    for (let i = 0; i < count; i++) {
+        const checkbox = document.getElementById('efk_check_' + i);
+        if (!checkbox || !checkbox.checked) continue;
+        
+        const name = document.getElementById('efk_name_' + i)?.value?.trim();
+        const qty = parseFloat(document.getElementById('efk_qty_' + i)?.value) || 0;
+        const unit = document.getElementById('efk_unit_' + i)?.value || 'kom';
+        const unitPrice = parseFloat(document.getElementById('efk_price_' + i)?.value) || 0;
+        const category = document.getElementById('efk_cat_' + i)?.value || 'Ostalo';
+        
+        if (name && qty > 0) {
+            checkedItems.push({ name, qty, unit, unitPrice, category });
+        }
+    }
+    
+    if (checkedItems.length === 0) {
+        showAlert('⚠️ Nije označena nijedna stavka!');
+        return;
+    }
+    
+    const total = checkedItems.reduce((s, i) => s + (i.qty * i.unitPrice), 0);
+    
+    showConfirm('📥 Uvezi eFakturu u Lager', 
+        `Da li želite da dodate ${checkedItems.length} stavki u lager?\n\n` +
+        (supplierName ? `Dobavljač: ${supplierName}\n` : '') +
+        (invoiceNumber ? `Br. fakture: ${invoiceNumber}\n` : '') +
+        `Ukupno: ${total.toFixed(0)} din`,
+        (confirmed) => {
+            if (!confirmed) return;
+            
+            let newCount = 0;
+            let updatedCount = 0;
+            
+            // Create invoice record
+            const invoice = {
+                id: 'efk_' + Date.now(),
+                date: new Date().toISOString(),
+                items: [...checkedItems],
+                total: total,
+                addedBy: DB.currentUser ? DB.currentUser.username : 'admin',
+                source: 'eFaktura',
+                supplierName: supplierName || '',
+                invoiceNumber: invoiceNumber || ''
+            };
+            
+            if (!DB.invoices) DB.invoices = [];
+            DB.invoices.push(invoice);
+            
+            // Update stock
+            checkedItems.forEach(invItem => {
+                const existing = findInventoryMatch(invItem.name);
+                
+                if (existing) {
+                    existing.stock = (parseFloat(existing.stock) || 0) + parseFloat(invItem.qty);
+                    existing.costPrice = parseFloat(invItem.unitPrice) || existing.costPrice;
+                    updatedCount++;
+                } else {
+                    DB.inventory.push({
+                        id: 'inv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                        name: invItem.name,
+                        unit: invItem.unit || 'kom',
+                        stock: parseFloat(invItem.qty),
+                        minStock: 0,
+                        costPrice: parseFloat(invItem.unitPrice) || 0,
+                        category: invItem.category || 'Ostalo',
+                        menuItemId: null,
+                        deductQty: 1
+                    });
+                    newCount++;
+                }
+            });
+            
+            invoiceItems = [];
+            save();
+            
+            showAlert(`✅ eFaktura uvezena!\n\n` +
+                `${updatedCount} stavki ažurirano\n` +
+                `${newCount} novih stavki dodato\n` +
+                `Ukupno: ${total.toFixed(0)} din`);
+            
+            inventoryTab = 'stock';
+            render();
+        }
+    );
+}
+
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

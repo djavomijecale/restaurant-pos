@@ -702,6 +702,8 @@ function renderSettings(c) {
             
             ${typeof renderOctoposSettings === 'function' ? renderOctoposSettings() : ''}
             
+            ${typeof renderEfakturaSettings === 'function' ? renderEfakturaSettings() : ''}
+            
             <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
             
             <div style="border-top:3px solid #E94560;margin:32px 0;padding-top:24px">
