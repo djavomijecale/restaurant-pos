@@ -110,11 +110,17 @@ async function loginWaiter() {
         DB.currentUser = {username: user.username, role: user.role};
         // Koristi username kao konobarName
         DB.konobarName = user.username;
-        save();
+        // ✅ SAMO localStorage - NE Firebase! Inače prepisujemo tuđe workday-ove
+        localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
+        localStorage.setItem('konobarName', DB.konobarName);
         
         console.log('🔄 Učitavam najnovije podatke iz Firebase...');
         // KLJUČNO: Učitaj najnovije podatke PRE provere workday-a!
         await loadFromFirebase();
+        
+        // Vrati currentUser nakon load-a (loadFromFirebase ga ne dira)
+        DB.currentUser = {username: user.username, role: user.role};
+        DB.konobarName = user.username;
         
         // Redirect na osnovu uloge
         if(user.role === 'kuvar') {
@@ -162,11 +168,15 @@ async function loginAdmin() {
         `;
         
         DB.currentUser = {username: admin.username, role: admin.role};
-        save();
+        // ✅ SAMO localStorage - NE Firebase! Inače prepisujemo tuđe workday-ove
+        localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
         
         console.log('🔄 Admin login - učitavam najnovije podatke iz Firebase...');
         // Učitaj najnovije podatke pre nego što admin vidi bilo šta
         await loadFromFirebase();
+        
+        // Vrati currentUser nakon load-a
+        DB.currentUser = {username: admin.username, role: admin.role};
         
         page = 'tables';
         render();

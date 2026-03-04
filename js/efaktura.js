@@ -571,7 +571,6 @@ function renderEfakturaSettings() {
                     2. Kreirajte novi Worker sa kodom:<br>
                     <pre style="background:#0F3460;padding:8px;border-radius:6px;color:#4CAF50;font-size:11px;margin:6px 0;white-space:pre-wrap;overflow-x:auto">export default {
   async fetch(request) {
-    // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         headers: {
@@ -582,50 +581,35 @@ function renderEfakturaSettings() {
         }
       });
     }
-
-    // Extract target URL from path
-    // Browser collapses // so https://x becomes https:/x
     const url = new URL(request.url);
     let target = url.pathname.substring(1) + url.search;
-    // Fix collapsed double slash
-    target = target.replace(/^(https?:\/)([^\/])/, '$1/$2');
-    
-    if (!target || !target.startsWith('http')) {
-      return new Response('Proxy OK. Dodaj URL posle /', 
-        { status: 200 });
-    }
-
-    // Forward headers (skip browser-only ones)
+    if (target.startsWith('https:/') &amp;&amp; !target.startsWith('https://'))
+      target = 'https://' + target.substring(7);
+    if (target.startsWith('http:/') &amp;&amp; !target.startsWith('http://'))
+      target = 'http://' + target.substring(6);
+    if (!target || !target.startsWith('http'))
+      return new Response('Proxy OK', {status:200,
+        headers:{'Access-Control-Allow-Origin':'*'}});
     const headers = new Headers();
     for (const [k, v] of request.headers) {
       const kl = k.toLowerCase();
       if (!['host','origin','referer','cf-connecting-ip',
-            'cf-ray','cf-ipcountry'].includes(kl)) {
+            'cf-ray','cf-ipcountry'].includes(kl))
         headers.set(k, v);
-      }
     }
-
     try {
       const resp = await fetch(target, {
-        method: request.method,
-        headers: headers,
+        method: request.method, headers: headers,
         body: ['GET','HEAD'].includes(request.method)
           ? undefined : await request.arrayBuffer()
       });
-
-      const newResp = new Response(resp.body, {
-        status: resp.status,
-        statusText: resp.statusText,
-        headers: resp.headers
-      });
-      newResp.headers.set('Access-Control-Allow-Origin','*');
-      newResp.headers.set('Access-Control-Allow-Headers','*');
-      return newResp;
-    } catch (e) {
-      return new Response('Proxy error: ' + e.message, 
-        { status: 502,
-          headers: {'Access-Control-Allow-Origin':'*'}
-        });
+      const r = new Response(resp.body, resp);
+      r.headers.set('Access-Control-Allow-Origin','*');
+      r.headers.set('Access-Control-Allow-Headers','*');
+      return r;
+    } catch(e) {
+      return new Response('Error: '+e.message, {status:502,
+        headers:{'Access-Control-Allow-Origin':'*'}});
     }
   }
 }</pre>
