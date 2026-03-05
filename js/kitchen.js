@@ -496,7 +496,8 @@ function closeKuvarWorkday() {
         });
         
         // Obriši workday
-        delete DB.workdays[username];
+        // ✅ ATOMIČKI DELETE za kuvara
+        removeWorkday(username);
         save();
         
         // Prikaži rezime

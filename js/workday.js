@@ -86,11 +86,90 @@ function renderWorkday(c) {
 
 
 function openWorkday() {
+    const username = DB.currentUser.username;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // ✅ PROVERA 1: Da li neko TRENUTNO radi? (preklapanje smena)
+    const activeWorkdays = DB.workdays || {};
+    const otherActiveShift = Object.entries(activeWorkdays)
+        .find(([user, wd]) => user !== username && wd && wd.startTime);
+    
+    if (otherActiveShift) {
+        const [activeUser, activeWd] = otherActiveShift;
+        const inheritedDeposit = activeWd.deposit || 0;
+        const startDate = new Date(activeWd.startTime);
+        const timeStr = startDate.toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' });
+        
+        if (!DB.workdays) DB.workdays = {};
+        
+        const workdayData = {
+            user: username,
+            startTime: new Date().toISOString(),
+            startOrders: DB.orders.length,
+            deposit: inheritedDeposit,
+            inheritedFrom: activeUser,
+            cashReductions: []
+        };
+        
+        DB.workdays[username] = workdayData;
+        saveWorkday(username, workdayData);
+        page = 'tables';
+        render();
+        
+        showAlert(`✅ Smena otvorena!\n\n💰 Preuzeto ${inheritedDeposit.toLocaleString()} din iz kase\n👤 Aktivna smena: ${activeUser} (od ${timeStr})`);
+        return;
+    }
+    
+    // ✅ PROVERA 2: Da li je danas već bila ZATVORENA smena?
+    let lastTodayShift = null;
+    
+    if (DB.workdayHistory && DB.workdayHistory.length > 0) {
+        const sorted = [...DB.workdayHistory].sort((a, b) => 
+            new Date(b.logoutTime) - new Date(a.logoutTime)
+        );
+        
+        for (const shift of sorted) {
+            const shiftEnd = new Date(shift.logoutTime);
+            if (shiftEnd >= today) {
+                lastTodayShift = shift;
+                break;
+            }
+        }
+    }
+    
+    if (lastTodayShift && lastTodayShift.finalCash !== undefined) {
+        // Druga smena - automatski preuzmi keš iz prethodne
+        const inheritedDeposit = Math.max(0, lastTodayShift.finalCash);
+        const shiftUser = lastTodayShift.user;
+        const logoutDate = new Date(lastTodayShift.logoutTime);
+        const timeStr = logoutDate.toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' });
+        
+        if (!DB.workdays) DB.workdays = {};
+        
+        const workdayData = {
+            user: username,
+            startTime: new Date().toISOString(),
+            startOrders: DB.orders.length,
+            deposit: inheritedDeposit,
+            inheritedFrom: shiftUser,
+            cashReductions: []
+        };
+        
+        DB.workdays[username] = workdayData;
+        saveWorkday(username, workdayData);
+        page = 'tables';
+        render();
+        
+        showAlert(`✅ Druga smena otvorena!\n\n💰 Preuzeto ${inheritedDeposit.toLocaleString()} din iz kase\n👤 Prethodna smena: ${shiftUser} (${timeStr})`);
+        return;
+    }
+    
+    // ✅ PRVA SMENA DANAS - ručni unos depozita
     const modal = document.getElementById('depositModal');
     const input = document.getElementById('depositInput');
     const hint = document.getElementById('depositHint');
     
-    // Nađi poslednju zatvorenu smenu (bilo kog konobara)
     let suggestedDeposit = 0;
     let lastShiftInfo = '';
     
@@ -104,7 +183,7 @@ function openWorkday() {
             suggestedDeposit = Math.max(0, lastShift.finalCash);
             const logoutDate = new Date(lastShift.logoutTime);
             const timeStr = logoutDate.toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-            lastShiftInfo = `💡 Prethodna smena (${lastShift.user}, ${timeStr}) završila sa <strong style="color:#FFD700">${suggestedDeposit.toLocaleString()} din</strong> keša u kasi`;
+            lastShiftInfo = `💡 Poslednja smena (${lastShift.user}, ${timeStr}) završila sa <strong style="color:#FFD700">${suggestedDeposit.toLocaleString()} din</strong> keša u kasi`;
         }
     }
     
@@ -143,7 +222,7 @@ function confirmDeposit() {
     if (!DB.workdays) DB.workdays = {};
     
     // Kreiraj workday sa depozitom
-    DB.workdays[username] = {
+    const workdayData = {
         user: username,
         startTime: new Date().toISOString(),
         startOrders: DB.orders.length,
@@ -151,7 +230,10 @@ function confirmDeposit() {
         cashReductions: [] // Inicijalizuj niz za smanjenja keša
     };
     
-    save();
+    // ✅ ATOMIČKI SAVE - piše SAMO na /workdays/{username}
+    // Ne može da prepiše tuđe workday-ove
+    DB.workdays[username] = workdayData;
+    saveWorkday(username, workdayData);
     closeDepositModal();
     page = 'tables';
     render();
@@ -228,7 +310,8 @@ function confirmCashReduction() {
         createdBy: username
     });
     
-    save();
+    // ✅ ATOMIČKI UPDATE - ažurira SAMO /workdays/{username}/cashReductions
+    updateWorkday(username, { cashReductions: myWorkday.cashReductions });
     closeCashReductionModal();
     render();
     
@@ -390,7 +473,8 @@ function closeWorkday() {
     });
     
     // Obriši SAMO workday ovog konobara
-    delete DB.workdays[username];
+    // ✅ ATOMIČKI DELETE - briše SAMO /workdays/{username}
+    removeWorkday(username);
     console.log('✅ Workday zatvoren za:', username);
     save();
     

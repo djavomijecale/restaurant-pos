@@ -312,7 +312,24 @@ async function loadFromFirebase() {
                 DB.workdays = {};
                 DB.workdays[data.workday.user] = data.workday;
             } else {
-                DB.workdays = data.workdays || {};
+                // ✅ Mapiraj sanitizovane Firebase ključeve nazad na originalne username-ove
+                const rawWorkdays = data.workdays || {};
+                const mappedWorkdays = {};
+                const allUsers = DB.users || [];
+                
+                for (const [firebaseKey, workdayData] of Object.entries(rawWorkdays)) {
+                    if (workdayData && workdayData.user) {
+                        mappedWorkdays[workdayData.user] = workdayData;
+                    } else {
+                        const matchedUser = allUsers.find(u => sanitizeFirebaseKey(u.username) === firebaseKey);
+                        if (matchedUser) {
+                            mappedWorkdays[matchedUser.username] = workdayData;
+                        } else {
+                            mappedWorkdays[firebaseKey] = workdayData;
+                        }
+                    }
+                }
+                DB.workdays = mappedWorkdays;
             }
             
             const activeWorkdays = Object.keys(DB.workdays).length;
@@ -379,7 +396,8 @@ async function saveToFirebase() {
         removedItems: DB.removedItems,
         settings: DB.settings,
         users: DB.users,
-        workdays: DB.workdays,
+        // ✅ WORKDAYS SE NE ČUVAJU OVDE - čuvaju se atomički po korisniku
+        // kroz saveWorkday() / removeWorkday() da se ne bi prepisivali
         workdayHistory: DB.workdayHistory,
         kitchenOrders: DB.kitchenOrders,
         groceryList: DB.groceryList,
@@ -507,5 +525,120 @@ let autoRefreshTimer = null;
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshTimer = setInterval(checkForUpdates, 10000);
+    
+    // ✅ REAL-TIME LISTENER za workday-ove
+    // Svaki uređaj odmah vidi kad neko otvori/zatvori smenu
+    startWorkdayListener();
+}
+
+
+// ============================================
+// ATOMIČKO ČUVANJE WORKDAY-OVA
+// Svaki korisnik piše SAMO svoj workday na /workdays/{safeKey}
+// Nijedan uređaj ne može da prepiše tuđi workday
+// ============================================
+
+// Firebase ne radi dobro sa razmacima/specijalnim znacima u ključevima
+// Sanitizujemo username za upotrebu kao Firebase path
+function sanitizeFirebaseKey(str) {
+    if (!str) return 'unknown';
+    // Zameni sve što Firebase ne voli: . $ # [ ] / i razmake
+    return str.replace(/[\.\$\#\[\]\/\s]/g, '_');
+}
+
+let workdayListenerActive = false;
+
+function startWorkdayListener() {
+    if (workdayListenerActive) return;
+    workdayListenerActive = true;
+    
+    database.ref('/workdays').on('value', (snapshot) => {
+        const serverWorkdays = snapshot.val() || {};
+        const oldCount = Object.keys(DB.workdays || {}).length;
+        
+        // ✅ Mapiraj sanitizovane Firebase ključeve nazad na originalne username-ove
+        // Firebase čuva kao /workdays/vukasin_n ali DB.workdays treba da bude pod "vukasin n"
+        const mappedWorkdays = {};
+        const allUsers = DB.users || [];
+        
+        for (const [firebaseKey, workdayData] of Object.entries(serverWorkdays)) {
+            // Probaj da nađeš originalni username: prvo preko workday.user polja
+            if (workdayData && workdayData.user) {
+                mappedWorkdays[workdayData.user] = workdayData;
+            } else {
+                // Fallback: probaj da nađeš usera čiji sanitized key matchuje
+                const matchedUser = allUsers.find(u => sanitizeFirebaseKey(u.username) === firebaseKey);
+                if (matchedUser) {
+                    mappedWorkdays[matchedUser.username] = workdayData;
+                } else {
+                    // Koristi Firebase key kao fallback
+                    mappedWorkdays[firebaseKey] = workdayData;
+                }
+            }
+        }
+        
+        DB.workdays = mappedWorkdays;
+        const newCount = Object.keys(DB.workdays).length;
+        
+        // Re-renderuj samo ako se nešto promenilo
+        if (newCount !== oldCount) {
+            console.log('👥 Workdays ažurirani u realnom vremenu:', Object.keys(DB.workdays));
+            render();
+        }
+    });
+    
+    console.log('👂 Workday real-time listener pokrenut');
+}
+
+
+// Otvori smenu za korisnika - piše SAMO na /workdays/{safeKey}
+async function saveWorkday(username, workdayData) {
+    const safeKey = sanitizeFirebaseKey(username);
+    try {
+        // Uvek čuvaj originalni username u podacima
+        workdayData.user = username;
+        await database.ref('/workdays/' + safeKey).set(workdayData);
+        
+        // ✅ Obriši stari ključ ako je bio sa razmakom (migracija)
+        if (safeKey !== username) {
+            database.ref('/workdays/' + username).remove().catch(() => {});
+        }
+        
+        DB.workdays[username] = workdayData;
+        console.log('✅ Workday sačuvan za:', username, '(key:', safeKey + ')');
+    } catch (err) {
+        console.error('❌ Greška pri čuvanju workday-a:', err);
+        throw err;
+    }
+}
+
+
+// Zatvori smenu za korisnika - briše SAMO /workdays/{safeKey}
+async function removeWorkday(username) {
+    const safeKey = sanitizeFirebaseKey(username);
+    try {
+        await database.ref('/workdays/' + safeKey).remove();
+        delete DB.workdays[username];
+        console.log('✅ Workday obrisan za:', username, '(key:', safeKey + ')');
+    } catch (err) {
+        console.error('❌ Greška pri brisanju workday-a:', err);
+        throw err;
+    }
+}
+
+
+// Ažuriraj workday podatke (npr. cashReductions) - piše SAMO na /workdays/{safeKey}
+async function updateWorkday(username, updates) {
+    const safeKey = sanitizeFirebaseKey(username);
+    try {
+        await database.ref('/workdays/' + safeKey).update(updates);
+        if (DB.workdays[username]) {
+            Object.assign(DB.workdays[username], updates);
+        }
+        console.log('✅ Workday ažuriran za:', username, '(key:', safeKey + ')');
+    } catch (err) {
+        console.error('❌ Greška pri ažuriranju workday-a:', err);
+        throw err;
+    }
 }
 

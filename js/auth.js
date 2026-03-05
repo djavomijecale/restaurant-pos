@@ -127,12 +127,14 @@ async function loginWaiter() {
             // Kuvar IDE DIREKTNO NA KUHINJU + otvori radni dan ako nema
             if (!DB.workdays) DB.workdays = {};
             if (!DB.workdays[user.username]) {
-                DB.workdays[user.username] = {
+                const cookWorkday = {
                     user: user.username,
                     startTime: new Date().toISOString(),
                     role: 'kuvar'
                 };
-                save();
+                DB.workdays[user.username] = cookWorkday;
+                // ✅ ATOMIČKI SAVE za kuvara
+                saveWorkday(user.username, cookWorkday);
             }
             page = 'kitchen';
         } else {

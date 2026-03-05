@@ -181,6 +181,10 @@ function deleteWaiter(username) {
     showConfirm(`Brisanje ${roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1)}`, confirmMsg, (confirmed) => {
         if(confirmed) {
             DB.users = DB.users.filter(u => u.username !== username);
+            // ✅ Obriši i workday ako je aktivan
+            if (DB.workdays && DB.workdays[username]) {
+                removeWorkday(username);
+            }
             save();
             render();
             showAlert(`✅ ${roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1)} je obrisan`);
@@ -818,6 +822,9 @@ function resetAllData() {
                 DB.kitchenOrders = [];
                 DB.guestOrders = [];
                 DB.tables = cleanTables;
+                
+                // ✅ Obriši workdays sa Firebase (jer ih main save više ne piše)
+                await database.ref('/workdays').remove();
                 
                 render();
                 showAlert('✅ Svi podaci su obrisani!\n\nOstali su: Meni, Korisnici, Podešavanja, Nabavka.');
