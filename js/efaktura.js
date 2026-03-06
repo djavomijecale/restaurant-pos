@@ -66,6 +66,17 @@ async function efakturaApiCall(method, endpoint, body) {
         
         if (!response.ok) {
             const errorText = await response.text().catch(() => '');
+            if (response.status === 429) {
+                // Rate limit - sačekaj i probaj ponovo
+                console.warn('⏳ eFaktura rate limit (429), čekam 2 sec...');
+                await new Promise(r => setTimeout(r, 2000));
+                const retryResp = await fetch(fetchUrl, options);
+                if (retryResp.ok) {
+                    const ct = retryResp.headers.get('content-type') || '';
+                    return ct.includes('json') ? await retryResp.json() : await retryResp.text();
+                }
+                throw new Error('API greška 429: Previše zahteva. Sačekajte par sekundi i pokušajte ponovo.');
+            }
             if (response.status === 401) {
                 throw new Error('Neispravan API ključ (401). Proverite ključ u podešavanjima.');
             } else if (response.status === 403) {
@@ -111,46 +122,104 @@ async function efakturaFetchInvoices(dateFrom, dateTo) {
     render();
     
     try {
-        // Use /purchase-invoice/ids endpoint with date range
-        // POST body: { "dateFrom": "2024-01-01", "dateTo": "2024-01-31" }
         const body = {};
         if (dateFrom) body.dateFrom = dateFrom;
         if (dateTo) body.dateTo = dateTo;
         
+        console.log('📥 eFaktura: Tražim fakture za period:', dateFrom, '-', dateTo);
+        
         const result = await efakturaApiCall('POST', '/api/publicApi/purchase-invoice/ids', body);
         
-        // Result should be array of invoice IDs
+        console.log('📥 eFaktura API odgovor (tip: ' + typeof result + '):', JSON.stringify(result).substring(0, 500));
+        
+        // Parsiranje ID-jeva - probaj razne formate
         let invoiceIds = [];
         if (Array.isArray(result)) {
             invoiceIds = result;
+        } else if (result && result.PurchaseInvoiceIds) {
+            invoiceIds = result.PurchaseInvoiceIds;
         } else if (result && result.purchaseInvoiceIds) {
             invoiceIds = result.purchaseInvoiceIds;
+        } else if (result && result.Invoices) {
+            invoiceIds = result.Invoices;
+        } else if (result && result.invoices) {
+            invoiceIds = result.invoices;
+        } else if (result && result.Content) {
+            invoiceIds = Array.isArray(result.Content) ? result.Content : [result.Content];
+        } else if (result && result.content) {
+            invoiceIds = Array.isArray(result.content) ? result.content : [result.content];
         } else if (result && typeof result === 'object') {
-            // Try to extract IDs from any array property
-            const arrProp = Object.values(result).find(v => Array.isArray(v));
-            if (arrProp) invoiceIds = arrProp;
+            // Pronadji bilo koji niz u odgovoru
+            for (const [key, val] of Object.entries(result)) {
+                if (Array.isArray(val) && val.length > 0) {
+                    console.log('📥 Pronađen niz u polju "' + key + '" sa ' + val.length + ' stavki');
+                    invoiceIds = val;
+                    break;
+                }
+            }
         }
         
+        console.log('📥 Pronađeno ' + invoiceIds.length + ' ID-jeva faktura');
+        
         if (invoiceIds.length === 0) {
-            efakturaError = 'Nema faktura za izabrani period.';
+            // Ako je result sam po sebi niz objekata (fakture umesto ID-jeva)
+            if (result && typeof result === 'object' && !Array.isArray(result)) {
+                // Možda je odgovor sam faktura ili lista faktura kao objekat
+                const keys = Object.keys(result);
+                console.log('📥 Ključevi u odgovoru:', keys.join(', '));
+            }
+            efakturaError = 'Nema faktura za izabrani period.\n\nOtvori F12 → Console za detalje API odgovora.';
             efakturaLoading = false;
             render();
             return;
         }
         
-        // Fetch details for each invoice (limit to 20 at a time)
-        const idsToFetch = invoiceIds.slice(0, 20);
+        // Fetch details for each invoice - SA PAUZOM (API limit: 3 req/sec)
+        const idsToFetch = invoiceIds.slice(0, 50);
         const invoices = [];
+        let errors = 0;
         
-        for (const id of idsToFetch) {
+        for (let i = 0; i < idsToFetch.length; i++) {
+            const id = idsToFetch[i];
+            
+            // ✅ Pauza 400ms između zahteva (max 3/sec = 333ms, +buffer)
+            if (i > 0) {
+                await new Promise(r => setTimeout(r, 400));
+            }
             try {
-                const invoiceId = typeof id === 'object' ? (id.purchaseInvoiceId || id.invoiceId || id.id) : id;
-                const detail = await efakturaApiCall('GET', `/api/publicApi/purchase-invoice?invoiceId=${invoiceId}`);
+                // Izvuci ID iz raznih formata
+                let invoiceId;
+                if (typeof id === 'string' || typeof id === 'number') {
+                    invoiceId = id;
+                } else if (typeof id === 'object') {
+                    invoiceId = id.purchaseInvoiceId || id.PurchaseInvoiceId || 
+                                id.invoiceId || id.InvoiceId || 
+                                id.id || id.Id || id.ID;
+                    
+                    // Ako objekat već sadrži podatke fakture, koristi ga direktno
+                    if (id.supplierName || id.SupplierName || id.accountingSupplierParty || 
+                        id.AccountingSupplierParty || id.totalAmount || id.TotalAmount ||
+                        id.invoiceNumber || id.InvoiceNumber) {
+                        console.log('📥 Faktura ' + (i+1) + ': Koristi podatke iz liste (bez extra fetch-a)');
+                        invoices.push({ id: invoiceId || ('inv_' + i), ...id });
+                        continue;
+                    }
+                }
+                
+                if (!invoiceId) {
+                    console.warn('📥 Faktura ' + (i+1) + ': Nema ID-a:', JSON.stringify(id).substring(0, 200));
+                    errors++;
+                    continue;
+                }
+                
+                console.log('📥 Učitavam fakturu ' + (i+1) + '/' + idsToFetch.length + ': ' + invoiceId);
+                const detail = await efakturaApiCall('GET', '/api/publicApi/purchase-invoice?invoiceId=' + invoiceId);
                 if (detail) {
                     invoices.push({ id: invoiceId, ...detail });
                 }
             } catch (err) {
-                console.warn('Greška pri učitavanju fakture:', err.message);
+                errors++;
+                console.warn('📥 Greška faktura ' + (i+1) + ':', err.message);
             }
         }
         
@@ -158,7 +227,9 @@ async function efakturaFetchInvoices(dateFrom, dateTo) {
         efakturaLoading = false;
         
         if (invoices.length === 0) {
-            efakturaError = `Pronađeno ${invoiceIds.length} ID-jeva ali nijedna faktura nije učitana.`;
+            efakturaError = 'Pronađeno ' + invoiceIds.length + ' ID-jeva ali nijedna faktura nije učitana (' + errors + ' grešaka).\n\nOtvori F12 → Console za detalje.';
+        } else if (errors > 0) {
+            console.log('📥 Učitano ' + invoices.length + '/' + idsToFetch.length + ' faktura (' + errors + ' grešaka)');
         }
         
         render();

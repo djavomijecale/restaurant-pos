@@ -45,7 +45,7 @@ function renderInventory(c) {
         {id:'stock', label:'📋 Stanje', color:'#FFD700'},
         {id:'invoice', label:'📄 Faktura', color:'#4CAF50'},
         {id:'efaktura', label:'📥 eFaktura', color:'#9C27B0'},
-        {id:'links', label:'🔗 Veze', color:'#2196F3'},
+        {id:'links', label:'🍕 Recepti', color:'#2196F3'},
         {id:'history', label:'📜 Istorija', color:'#B0B0B0'}
     ];
     h += '<div style="display:flex;gap:6px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px">';
@@ -121,14 +121,18 @@ function renderStockList() {
             if (item.stock <= 0) { color = '#E94560'; statusIcon = '❌'; }
             else if (pct <= 100) { color = '#FF9800'; statusIcon = '⚠️'; }
             
-            const linkedMenu = item.menuItemId ? DB.menu.find(m => m.id == item.menuItemId) : null;
+            // Nađi sve artikle iz menija koji koriste ovu namirnic u receptu
+            const linkedMenuItems = DB.menu.filter(m => m.recipe && m.recipe.some(r => r.inventoryId === item.id));
+            const linkedLabel = linkedMenuItems.length > 0 
+                ? '🍕 ' + linkedMenuItems.map(m => m.name).slice(0, 3).join(', ') + (linkedMenuItems.length > 3 ? ' +' + (linkedMenuItems.length - 3) : '')
+                : '';
             
             h += `<div class="card" style="margin-bottom:8px;cursor:pointer;border-left:4px solid ${color}" onclick="showEditInventoryItem('${item.id}')">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div style="flex:1">
                         <div style="font-weight:bold;font-size:15px">${statusIcon} ${item.name}</div>
                         <div style="color:#888;font-size:12px;margin-top:2px">
-                            ${linkedMenu ? '🔗 ' + linkedMenu.name : ''}
+                            ${linkedLabel}
                         </div>
                     </div>
                     <div style="text-align:right">
@@ -610,93 +614,210 @@ function saveInvoice() {
 }
 
 
+
+
 // ============================================
-// TAB 3: MENU ↔ INVENTORY LINKS
+// TAB 3: RECEPTI (Menu → Inventory linking)
+// Jedan artikal iz menija može da troši više namirnica
+// Više artikala može da troši istu namirnic (npr. malo/veliko pivo → bure)
 // ============================================
-function renderInventoryLinks() {
-    let h = `<p style="color:#888;font-size:13px;margin-bottom:12px">
-        Povežite stavke iz menija sa lagerom. Kad se stavka naplati, stanje lagera se automatski smanjuje.
-    </p>`;
-    
-    if (DB.inventory.length === 0) {
-        h += `<div class="empty">
-            <div style="font-size:48px">📦</div>
-            <h3>Lager je prazan</h3>
-            <p>Prvo dodajte stavke u lager ili unesite fakturu</p>
-        </div>`;
-        return h;
+
+function migrateOldLinks() {
+    // Migriraj stari 1:1 format (inventory.menuItemId) → novi recept format (menu.recipe)
+    let migrated = 0;
+    DB.inventory.forEach(inv => {
+        if (inv.menuItemId) {
+            const menuItem = DB.menu.find(m => m.id == inv.menuItemId);
+            if (menuItem) {
+                if (!menuItem.recipe) menuItem.recipe = [];
+                if (!menuItem.recipe.some(r => r.inventoryId === inv.id)) {
+                    menuItem.recipe.push({ inventoryId: inv.id, qty: inv.deductQty || 1 });
+                    migrated++;
+                }
+            }
+            inv.menuItemId = null;
+        }
+    });
+    if (migrated > 0) {
+        console.log('🔄 Migrirano ' + migrated + ' starih veza u recept format');
+        save();
     }
+}
+
+function renderInventoryLinks() {
+    migrateOldLinks();
     
-    // Show menu items grouped by category
+    let h = '<div style="margin-bottom:16px">';
+    h += '<p style="color:#888;font-size:13px;line-height:1.6">';
+    h += 'Povežite artikle sa namirnicama iz lagera. Svaki artikal može imati više namirnica (recept). ';
+    h += 'Više artikala može da troši istu namirnic (npr. malo i veliko pivo → isto bure).';
+    h += '</p>';
+    h += '<input type="text" id="recipeSearch" placeholder="🔍 Pretraži meni..." ';
+    h += 'oninput="renderRecipeList(this.value)" ';
+    h += 'style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:14px;margin-top:8px">';
+    h += '</div>';
+    h += '<div id="recipeListArea">';
+    h += buildRecipeList('');
+    h += '</div>';
+    return h;
+}
+
+
+function renderRecipeList(search) {
+    const area = document.getElementById('recipeListArea');
+    if (area) area.innerHTML = buildRecipeList(search);
+}
+
+
+function buildRecipeList(search) {
+    let h = '';
+    const searchLower = (search || '').toLowerCase();
+    
     const menuByGroup = {};
-    DB.menu.forEach(item => {
+    DB.menu.forEach(function(item) {
+        if (searchLower && !item.name.toLowerCase().includes(searchLower)) return;
         const grp = item.group || item.cat || 'Ostalo';
         if (!menuByGroup[grp]) menuByGroup[grp] = [];
         menuByGroup[grp].push(item);
     });
     
-    Object.entries(menuByGroup).forEach(([grp, items]) => {
-        h += `<div style="color:#888;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">${grp}</div>`;
+    if (Object.keys(menuByGroup).length === 0) {
+        return '<div style="text-align:center;padding:20px;color:#888">Nema rezultata</div>';
+    }
+    
+    Object.entries(menuByGroup).forEach(function([grp, items]) {
+        h += '<div style="color:#888;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">' + grp + '</div>';
         
-        items.forEach(menuItem => {
-            // Find linked inventory item
-            const linked = DB.inventory.find(i => i.menuItemId == menuItem.id);
+        items.forEach(function(menuItem) {
+            const recipe = menuItem.recipe || [];
+            const borderColor = recipe.length > 0 ? '#4CAF50' : '#2A2A4A';
             
-            h += `<div class="card" style="margin-bottom:6px;padding:10px 12px">
-                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-                    <div style="flex:1;min-width:0">
-                        <div style="font-weight:bold;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${menuItem.name}</div>
-                        <div style="color:#888;font-size:12px">${menuItem.price} din</div>
-                    </div>
-                    <div style="flex:1">
-                        <select onchange="linkMenuToInventory(${menuItem.id}, this.value)"
-                            style="width:100%;padding:8px;background:#16213E;border:1px solid ${linked ? '#4CAF50' : '#2A2A4A'};border-radius:6px;color:${linked ? '#4CAF50' : '#888'};font-size:12px">
-                            <option value="">-- Bez veze --</option>
-                            ${DB.inventory.map(inv => 
-                                `<option value="${inv.id}" ${linked && linked.id === inv.id ? 'selected' : ''}>${inv.name} (${inv.stock} ${inv.unit})</option>`
-                            ).join('')}
-                        </select>
-                    </div>
-                    ${linked ? `<input type="number" value="${linked.deductQty || 1}" min="0.1" step="0.1" 
-                        onchange="updateDeductQty('${linked.id}', this.value)"
-                        style="width:50px;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFD700;font-size:12px;text-align:center"
-                        title="Količina koja se oduzima po prodaji">` : ''}
-                </div>
-            </div>`;
+            h += '<div class="card" style="margin-bottom:8px;padding:12px;border-left:4px solid ' + borderColor + '">';
+            h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:' + (recipe.length > 0 ? '8' : '0') + 'px">';
+            h += '<div>';
+            h += '<span style="font-weight:bold;font-size:14px">' + menuItem.name + '</span>';
+            h += '<span style="color:#888;font-size:12px;margin-left:8px">' + menuItem.price + ' din</span>';
+            if (recipe.length > 0) {
+                h += '<span style="color:#4CAF50;font-size:11px;margin-left:6px">(' + recipe.length + ')</span>';
+            }
+            h += '</div>';
+            h += '<button class="btn" style="width:auto;padding:4px 12px;font-size:12px;background:' + (recipe.length > 0 ? '#2196F3' : '#4CAF50') + '" ';
+            h += 'onclick="addRecipeIngredient(' + menuItem.id + ')">+ Dodaj</button>';
+            h += '</div>';
+            
+            recipe.forEach(function(ing, idx) {
+                const invItem = DB.inventory.find(function(i) { return i.id === ing.inventoryId; });
+                const invName = invItem ? invItem.name : '❌ Obrisano';
+                const invUnit = invItem ? invItem.unit : '';
+                const invStock = invItem ? parseFloat(invItem.stock) : 0;
+                const stockColor = (invItem && invItem.minStock && invStock <= invItem.minStock) ? '#E94560' : '#888';
+                
+                h += '<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:#16213E;border-radius:6px;margin-bottom:4px">';
+                h += '<span style="color:#4CAF50;font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+                h += '📦 ' + invName + ' <span style="color:' + stockColor + '">(' + invStock + ' ' + invUnit + ')</span>';
+                h += '</span>';
+                h += '<input type="number" value="' + ing.qty + '" min="0.01" step="0.1" ';
+                h += 'onchange="updateRecipeQty(' + menuItem.id + ', ' + idx + ', this.value)" ';
+                h += 'style="width:55px;padding:4px;background:#0F3460;border:1px solid #2A2A4A;border-radius:4px;color:#FFD700;font-size:13px;text-align:center">';
+                h += '<span style="color:#888;font-size:11px;min-width:24px">' + invUnit + '</span>';
+                h += '<button onclick="removeRecipeIngredient(' + menuItem.id + ', ' + idx + ')" ';
+                h += 'style="background:none;border:none;color:#E94560;font-size:16px;cursor:pointer;padding:2px 6px">✕</button>';
+                h += '</div>';
+            });
+            
+            h += '</div>';
         });
     });
     
     return h;
 }
 
-function linkMenuToInventory(menuItemId, inventoryId) {
-    // Remove old link
-    DB.inventory.forEach(i => {
-        if (i.menuItemId == menuItemId) {
-            i.menuItemId = null;
-        }
+
+function addRecipeIngredient(menuItemId) {
+    const menuItem = DB.menu.find(function(m) { return m.id === menuItemId; });
+    if (!menuItem) return;
+    
+    const categories = {};
+    DB.inventory.forEach(function(inv) {
+        const cat = inv.category || 'Ostalo';
+        if (!categories[cat]) categories[cat] = [];
+        categories[cat].push(inv);
     });
     
-    // Set new link
-    if (inventoryId) {
-        const inv = DB.inventory.find(i => i.id === inventoryId);
-        if (inv) {
-            inv.menuItemId = menuItemId;
-            if (!inv.deductQty) inv.deductQty = 1;
-        }
-    }
+    let invOptions = '';
+    Object.entries(categories).forEach(function([cat, items]) {
+        invOptions += '<div style="color:#888;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px;padding:0 4px">' + cat + '</div>';
+        items.forEach(function(inv) {
+            const alreadyIn = (menuItem.recipe || []).some(function(r) { return r.inventoryId === inv.id; });
+            invOptions += '<div class="card ing-item" style="margin-bottom:4px;padding:10px;cursor:pointer;' + (alreadyIn ? 'opacity:0.4;' : '') + '" ';
+            if (!alreadyIn) {
+                invOptions += 'onclick="selectIngredient(' + menuItemId + ', \'' + inv.id + '\')"';
+            }
+            invOptions += '>';
+            invOptions += '<div style="display:flex;justify-content:space-between;align-items:center">';
+            invOptions += '<span style="font-weight:bold;font-size:13px">' + inv.name + '</span>';
+            invOptions += '<span style="color:#888;font-size:12px">' + inv.stock + ' ' + inv.unit + (alreadyIn ? ' ✓' : '') + '</span>';
+            invOptions += '</div></div>';
+        });
+    });
     
+    const modal = document.createElement('div');
+    modal.className = 'modal show';
+    modal.id = 'addIngredientModal';
+    modal.innerHTML = '<div class="modal-content" style="max-height:80vh;overflow-y:auto">' +
+        '<h2 style="color:#2196F3;margin-bottom:4px">+ Dodaj u recept</h2>' +
+        '<p style="color:#888;font-size:13px;margin-bottom:12px">' + menuItem.name + '</p>' +
+        '<input type="text" placeholder="🔍 Pretraži lager..." id="ingredientSearchInput" ' +
+        'oninput="filterIngredientItems(this.value)" ' +
+        'style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:14px;margin-bottom:12px">' +
+        '<div id="ingredientList">' + invOptions + '</div>' +
+        '<button class="btn btn-secondary" style="margin-top:12px" onclick="document.getElementById(\'addIngredientModal\').remove()">Odustani</button>' +
+        '</div>';
+    document.body.appendChild(modal);
+    document.getElementById('ingredientSearchInput').focus();
+}
+
+
+function filterIngredientItems(search) {
+    const list = document.getElementById('ingredientList');
+    if (!list) return;
+    const s = search.toLowerCase();
+    list.querySelectorAll('.ing-item').forEach(function(item) {
+        item.style.display = item.textContent.toLowerCase().includes(s) ? '' : 'none';
+    });
+}
+
+
+function selectIngredient(menuItemId, inventoryId) {
+    const menuItem = DB.menu.find(function(m) { return m.id === menuItemId; });
+    if (!menuItem) return;
+    
+    if (!menuItem.recipe) menuItem.recipe = [];
+    menuItem.recipe.push({ inventoryId: inventoryId, qty: 1 });
+    
+    save();
+    const modal = document.getElementById('addIngredientModal');
+    if (modal) modal.remove();
+    render();
+}
+
+
+function updateRecipeQty(menuItemId, index, value) {
+    const menuItem = DB.menu.find(function(m) { return m.id === menuItemId; });
+    if (!menuItem || !menuItem.recipe || !menuItem.recipe[index]) return;
+    menuItem.recipe[index].qty = parseFloat(value) || 1;
+    save();
+}
+
+
+function removeRecipeIngredient(menuItemId, index) {
+    const menuItem = DB.menu.find(function(m) { return m.id === menuItemId; });
+    if (!menuItem || !menuItem.recipe) return;
+    menuItem.recipe.splice(index, 1);
     save();
     render();
 }
 
-function updateDeductQty(inventoryId, qty) {
-    const inv = DB.inventory.find(i => i.id === inventoryId);
-    if (inv) {
-        inv.deductQty = parseFloat(qty) || 1;
-        save();
-    }
-}
 
 
 // ============================================
@@ -906,10 +1027,26 @@ function deductInventoryOnPayment(paidItems) {
     let deducted = [];
     
     paidItems.forEach(item => {
-        // Find inventory item linked to this menu item
+        const qty = parseInt(item.qty) || 1;
+        
+        // NOVI FORMAT: menu.recipe = [{inventoryId, qty}, ...]
+        const menuItem = DB.menu.find(m => m.id == item.id);
+        if (menuItem && menuItem.recipe && menuItem.recipe.length > 0) {
+            menuItem.recipe.forEach(ing => {
+                const invItem = DB.inventory.find(i => i.id === ing.inventoryId);
+                if (invItem) {
+                    const deductAmount = (parseFloat(ing.qty) || 1) * qty;
+                    invItem.stock = Math.max(0, (parseFloat(invItem.stock) || 0) - deductAmount);
+                    deducted.push({ name: invItem.name, amount: deductAmount, remaining: invItem.stock });
+                }
+            });
+            return;
+        }
+        
+        // STARI FORMAT (backward compat): inventory.menuItemId
         const invItem = DB.inventory.find(i => i.menuItemId == item.id);
         if (invItem) {
-            const deductAmount = (parseFloat(invItem.deductQty) || 1) * (parseInt(item.qty) || 1);
+            const deductAmount = (parseFloat(invItem.deductQty) || 1) * qty;
             invItem.stock = Math.max(0, (parseFloat(invItem.stock) || 0) - deductAmount);
             deducted.push({ name: invItem.name, amount: deductAmount, remaining: invItem.stock });
         }
@@ -919,7 +1056,7 @@ function deductInventoryOnPayment(paidItems) {
     deducted.forEach(d => {
         const invItem = DB.inventory.find(i => i.name === d.name);
         if (invItem && invItem.minStock > 0 && invItem.stock <= invItem.minStock) {
-            console.log(`⚠️ Nisko stanje: ${invItem.name} = ${invItem.stock} ${invItem.unit}`);
+            console.log('⚠️ Nisko stanje: ' + invItem.name + ' = ' + invItem.stock + ' ' + invItem.unit);
         }
     });
     

@@ -85,6 +85,44 @@ function mapOrderToOctopos(order) {
 // ============================================
 // SLANJE RAČUNA NA OCTOPOS API
 // ============================================
+async function octoposApiCall(method, endpoint, body) {
+    const apiUrl = OCTOPOS_CONFIG.apiUrl.replace(/\/$/, '');
+    const token = OCTOPOS_CONFIG.apiToken;
+    
+    if (!apiUrl || !token) {
+        throw new Error('Nedostaje API URL ili Token');
+    }
+    
+    let fetchUrl = apiUrl + endpoint;
+    
+    // Ako imamo CORS proxy (isti kao za eFaktura), koristi ga
+    const proxyUrl = (DB.settings.efakturaProxyUrl || '').trim();
+    if (proxyUrl) {
+        let cleanProxy = proxyUrl.replace(/\/+$/, '');
+        if (!cleanProxy.startsWith('http')) cleanProxy = 'https://' + cleanProxy;
+        fetchUrl = cleanProxy + '/' + fetchUrl;
+    }
+    
+    const options = {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        }
+    };
+    
+    if (body && method !== 'GET') {
+        options.body = JSON.stringify(body);
+    }
+    
+    console.log('🧾 OctoPOS ' + method + ':', fetchUrl);
+    
+    const response = await fetch(fetchUrl, options);
+    const data = await response.json();
+    return data;
+}
+
+
 async function sendToOctopos(order) {
     if (!OCTOPOS_CONFIG.enabled) {
         console.log('⚠️ OctoPOS integracija nije aktivirana');
@@ -111,18 +149,7 @@ async function sendToOctopos(order) {
     console.log('📤 Šaljem na OctoPOS:', JSON.stringify(octoposData, null, 2));
 
     try {
-        const url = OCTOPOS_CONFIG.apiUrl.replace(/\/$/, '') + '/weborder';
-        
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + OCTOPOS_CONFIG.apiToken
-            },
-            body: JSON.stringify(octoposData)
-        });
-
-        const result = await response.json();
+        const result = await octoposApiCall('POST', '/weborder', octoposData);
 
         if (result.Success) {
             console.log('✅ OctoPOS: Račun uspešno kreiran!', result);
@@ -131,6 +158,19 @@ async function sendToOctopos(order) {
             order.octoposId = result.Data ? result.Data.Id : null;
             order.octoposSent = true;
             order.octoposSentAt = new Date().toISOString();
+            
+            // Preuzmi fiskalni račun
+            if (order.octoposId) {
+                try {
+                    const fiscal = await octoposApiCall('GET', '/weborder/' + order.octoposId + '/fiscalreceipt?lineWidth=48');
+                    if (fiscal.Success && fiscal.Data) {
+                        order.fiscalReceipt = fiscal.Data;
+                        console.log('🧾 Fiskalni račun preuzet');
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Fiskalni račun nije preuzet:', e.message);
+                }
+            }
             
             return { success: true, data: result.Data, receiptId: result.Data?.Id };
         } else {
@@ -151,7 +191,7 @@ async function sendToOctopos(order) {
         
         return { 
             success: false, 
-            error: `Mrežna greška: ${error.message}. Račun je sačuvan za ponovno slanje.`
+            error: 'Mrežna greška: ' + error.message + '. Račun je sačuvan za ponovno slanje.'
         };
     }
 }
@@ -198,37 +238,24 @@ async function testOctoposConnection() {
     try {
         showAlert('🔄 Testiram konekciju...');
 
-        // Probaj da dohvatiš listu proizvoda kao test
-        const url = OCTOPOS_CONFIG.apiUrl.replace(/\/$/, '') + '/product?active=true';
-        
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': 'Bearer ' + OCTOPOS_CONFIG.apiToken
-            }
-        });
+        const data = await octoposApiCall('GET', '/product?active=true&pageSize=1');
 
-        if (response.ok) {
-            const data = await response.json();
-            if (data.Success) {
-                const productCount = data.Data ? data.Data.length : 0;
-                showAlert(`✅ OctoPOS konekcija uspešna!\n\n📦 Proizvoda u OctoPOS bazi: ${productCount}`);
-            } else {
-                showAlert(`⚠️ Povezan ali greška: ${data.Errors?.join(', ')}`);
-            }
-        } else if (response.status === 401) {
-            showAlert('❌ Pogrešan Token! Proveri API token u OctoPOS-u.');
-        } else if (response.status === 403) {
-            showAlert('❌ Pristup odbijen. Kontaktiraj OctoPOS podršku.');
+        if (data.Success) {
+            const productCount = data.TotalCount || (data.Data ? data.Data.length : 0);
+            showAlert('✅ OctoPOS konekcija uspešna!\n\n📦 Proizvoda u bazi: ' + productCount);
         } else {
-            showAlert(`❌ Greška ${response.status}: ${response.statusText}`);
+            showAlert('⚠️ Povezan ali greška: ' + (data.Errors?.join(', ') || 'Nepoznata'));
         }
 
     } catch (error) {
         if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-            showAlert('❌ Ne mogu da se povežem!\n\nProveri:\n• Da li je OctoPOS pokrenut?\n• Da li je URL tačan?\n• Da li su na istoj mreži?');
+            const hasProxy = (DB.settings.efakturaProxyUrl || '').trim();
+            showAlert('❌ Ne mogu da se povežem!\n\n' + 
+                (hasProxy 
+                    ? 'Proxy je podešen ali ne prosleđuje OctoPOS. Proverite Worker.'
+                    : 'Potreban CORS proxy (isti kao za eFaktura u podešavanjima).'));
         } else {
-            showAlert(`❌ Greška: ${error.message}`);
+            showAlert('❌ Greška: ' + error.message);
         }
     }
 }
@@ -256,28 +283,23 @@ async function syncMenuToOctopos() {
                 Price: item.price,
                 Active: true,
                 IsForSale: true,
-                TaxRateLabel: 'Ђ' // 20% PDV
+                TaxRateLabel: 'Ђ'
             };
 
-            const url = OCTOPOS_CONFIG.apiUrl.replace(/\/$/, '') + '/product';
-            
-            await fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + OCTOPOS_CONFIG.apiToken
-                },
-                body: JSON.stringify(productData)
-            });
-
+            await octoposApiCall('POST', '/product', productData);
             synced++;
+            
+            // Pauza da ne pogodimo rate limit
+            if (synced % 5 === 0) {
+                await new Promise(r => setTimeout(r, 500));
+            }
         } catch (e) {
             errors++;
-            console.error(`❌ Greška za ${item.name}:`, e);
+            console.error('❌ Greška za ' + item.name + ':', e);
         }
     }
 
-    showAlert(`Sinhronizacija menija:\n✅ ${synced} stavki uspešno\n${errors > 0 ? '❌ ' + errors + ' grešaka' : ''}`);
+    showAlert('Sinhronizacija menija:\n✅ ' + synced + ' stavki uspešno\n' + (errors > 0 ? '❌ ' + errors + ' grešaka' : ''));
 }
 
 
@@ -305,17 +327,19 @@ function renderOctoposSettings() {
             
             <label style="color:#E94560;font-weight:bold">OctoPOS API URL</label>
             <input type="text" id="octoposUrl" value="${DB.settings.octoposApiUrl || ''}" 
-                   placeholder="https://vas-octopos-server.com/api" 
+                   placeholder="https://sandbox.octopos.rs/api" 
                    style="font-size:14px">
             <p style="color:#B0B0B0;font-size:11px;margin-top:2px;margin-bottom:12px">
-                💡 Primer: https://app.octopos.rs/api ili http://localhost:PORT/api
+                💡 Sandbox: https://sandbox.octopos.rs/api · Produkcija: https://app.octopos.rs/api
             </p>
+            
+            ${!(DB.settings.efakturaProxyUrl || '').trim() ? '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:12px;border-left:3px solid #FF9800"><p style="color:#FF9800;font-size:12px;margin:0">⚠️ CORS proxy nije podešen. OctoPOS API zahteva proxy — podesite ga u eFaktura podešavanjima iznad.</p></div>' : '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:12px;border-left:3px solid #4CAF50"><p style="color:#4CAF50;font-size:12px;margin:0">✅ Koristi se CORS proxy: ' + (DB.settings.efakturaProxyUrl || '') + '</p></div>'}
             
             <label style="color:#E94560;font-weight:bold">API Token</label>
             <input type="password" id="octoposToken" value="${DB.settings.octoposApiToken || ''}" 
                    placeholder="Vaš OctoPOS API token">
             <p style="color:#B0B0B0;font-size:11px;margin-top:2px;margin-bottom:12px">
-                💡 Kontaktirajte OctoPOS podršku za dobijanje API tokena
+                💡 Token ste dobili na email od OctoPOS podrške (Đorđe Pandurović)
             </p>
             
             <label style="color:#E94560;font-weight:bold">Prefix za proizvode</label>
