@@ -26,6 +26,9 @@ async function initApp() {
         // Load data from Firebase
         await loadFromFirebase();
         
+        // ⏰ Auto-zatvori smene starije od 14h
+        checkAndAutoCloseShifts();
+        
         // Set initial page
         if(DB.currentUser) {
             if(DB.currentUser.role === 'kuvar') {

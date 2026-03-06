@@ -710,6 +710,19 @@ function renderSettings(c) {
             
             <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
             
+            <div style="border-top:3px solid #FF9800;margin:32px 0;padding-top:24px">
+                <h3 style="color:#FF9800;margin-bottom:16px">🧹 Očisti Radni Dan</h3>
+                <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #FF9800;margin-bottom:16px">
+                    <p style="color:#FF9800;font-weight:bold;margin-bottom:8px">Nova smena od nule</p>
+                    <p style="color:#B0B0B0;font-size:13px;line-height:1.6">
+                        Zatvara sve aktivne smene, briše stavke sa stolova i resetuje depozit.<br>
+                        Konobari će moći da otvore novi radni dan sa ručnim unosom depozita.<br><br>
+                        <strong style="color:#4CAF50">Narudžbine i istorija smena OSTAJU sačuvane.</strong>
+                    </p>
+                </div>
+                <button class="btn" style="background:#FF9800" onclick="clearWorkday()">🧹 Očisti Radni Dan</button>
+            </div>
+            
             <div style="border-top:3px solid #E94560;margin:32px 0;padding-top:24px">
                 <h3 style="color:#E94560;margin-bottom:16px">🗑️ Resetuj Podatke</h3>
                 <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #E94560;margin-bottom:16px">
@@ -788,6 +801,339 @@ function saveSettings() {
     save();
     showAlert('✅ Sačuvano!');
 }
+
+function clearWorkday() {
+    // Prikaži UI za selektivno čišćenje
+    const today = new Date().toISOString().split('T')[0];
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal show';
+    modal.id = 'clearWorkdayModal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:550px;max-height:90vh;overflow-y:auto">
+            <h2 style="color:#FF9800;margin-bottom:16px">🧹 Očisti Radni Dan</h2>
+            
+            <div style="margin-bottom:16px">
+                <label style="color:#FFD700;display:block;margin-bottom:6px;font-weight:bold">📅 Izaberi datum</label>
+                <input type="date" id="clearDate" value="${today}" 
+                    style="width:100%;padding:12px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:16px"
+                    onchange="updateClearSummary()">
+            </div>
+            
+            <div id="clearSummary" style="margin-bottom:16px">
+                <div style="text-align:center;padding:20px;color:#888">⏳ Učitavam...</div>
+            </div>
+            
+            <div id="clearOptions" style="display:none;margin-bottom:16px">
+                <label style="color:#FFD700;display:block;margin-bottom:10px;font-weight:bold">Šta želiš da očistiš?</label>
+                
+                <label style="display:flex;align-items:center;gap:10px;padding:10px;background:#16213E;border-radius:8px;margin-bottom:6px;cursor:pointer">
+                    <input type="checkbox" id="clearOrders" checked style="width:20px;height:20px;accent-color:#E94560">
+                    <div>
+                        <div style="color:#FFF;font-weight:bold">💰 Narudžbine</div>
+                        <div id="clearOrdersInfo" style="color:#888;font-size:12px">Keš + kartice</div>
+                    </div>
+                </label>
+                
+                <label style="display:flex;align-items:center;gap:10px;padding:10px;background:#16213E;border-radius:8px;margin-bottom:6px;cursor:pointer">
+                    <input type="checkbox" id="clearShifts" checked style="width:20px;height:20px;accent-color:#E94560">
+                    <div>
+                        <div style="color:#FFF;font-weight:bold">👥 Smene (istorija)</div>
+                        <div id="clearShiftsInfo" style="color:#888;font-size:12px">Depozit, keš, plate</div>
+                    </div>
+                </label>
+                
+                <label style="display:flex;align-items:center;gap:10px;padding:10px;background:#16213E;border-radius:8px;margin-bottom:6px;cursor:pointer">
+                    <input type="checkbox" id="clearTables" checked style="width:20px;height:20px;accent-color:#E94560">
+                    <div>
+                        <div style="color:#FFF;font-weight:bold">🍽️ Stolovi</div>
+                        <div style="color:#888;font-size:12px">Očisti sve stavke sa stolova</div>
+                    </div>
+                </label>
+                
+                <label style="display:flex;align-items:center;gap:10px;padding:10px;background:#16213E;border-radius:8px;margin-bottom:6px;cursor:pointer">
+                    <input type="checkbox" id="clearKitchen" checked style="width:20px;height:20px;accent-color:#E94560">
+                    <div>
+                        <div style="color:#FFF;font-weight:bold">🍳 Kuhinja</div>
+                        <div id="clearKitchenInfo" style="color:#888;font-size:12px">Kuhinjske narudžbine</div>
+                    </div>
+                </label>
+                
+                <label style="display:flex;align-items:center;gap:10px;padding:10px;background:#16213E;border-radius:8px;margin-bottom:6px;cursor:pointer">
+                    <input type="checkbox" id="clearActiveShifts" style="width:20px;height:20px;accent-color:#E94560">
+                    <div>
+                        <div style="color:#FFF;font-weight:bold">🔓 Aktivne smene</div>
+                        <div id="clearActiveInfo" style="color:#888;font-size:12px">Zatvori otvorene smene</div>
+                    </div>
+                </label>
+                
+                <label style="display:flex;align-items:center;gap:10px;padding:10px;background:#16213E;border-radius:8px;margin-bottom:6px;cursor:pointer">
+                    <input type="checkbox" id="clearRemoved" style="width:20px;height:20px;accent-color:#E94560">
+                    <div>
+                        <div style="color:#FFF;font-weight:bold">🗑️ Uklonjeni artikli</div>
+                        <div id="clearRemovedInfo" style="color:#888;font-size:12px">Stornirane stavke</div>
+                    </div>
+                </label>
+            </div>
+            
+            <div style="display:flex;gap:10px">
+                <button class="btn btn-secondary" style="flex:1" onclick="closeClearWorkdayModal()">Odustani</button>
+                <button class="btn" id="clearConfirmBtn" style="flex:1;background:#E94560" onclick="executeClearWorkday()">🧹 Očisti</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    updateClearSummary();
+}
+
+
+function closeClearWorkdayModal() {
+    const modal = document.getElementById('clearWorkdayModal');
+    if (modal) modal.remove();
+}
+
+
+function updateClearSummary() {
+    const dateStr = document.getElementById('clearDate')?.value;
+    if (!dateStr) return;
+    
+    const dayStart = new Date(dateStr + 'T00:00:00');
+    const dayEnd = new Date(dateStr + 'T23:59:59');
+    const isToday = dateStr === new Date().toISOString().split('T')[0];
+    
+    // Narudžbine za taj dan
+    const dayOrders = DB.orders.filter(o => {
+        const t = new Date(o.time);
+        return t >= dayStart && t <= dayEnd;
+    });
+    const cashOrders = dayOrders.filter(o => o.method === 'Cash');
+    const cardOrders = dayOrders.filter(o => o.method === 'Card');
+    const totalCash = cashOrders.reduce((s, o) => s + o.tot, 0);
+    const totalCard = cardOrders.reduce((s, o) => s + o.tot, 0);
+    const totalAll = dayOrders.reduce((s, o) => s + o.tot, 0);
+    
+    // Smene za taj dan
+    const dayShifts = (DB.workdayHistory || []).filter(s => {
+        const t = new Date(s.loginTime);
+        return t >= dayStart && t <= dayEnd;
+    });
+    const totalSalary = dayShifts.reduce((s, sh) => s + (sh.salary || 0), 0);
+    const totalDeposit = dayShifts.reduce((s, sh) => s + (sh.deposit || 0), 0);
+    
+    // Kuhinja za taj dan
+    const dayKitchen = (DB.kitchenOrders || []).filter(ko => {
+        const t = new Date(ko.timestamp || ko.time);
+        return t >= dayStart && t <= dayEnd;
+    });
+    
+    // Aktivne smene
+    const activeShifts = Object.entries(DB.workdays || {}).filter(([u, wd]) => {
+        if (!wd || !wd.startTime) return false;
+        const t = new Date(wd.startTime);
+        return t >= dayStart && t <= dayEnd;
+    });
+    
+    // Uklonjeni artikli
+    const dayRemoved = (DB.removedItems || []).filter(r => {
+        const t = new Date(r.time || r.timestamp);
+        return t >= dayStart && t <= dayEnd;
+    });
+    
+    // Summary
+    const summaryEl = document.getElementById('clearSummary');
+    const optionsEl = document.getElementById('clearOptions');
+    
+    if (dayOrders.length === 0 && dayShifts.length === 0 && activeShifts.length === 0 && dayKitchen.length === 0) {
+        summaryEl.innerHTML = `<div style="text-align:center;padding:20px;background:#16213E;border-radius:10px">
+            <div style="font-size:40px;margin-bottom:8px">📭</div>
+            <div style="color:#888">Nema podataka za ovaj datum</div>
+        </div>`;
+        optionsEl.style.display = 'none';
+        return;
+    }
+    
+    optionsEl.style.display = 'block';
+    
+    summaryEl.innerHTML = `
+        <div style="background:#16213E;border-radius:10px;padding:14px">
+            <div style="color:#FFD700;font-weight:bold;margin-bottom:10px;font-size:15px">
+                📊 ${new Date(dateStr).toLocaleDateString('sr-RS', {weekday:'long', day:'numeric', month:'long'})}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div style="background:#0F3460;padding:10px;border-radius:8px;text-align:center">
+                    <div style="color:#888;font-size:11px">Narudžbine</div>
+                    <div style="color:#FFF;font-size:20px;font-weight:bold">${dayOrders.length}</div>
+                    <div style="color:#4CAF50;font-size:12px">${totalAll.toLocaleString()} din</div>
+                </div>
+                <div style="background:#0F3460;padding:10px;border-radius:8px;text-align:center">
+                    <div style="color:#888;font-size:11px">Smene</div>
+                    <div style="color:#FFF;font-size:20px;font-weight:bold">${dayShifts.length}${activeShifts.length > 0 ? ' + ' + activeShifts.length + ' aktiv.' : ''}</div>
+                    <div style="color:#9C27B0;font-size:12px">${dayShifts.map(s => s.user).join(', ') || '-'}</div>
+                </div>
+                <div style="background:#0F3460;padding:10px;border-radius:8px;text-align:center">
+                    <div style="color:#888;font-size:11px">💵 Keš</div>
+                    <div style="color:#4CAF50;font-size:18px;font-weight:bold">${totalCash.toLocaleString()}</div>
+                </div>
+                <div style="background:#0F3460;padding:10px;border-radius:8px;text-align:center">
+                    <div style="color:#888;font-size:11px">💳 Kartice</div>
+                    <div style="color:#2196F3;font-size:18px;font-weight:bold">${totalCard.toLocaleString()}</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Info labele
+    document.getElementById('clearOrdersInfo').textContent = 
+        `${dayOrders.length} narudžbina · ${totalCash.toLocaleString()} keš + ${totalCard.toLocaleString()} kartice`;
+    document.getElementById('clearShiftsInfo').textContent = 
+        `${dayShifts.length} smena · plate: ${totalSalary.toLocaleString()} din`;
+    document.getElementById('clearKitchenInfo').textContent = 
+        `${dayKitchen.length} kuhinjskih narudžbina`;
+    document.getElementById('clearActiveInfo').textContent = 
+        activeShifts.length > 0 
+            ? `${activeShifts.map(([u]) => u).join(', ')}` 
+            : 'Nema aktivnih smena za ovaj dan';
+    document.getElementById('clearRemovedInfo').textContent = 
+        `${dayRemoved.length} uklonjenih stavki`;
+    
+    // Auto-check aktivne smene samo ako je danas
+    document.getElementById('clearActiveShifts').checked = isToday && activeShifts.length > 0;
+    // Stolovi samo ako je danas
+    document.getElementById('clearTables').checked = isToday;
+    document.getElementById('clearKitchen').checked = isToday;
+}
+
+
+async function executeClearWorkday() {
+    const dateStr = document.getElementById('clearDate')?.value;
+    if (!dateStr) return;
+    
+    const dayStart = new Date(dateStr + 'T00:00:00');
+    const dayEnd = new Date(dateStr + 'T23:59:59');
+    
+    const doOrders = document.getElementById('clearOrders')?.checked;
+    const doShifts = document.getElementById('clearShifts')?.checked;
+    const doTables = document.getElementById('clearTables')?.checked;
+    const doKitchen = document.getElementById('clearKitchen')?.checked;
+    const doActive = document.getElementById('clearActiveShifts')?.checked;
+    const doRemoved = document.getElementById('clearRemoved')?.checked;
+    
+    if (!doOrders && !doShifts && !doTables && !doKitchen && !doActive && !doRemoved) {
+        showAlert('⚠️ Ništa nije označeno!');
+        return;
+    }
+    
+    // Napravi listu šta se briše za potvrdu
+    const parts = [];
+    if (doOrders) parts.push('narudžbine');
+    if (doShifts) parts.push('istorija smena');
+    if (doTables) parts.push('stolovi');
+    if (doKitchen) parts.push('kuhinja');
+    if (doActive) parts.push('aktivne smene');
+    if (doRemoved) parts.push('uklonjeni artikli');
+    
+    const dateLabel = new Date(dateStr).toLocaleDateString('sr-RS', {day:'numeric', month:'long'});
+    
+    showConfirm('🧹 Potvrdi Čišćenje',
+        `Brisanje za ${dateLabel}:\n\n• ${parts.join('\n• ')}\n\nOvo se NE MOŽE poništiti!`,
+        async (confirmed) => {
+            if (!confirmed) return;
+            
+            let stats = { orders: 0, shifts: 0, kitchen: 0, active: 0, removed: 0 };
+            
+            try {
+                // 1. Narudžbine
+                if (doOrders) {
+                    const before = DB.orders.length;
+                    DB.orders = DB.orders.filter(o => {
+                        const t = new Date(o.time);
+                        return !(t >= dayStart && t <= dayEnd);
+                    });
+                    stats.orders = before - DB.orders.length;
+                }
+                
+                // 2. Istorija smena
+                if (doShifts) {
+                    const before = DB.workdayHistory.length;
+                    DB.workdayHistory = DB.workdayHistory.filter(s => {
+                        const t = new Date(s.loginTime);
+                        return !(t >= dayStart && t <= dayEnd);
+                    });
+                    stats.shifts = before - DB.workdayHistory.length;
+                }
+                
+                // 3. Stolovi
+                if (doTables) {
+                    DB.tables.forEach(table => {
+                        table.order = [];
+                        table.discount = 0;
+                        table.discountPercent = 0;
+                        table.discountedItems = [];
+                    });
+                }
+                
+                // 4. Kuhinja
+                if (doKitchen) {
+                    const before = DB.kitchenOrders.length;
+                    DB.kitchenOrders = (DB.kitchenOrders || []).filter(ko => {
+                        const t = new Date(ko.timestamp || ko.time);
+                        return !(t >= dayStart && t <= dayEnd);
+                    });
+                    stats.kitchen = before - DB.kitchenOrders.length;
+                }
+                
+                // 5. Aktivne smene
+                if (doActive) {
+                    const activeForDay = Object.entries(DB.workdays || {}).filter(([u, wd]) => {
+                        if (!wd || !wd.startTime) return false;
+                        const t = new Date(wd.startTime);
+                        return t >= dayStart && t <= dayEnd;
+                    });
+                    
+                    for (const [username, myWorkday] of activeForDay) {
+                        if (typeof autoCloseWorkday === 'function') {
+                            autoCloseWorkday(username, myWorkday);
+                        }
+                        await database.ref('/workdays/' + sanitizeFirebaseKey(username)).remove();
+                        delete DB.workdays[username];
+                        stats.active++;
+                    }
+                }
+                
+                // 6. Uklonjeni artikli
+                if (doRemoved) {
+                    const before = DB.removedItems.length;
+                    DB.removedItems = DB.removedItems.filter(r => {
+                        const t = new Date(r.time || r.timestamp);
+                        return !(t >= dayStart && t <= dayEnd);
+                    });
+                    stats.removed = before - DB.removedItems.length;
+                }
+                
+                save();
+                closeClearWorkdayModal();
+                render();
+                
+                // Rezultat
+                const resultParts = [];
+                if (stats.orders) resultParts.push(`${stats.orders} narudžbina`);
+                if (stats.shifts) resultParts.push(`${stats.shifts} smena`);
+                if (doTables) resultParts.push('stolovi očišćeni');
+                if (stats.kitchen) resultParts.push(`${stats.kitchen} kuhinjskih`);
+                if (stats.active) resultParts.push(`${stats.active} aktivnih smena zatvoreno`);
+                if (stats.removed) resultParts.push(`${stats.removed} uklonjenih artikala`);
+                
+                showAlert(`✅ Očišćeno za ${dateLabel}:\n\n${resultParts.join('\n')}`);
+                
+            } catch (err) {
+                console.error('Greška pri čišćenju:', err);
+                showAlert('❌ Greška: ' + err.message);
+            }
+        }
+    );
+}
+
 
 function resetAllData() {
     showConfirm('⚠️ BRISANJE PODATAKA', 'Da li ste POTPUNO sigurni?\n\nOvo će obrisati SVE narudžbine, istoriju i radne dane!\n\nOvo se NE MOŽE poništiti!', (confirmed) => {

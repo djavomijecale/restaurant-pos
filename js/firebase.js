@@ -521,10 +521,19 @@ async function checkForUpdates() {
 
 
 let autoRefreshTimer = null;
+let autoCloseTimer = null;
 
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshTimer = setInterval(checkForUpdates, 10000);
+    
+    // ⏰ Provera isteklih smena svaka 5 minuta
+    if (autoCloseTimer) clearInterval(autoCloseTimer);
+    autoCloseTimer = setInterval(() => {
+        if (typeof checkAndAutoCloseShifts === 'function') {
+            checkAndAutoCloseShifts();
+        }
+    }, 5 * 60 * 1000);
     
     // ✅ REAL-TIME LISTENER za workday-ove
     // Svaki uređaj odmah vidi kad neko otvori/zatvori smenu

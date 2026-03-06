@@ -1242,7 +1242,7 @@ function showWaiterOrders(waiterName) {
                     <div style="flex:1">
                         <div style="color:#FFD700;font-weight:bold">${date}</div>
                         <div style="color:#B0B0B0;font-size:12px">
-                            🔓 ${loginTime} → 🔒 ${logoutTime} · 
+                            🔓 ${loginTime} → 🔒 ${logoutTime}${session.autoClosed ? ' <span style="color:#FF9800;font-weight:bold">⏰ AUTO</span>' : ''} · 
                             ${session.orderCount} ${session.orderCount === 1 ? 'narudžbina' : 'narudžbine'}
                         </div>
                     </div>

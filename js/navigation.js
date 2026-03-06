@@ -46,7 +46,7 @@ function render() {
     const c = document.getElementById('content');
     
     // Dodaj/ukloni role klase na body u zavisnosti od uloge korisnika
-    if (DB.currentUser && DB.currentUser.role === 'waiter') {
+    if (DB.currentUser && (DB.currentUser.role === 'waiter' || DB.currentUser.role === 'konobar')) {
         document.body.classList.add('waiter-role');
         document.body.classList.remove('kuvar-role');
     } else if (DB.currentUser && DB.currentUser.role === 'kuvar') {
