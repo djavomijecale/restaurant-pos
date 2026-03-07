@@ -37,19 +37,20 @@ const OCTOPOS_CONFIG = {
 // MAPIRANJE STAVKI IZ TVOJE APP → OCTOPOS FORMAT
 // ============================================
 function mapOrderToOctopos(order) {
-    const items = order.items.map(item => {
-        const cleanId = String(item.id || item.name.replace(/\s+/g, '_')).replace(/[^a-zA-Z0-9_]/g, '');
+    const items = order.items.map(function(item, idx) {
+        // Koristi indeks artikla u meniju za stabilan Code
+        var menuIdx = DB.menu.findIndex(function(m) { return m.name === item.name; });
+        var code = OCTOPOS_CONFIG.productPrefix + (menuIdx >= 0 ? menuIdx : idx);
         return {
-            ProductCode: OCTOPOS_CONFIG.productPrefix + cleanId,
+            ProductCode: code,
             Name: item.name,
             Quantity: item.qty,
             UnitPrice: item.price,
             TotalPrice: item.price * item.qty,
-            TaxRateLabel: item.taxLabel || '\u0402' // Ђ = 20% PDV
+            TaxRateLabel: item.taxLabel || String.fromCharCode(0x402) // Ђ = 20% PDV
         };
     });
 
-    // Ako ima popust, dodaj kao negativnu stavku
     if (order.disc > 0) {
         items.push({
             ProductCode: OCTOPOS_CONFIG.productPrefix + 'POPUST',
@@ -57,7 +58,7 @@ function mapOrderToOctopos(order) {
             Quantity: 1,
             UnitPrice: -order.disc,
             TotalPrice: -order.disc,
-            TaxRateLabel: '\u0402'
+            TaxRateLabel: String.fromCharCode(0x402)
         });
     }
 
@@ -288,15 +289,14 @@ async function syncMenuToOctopos() {
     for (let i = 0; i < DB.menu.length; i++) {
         const item = DB.menu[i];
         try {
-            // Code mora biti čist alfanumerički (bez decimala, bez specijalnih znakova)
-            const cleanId = String(item.id || i).replace(/[^a-zA-Z0-9]/g, '');
+            var code = OCTOPOS_CONFIG.productPrefix + i;
             const productData = {
-                Code: OCTOPOS_CONFIG.productPrefix + cleanId,
-                Name: item.name.substring(0, 100), // Max 100 karaktera
+                Code: code,
+                Name: item.name.substring(0, 100),
                 Price: parseFloat(item.price) || 0,
                 Active: true,
                 IsForSale: true,
-                TaxRateLabel: '\u0402' // Ђ = 20% PDV za hranu/piće
+                TaxRateLabel: String.fromCharCode(0x402) // Ђ = 20% PDV
             };
 
             const result = await octoposApiCall('POST', '/product', productData);
