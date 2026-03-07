@@ -115,11 +115,20 @@ async function octoposApiCall(method, endpoint, body) {
         options.body = JSON.stringify(body);
     }
     
-    console.log('🧾 OctoPOS ' + method + ':', fetchUrl);
+    console.log('🧾 OctoPOS ' + method + ':', endpoint, body ? JSON.stringify(body).substring(0, 200) : '');
     
     const response = await fetch(fetchUrl, options);
-    const data = await response.json();
-    return data;
+    
+    const text = await response.text();
+    
+    // Probaj JSON parse
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        // Nije JSON - verovatno HTML error
+        console.error('🧾 OctoPOS odgovor (nije JSON):', response.status, text.substring(0, 300));
+        throw new Error('OctoPOS ' + response.status + ': ' + text.substring(0, 200));
+    }
 }
 
 
@@ -270,15 +279,14 @@ async function syncMenuToOctopos() {
         return;
     }
 
-    showAlert('🔄 Sinhronizujem meni sa OctoPOS...');
-
     let synced = 0;
     let errors = 0;
+    let lastError = '';
 
     for (const item of DB.menu) {
         try {
             const productData = {
-                Code: OCTOPOS_CONFIG.productPrefix + (item.id || item.name.replace(/\s+/g, '_')),
+                Code: OCTOPOS_CONFIG.productPrefix + (item.id || '0'),
                 Name: item.name,
                 Price: item.price,
                 Active: true,
@@ -286,20 +294,29 @@ async function syncMenuToOctopos() {
                 TaxRateLabel: 'Ђ'
             };
 
-            await octoposApiCall('POST', '/product', productData);
-            synced++;
+            const result = await octoposApiCall('POST', '/product', productData);
+            
+            if (result.Success) {
+                synced++;
+            } else {
+                errors++;
+                lastError = (result.Errors || []).join(', ') || 'Nepoznata greška';
+                console.warn('⚠️ OctoPOS product error for ' + item.name + ':', lastError);
+            }
             
             // Pauza da ne pogodimo rate limit
-            if (synced % 5 === 0) {
-                await new Promise(r => setTimeout(r, 500));
-            }
+            await new Promise(r => setTimeout(r, 200));
         } catch (e) {
             errors++;
-            console.error('❌ Greška za ' + item.name + ':', e);
+            lastError = e.message;
+            console.error('❌ Greška za ' + item.name + ':', e.message);
         }
     }
 
-    showAlert('Sinhronizacija menija:\n✅ ' + synced + ' stavki uspešno\n' + (errors > 0 ? '❌ ' + errors + ' grešaka' : ''));
+    let msg = 'Sinhronizacija menija:\n✅ ' + synced + ' stavki uspešno';
+    if (errors > 0) msg += '\n❌ ' + errors + ' grešaka';
+    if (lastError) msg += '\n\nPoslednja greška:\n' + lastError.substring(0, 150);
+    showAlert(msg);
 }
 
 

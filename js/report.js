@@ -2,6 +2,30 @@
 // REPORTS & ORDER VIEWS
 // ============================================
 
+// Radni dan: 7:00 - 7:00 sledećeg dana
+// Narudžbina u 01:00 7/3 pripada radnom danu 6/3
+function getBusinessDayRange() {
+    const CUTOFF = typeof DAILY_CUTOFF_HOUR !== 'undefined' ? DAILY_CUTOFF_HOUR : 7;
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(CUTOFF, 0, 0, 0);
+    
+    if (now < start) {
+        // Pre 7:00 = još uvek jučerašnji radni dan
+        start.setDate(start.getDate() - 1);
+    }
+    
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1); // Sutra u 7:00
+    
+    return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function isInBusinessDay(timeStr) {
+    const range = getBusinessDayRange();
+    return timeStr >= range.start && timeStr < range.end;
+}
+
 
 function renderFinalReport(c) {
     const report = JSON.parse(localStorage.getItem('lastWorkdayReport'));
@@ -509,28 +533,25 @@ function copyFromTextarea() {
 
 
 function renderReport(c) {
-    const today = new Date().toISOString().split('T')[0];
+    const businessDay = getBusinessDayRange();
     const isWaiter = DB.currentUser.role === 'waiter' || DB.currentUser.role === 'konobar';
     const currentUsername = DB.currentUser.username;
     const myWorkday = DB.workdays && DB.workdays[currentUsername];
     
-    // Filtriraj narudžbine — konobar: od početka smene, admin: danas
+    // Filtriraj narudžbine — konobar: od početka smene, admin: radni dan (7:00-7:00)
     let ords;
     if (isWaiter && myWorkday) {
         ords = DB.orders.filter(o => o.time >= myWorkday.startTime && (!o.createdBy || o.createdBy === currentUsername));
     } else {
-        ords = DB.orders.filter(o => {
-            const orderDate = o.time.split('T')[0];
-            return orderDate === today;
-        });
+        ords = DB.orders.filter(o => o.time >= businessDay.start && o.time < businessDay.end);
     }
     
-    // Ako je konobar bez aktivne smene, prikaži danas
+    // Ako je konobar bez aktivne smene, prikaži radni dan
     if (isWaiter && !myWorkday) {
-        ords = DB.orders.filter(o => {
-            const orderDate = o.time.split('T')[0];
-            return orderDate === today && (!o.createdBy || o.createdBy === currentUsername);
-        });
+        ords = DB.orders.filter(o => 
+            o.time >= businessDay.start && o.time < businessDay.end && 
+            (!o.createdBy || o.createdBy === currentUsername)
+        );
     }
     
     const rev = ords.reduce((s,o)=>s+o.tot,0);
@@ -607,8 +628,7 @@ function renderReport(c) {
     
     // New debts today
     const todayDebts = (DB.debts || []).filter(d => {
-        const dDate = d.time ? d.time.split('T')[0] : '';
-        return dDate === today && d.remaining > 0 && !d.deleted;
+        return d.time && d.time >= businessDay.start && d.time < businessDay.end && d.remaining > 0 && !d.deleted;
     });
     const todayDebtsTotal = todayDebts.reduce((s,d) => s + (d.originalTotal || 0), 0);
     
@@ -860,26 +880,34 @@ function renderReport(c) {
     }
     
     // ===== 9. UKUPAN DNEVNI IZVEŠTAJ - SAMO ZA KONOBARA =====
-    if (isWaiter) {
+    // ===== UKUPAN DNEVNI IZVEŠTAJ - ZA SVE =====
+    {
         // Izračunaj ukupan dnevni izveštaj (svi konobari)
-        const allTodayOrders = DB.orders.filter(o => {
-            const orderDate = o.time.split('T')[0];
-            return orderDate === today;
-        });
+        const allTodayOrders = DB.orders.filter(o => 
+            o.time >= businessDay.start && o.time < businessDay.end
+        );
         
         const totalDailyRevenue = allTodayOrders.reduce((s,o)=>s+o.tot,0);
         const totalDailyOrders = allTodayOrders.length;
         const totalDailyCash = allTodayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
         const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
         
-        // Izračunaj ukupan depozit i smanjenja keša SAMO od radnih dana započetih DANAS
+        // Izračunaj depozit i smanjenja keša za ovaj radni dan
+        // DEPOZIT: samo od PRVE smene (originalni unos), ne od nasleđenih
         let totalDeposit = 0;
         let totalCashReductions = 0;
+        let firstShiftDeposit = 0;
         if (DB.workdays) {
-            Object.values(DB.workdays).forEach(wd => {
-                const wdDate = wd.startTime ? wd.startTime.split('T')[0] : '';
-                if (wdDate !== today) return; // Preskoči radne dane iz prethodnih dana
-                totalDeposit += wd.deposit || 0;
+            const todayShifts = Object.values(DB.workdays).filter(wd => 
+                wd.startTime && wd.startTime >= businessDay.start && wd.startTime < businessDay.end
+            );
+            // Sortiraj po vremenu početka, najranija smena = prva
+            todayShifts.sort((a, b) => a.startTime.localeCompare(b.startTime));
+            todayShifts.forEach((wd, idx) => {
+                // Samo prva smena ima originalni depozit
+                if (idx === 0 || !wd.inheritedFrom) {
+                    totalDeposit += wd.deposit || 0;
+                }
                 if (wd.cashReductions && wd.cashReductions.length > 0) {
                     totalCashReductions += wd.cashReductions.reduce((sum, r) => sum + r.amount, 0);
                 }
@@ -962,8 +990,7 @@ function renderReport(c) {
         
         // Aktivna dugovanja danas
         const todayNewDebts = (DB.debts || []).filter(d => {
-            const dDate = d.time ? d.time.split('T')[0] : '';
-            return dDate === today && !d.deleted;
+            return d.time && d.time >= businessDay.start && d.time < businessDay.end && !d.deleted;
         });
         const todayNewDebtsTotal = todayNewDebts.reduce((s,d) => s + (d.originalTotal || 0), 0);
         
@@ -992,7 +1019,7 @@ function renderReport(c) {
 
 
 function showAllTodayOrders() {
-    const today = new Date().toISOString().split('T')[0];
+    const businessDay = getBusinessDayRange();
     const isWaiter = DB.currentUser.role === 'waiter' || DB.currentUser.role === 'konobar';
     const currentUsername = DB.currentUser.username;
     const myWorkday = DB.workdays && DB.workdays[currentUsername];
@@ -1001,9 +1028,9 @@ function showAllTodayOrders() {
     if (isWaiter && myWorkday) {
         todayOrders = DB.orders.filter(o => o.time >= myWorkday.startTime && (!o.createdBy || o.createdBy === currentUsername));
     } else if (isWaiter) {
-        todayOrders = DB.orders.filter(o => o.time.split('T')[0] === today && (!o.createdBy || o.createdBy === currentUsername));
+        todayOrders = DB.orders.filter(o => o.time >= businessDay.start && o.time < businessDay.end && (!o.createdBy || o.createdBy === currentUsername));
     } else {
-        todayOrders = DB.orders.filter(o => o.time.split('T')[0] === today);
+        todayOrders = DB.orders.filter(o => o.time >= businessDay.start && o.time < businessDay.end);
     }
     todayOrders = todayOrders.reverse();
     
@@ -1149,9 +1176,9 @@ function toggleOrderDetails(orderId) {
 
 
 function showWaiterOrders(waiterName) {
-    const today = new Date().toISOString().split('T')[0];
-    const waiterOrders = DB.orders.filter(o => o.createdBy === waiterName && o.time.split('T')[0] === today).reverse();
-    const waiterRemoved = DB.removedItems.filter(r => r.removedBy === waiterName && r.removedAt.split('T')[0] === today);
+    const bdRange = getBusinessDayRange();
+    const waiterOrders = DB.orders.filter(o => o.createdBy === waiterName && o.time >= bdRange.start && o.time < bdRange.end).reverse();
+    const waiterRemoved = DB.removedItems.filter(r => r.removedBy === waiterName && r.removedAt && r.removedAt >= bdRange.start && r.removedAt < bdRange.end);
     const waiterSessions = DB.workdayHistory.filter(s => s.user === waiterName).reverse();
     
     const totalRevenue = waiterOrders.reduce((s,o)=>s+o.tot,0);

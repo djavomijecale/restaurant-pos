@@ -633,8 +633,8 @@ function newOrder() {
 
 
 function renderRemoved(c) {
-    const today = new Date().toISOString().split('T')[0];
-    const todayRemoved = DB.removedItems.filter(r => r.removedAt.split('T')[0] === today);
+    const bdRange = typeof getBusinessDayRange === 'function' ? getBusinessDayRange() : { start: new Date().toISOString().split('T')[0] + 'T00:00:00', end: new Date().toISOString().split('T')[0] + 'T23:59:59' };
+    const todayRemoved = DB.removedItems.filter(r => r.removedAt && r.removedAt >= bdRange.start && r.removedAt < bdRange.end);
     const allRemoved = DB.removedItems;
     
     // Grupisanje po danima

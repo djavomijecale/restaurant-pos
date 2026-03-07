@@ -87,98 +87,60 @@ function renderWorkday(c) {
 
 function openWorkday() {
     const username = DB.currentUser.username;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const businessDayStart = getBusinessDayStart();
     
-    // ✅ PROVERA 1: Da li neko TRENUTNO radi? (preklapanje smena)
-    const activeWorkdays = DB.workdays || {};
-    const otherActiveShift = Object.entries(activeWorkdays)
+    // Pronađi depozit za nasleđivanje:
+    // 1. Ako neko TRENUTNO radi → preuzmi njegov depozit
+    // 2. Ako je neko ZATVORIO smenu danas → preuzmi finalCash
+    let inheritDeposit = null;
+    let inheritFrom = '';
+    
+    // Provera 1: Aktivna smena
+    const otherActive = Object.entries(DB.workdays || {})
         .find(([user, wd]) => user !== username && wd && wd.startTime);
     
-    if (otherActiveShift) {
-        const [activeUser, activeWd] = otherActiveShift;
-        const inheritedDeposit = activeWd.deposit || 0;
-        const startDate = new Date(activeWd.startTime);
-        const timeStr = startDate.toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' });
-        
-        // Prikaži izbor: preuzmi ili ručno unesi
-        const modal = document.getElementById('depositModal');
-        const input = document.getElementById('depositInput');
-        const hint = document.getElementById('depositHint');
-        
-        input.value = inheritedDeposit;
-        
-        if (hint) {
-            hint.innerHTML = `
-                <div style="background:#16213E;border-radius:10px;padding:12px;margin-top:8px">
-                    <div style="color:#4CAF50;font-weight:bold;margin-bottom:6px">👤 ${activeUser} je aktivan (od ${timeStr})</div>
-                    <div style="color:#888;font-size:12px;margin-bottom:10px">Depozit u kasi: <strong style="color:#FFD700">${inheritedDeposit.toLocaleString()} din</strong></div>
-                    <button class="btn" style="width:100%;background:#4CAF50;padding:10px;font-size:15px" 
-                        onclick="openWorkdayWithDeposit(${inheritedDeposit}, '${activeUser}')">
-                        💰 Preuzmi ${inheritedDeposit.toLocaleString()} din i otvori smenu
-                    </button>
-                </div>
-                <div style="color:#888;font-size:12px;text-align:center;margin-top:8px">ili ručno unesite drugi iznos i kliknite "Potvrdi"</div>
-            `;
-        }
-        
-        modal.classList.add('show');
-        input.focus();
-        input.select();
-        return;
+    if (otherActive) {
+        inheritDeposit = otherActive[1].deposit || 0;
+        inheritFrom = otherActive[0];
     }
     
-    // ✅ PROVERA 2: Da li je danas već bila ZATVORENA smena?
-    let lastTodayShift = null;
-    
-    if (DB.workdayHistory && DB.workdayHistory.length > 0) {
+    // Provera 2: Zatvorena smena u ovom radnom danu
+    if (inheritDeposit === null && DB.workdayHistory && DB.workdayHistory.length > 0) {
         const sorted = [...DB.workdayHistory].sort((a, b) => 
             new Date(b.logoutTime) - new Date(a.logoutTime)
         );
-        
         for (const shift of sorted) {
-            const shiftEnd = new Date(shift.logoutTime);
-            if (shiftEnd >= today) {
-                lastTodayShift = shift;
+            if (new Date(shift.logoutTime) >= businessDayStart) {
+                inheritDeposit = Math.max(0, shift.finalCash || 0);
+                inheritFrom = shift.user;
                 break;
             }
         }
     }
     
-    if (lastTodayShift && lastTodayShift.finalCash !== undefined) {
-        // Druga smena - prikaži izbor: preuzmi ili ručno unesi
-        const inheritedDeposit = Math.max(0, lastTodayShift.finalCash);
-        const shiftUser = lastTodayShift.user;
-        const logoutDate = new Date(lastTodayShift.logoutTime);
-        const timeStr = logoutDate.toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' });
+    // ✅ NIJE PRVA SMENA → automatski preuzmi, bez pitanja
+    if (inheritDeposit !== null) {
+        if (!DB.workdays) DB.workdays = {};
         
-        const modal = document.getElementById('depositModal');
-        const input = document.getElementById('depositInput');
-        const hint = document.getElementById('depositHint');
+        const workdayData = {
+            user: username,
+            startTime: new Date().toISOString(),
+            startOrders: DB.orders.length,
+            deposit: inheritDeposit,
+            inheritedFrom: inheritFrom,
+            cashReductions: []
+        };
         
-        input.value = inheritedDeposit;
+        DB.workdays[username] = workdayData;
+        saveWorkday(username, workdayData);
+        page = 'tables';
+        render();
         
-        if (hint) {
-            hint.innerHTML = `
-                <div style="background:#16213E;border-radius:10px;padding:12px;margin-top:8px">
-                    <div style="color:#9C27B0;font-weight:bold;margin-bottom:6px">👤 ${shiftUser} zatvorio smenu u ${timeStr}</div>
-                    <div style="color:#888;font-size:12px;margin-bottom:10px">Keš u kasi: <strong style="color:#FFD700">${inheritedDeposit.toLocaleString()} din</strong></div>
-                    <button class="btn" style="width:100%;background:#4CAF50;padding:10px;font-size:15px" 
-                        onclick="openWorkdayWithDeposit(${inheritedDeposit}, '${shiftUser}')">
-                        💰 Preuzmi ${inheritedDeposit.toLocaleString()} din i otvori smenu
-                    </button>
-                </div>
-                <div style="color:#888;font-size:12px;text-align:center;margin-top:8px">ili ručno unesite drugi iznos i kliknite "Potvrdi"</div>
-            `;
-        }
-        
-        modal.classList.add('show');
-        input.focus();
-        input.select();
+        showAlert('✅ Smena otvorena!\n\n💰 Depozit: ' + inheritDeposit.toLocaleString() + ' din\n👤 Preuzeto od: ' + inheritFrom);
         return;
     }
     
-    // ✅ PRVA SMENA DANAS - ručni unos depozita
+    // ✅ PRVA SMENA DANAS → ručni unos depozita
     const modal = document.getElementById('depositModal');
     const input = document.getElementById('depositInput');
     const hint = document.getElementById('depositHint');
@@ -196,18 +158,14 @@ function openWorkday() {
             suggestedDeposit = Math.max(0, lastShift.finalCash);
             const logoutDate = new Date(lastShift.logoutTime);
             const timeStr = logoutDate.toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-            lastShiftInfo = `💡 Poslednja smena (${lastShift.user}, ${timeStr}) završila sa <strong style="color:#FFD700">${suggestedDeposit.toLocaleString()} din</strong> keša u kasi`;
+            lastShiftInfo = '💡 Poslednja smena (' + lastShift.user + ', ' + timeStr + ') završila sa <strong style="color:#FFD700">' + suggestedDeposit.toLocaleString() + ' din</strong> keša u kasi';
         }
     }
     
     input.value = suggestedDeposit > 0 ? suggestedDeposit : '0';
     
     if (hint) {
-        if (lastShiftInfo) {
-            hint.innerHTML = lastShiftInfo;
-        } else {
-            hint.innerHTML = '💡 Možete uneti 0 ako nemate depozit';
-        }
+        hint.innerHTML = lastShiftInfo || '💡 Možete uneti 0 ako nemate depozit';
     }
     
     modal.classList.add('show');
@@ -256,31 +214,6 @@ function confirmDeposit() {
     } else {
         showAlert(`✅ Radni dan otvoren bez depozita`);
     }
-}
-
-
-// Brzo otvaranje smene sa preuzimanjem depozita (klik na zeleno dugme)
-function openWorkdayWithDeposit(amount, fromUser) {
-    const username = DB.currentUser.username;
-    
-    if (!DB.workdays) DB.workdays = {};
-    
-    const workdayData = {
-        user: username,
-        startTime: new Date().toISOString(),
-        startOrders: DB.orders.length,
-        deposit: amount,
-        inheritedFrom: fromUser,
-        cashReductions: []
-    };
-    
-    DB.workdays[username] = workdayData;
-    saveWorkday(username, workdayData);
-    closeDepositModal();
-    page = 'tables';
-    render();
-    
-    showAlert(`✅ Smena otvorena!\n\n💰 Preuzeto ${amount.toLocaleString()} din iz kase\n👤 Od: ${fromUser}`);
 }
 
 
@@ -522,28 +455,49 @@ function closeWorkday() {
 
 
 // ============================================
-// AUTO-ZATVARANJE SMENA
-// Ako konobar zaboravi da zatvori dan, sistem
-// automatski zatvara smenu posle MAX_SHIFT_HOURS
+// AUTO-PRESEK U 7:00 UJUTRU
+// Radni dan traje od 7:00 do 7:00 sledećeg dana.
+// Smena od 16h 6/3 do 01h 7/3 = pripada danu 6/3.
+// U 7:00 sistem zatvara sve otvorene smene.
 // ============================================
 
-const MAX_SHIFT_HOURS = 14;
+const DAILY_CUTOFF_HOUR = 7; // 7:00 ujutru
+
+// Vraća početak trenutnog "radnog dana" (danas u 7:00, ili juče u 7:00 ako je pre 7)
+function getBusinessDayStart() {
+    const now = new Date();
+    const cutoff = new Date(now);
+    cutoff.setHours(DAILY_CUTOFF_HOUR, 0, 0, 0);
+    
+    if (now < cutoff) {
+        // Pre 7 ujutru = još uvek "jučerašnji" radni dan
+        cutoff.setDate(cutoff.getDate() - 1);
+    }
+    return cutoff;
+}
 
 function checkAndAutoCloseShifts() {
     if (!DB.workdays) return;
     
     const now = new Date();
-    const maxMs = MAX_SHIFT_HOURS * 60 * 60 * 1000;
+    const todayCutoff = new Date(now);
+    todayCutoff.setHours(DAILY_CUTOFF_HOUR, 0, 0, 0);
+    
+    // Ako je pre 7:00, cutoff je juče u 7:00
+    if (now < todayCutoff) {
+        todayCutoff.setDate(todayCutoff.getDate() - 1);
+    }
     
     const expiredShifts = Object.entries(DB.workdays).filter(([username, wd]) => {
         if (!wd || !wd.startTime) return false;
-        const elapsed = now - new Date(wd.startTime);
-        return elapsed > maxMs;
+        const shiftStart = new Date(wd.startTime);
+        // Smena je istekla ako je počela PRE današnjeg cutoff-a (7:00)
+        return shiftStart < todayCutoff;
     });
     
     if (expiredShifts.length === 0) return;
     
-    console.log(`⏰ Pronađeno ${expiredShifts.length} isteklih smena, auto-zatvaranje...`);
+    console.log('⏰ Presek u 7:00 - zatvaranje ' + expiredShifts.length + ' smena od prethodnog dana');
     
     expiredShifts.forEach(([username, myWorkday]) => {
         autoCloseWorkday(username, myWorkday);
@@ -552,11 +506,29 @@ function checkAndAutoCloseShifts() {
 
 
 function autoCloseWorkday(username, myWorkday) {
-    console.log(`⏰ Auto-zatvaranje smene za: ${username}`);
+    console.log('⏰ Auto-zatvaranje smene za: ' + username);
     
-    // Isti proračun kao closeWorkday()
+    const startTime = new Date(myWorkday.startTime);
+    
+    // Kraj smene = sledeći cutoff posle početka (7:00 ujutru sledećeg dana)
+    const endTime = new Date(startTime);
+    endTime.setDate(endTime.getDate() + 1);
+    endTime.setHours(DAILY_CUTOFF_HOUR, 0, 0, 0);
+    // Ako je smena počela posle cutoff-a istog dana, kraj je sutradan u 7:00
+    // Ako je počela pre cutoff-a, kraj je danas u 7:00
+    const sameDayCutoff = new Date(startTime);
+    sameDayCutoff.setHours(DAILY_CUTOFF_HOUR, 0, 0, 0);
+    if (startTime < sameDayCutoff) {
+        endTime.setTime(sameDayCutoff.getTime());
+    }
+    
+    const endTimeISO = endTime.toISOString();
+    const durationMin = Math.floor((endTime - startTime) / 1000 / 60);
+    
+    // Filtriraj narudžbine: samo one između početka smene i cutoff-a
     const dayOrders = DB.orders.filter(o => 
         o.time >= myWorkday.startTime && 
+        o.time <= endTimeISO &&
         o.createdBy === username
     );
     const totalRevenue = dayOrders.reduce((s, o) => s + o.tot, 0);
@@ -570,22 +542,18 @@ function autoCloseWorkday(username, myWorkday) {
     const finalCash = deposit + cash - totalCashReductions;
     const totalPerformance = totalRevenue + deposit;
     
-    // Kraj smene = početak + MAX_SHIFT_HOURS (ne "sada", jer je možda prošlo mnogo više)
-    const startTime = new Date(myWorkday.startTime);
-    const endTime = new Date(startTime.getTime() + MAX_SHIFT_HOURS * 60 * 60 * 1000).toISOString();
-    const duration = MAX_SHIFT_HOURS * 60; // minuti
-    
     // Plata
     const waiterUser = DB.users.find(u => u.username === username);
     const hourlyRate = waiterUser?.hourlyRate || 350;
-    const salary = Math.floor(MAX_SHIFT_HOURS * hourlyRate);
+    const hours = durationMin / 60;
+    const salary = Math.floor(hours * hourlyRate);
     
     // Bonus
     const startHour = startTime.getHours();
-    const endHour = new Date(endTime).getHours();
+    const endHour = endTime.getHours();
     
-    const isFirstShift = startHour >= 8 && startHour < 14 && endHour >= 15 && endHour <= 17;
-    const isSecondShift = startHour >= 14 && startHour < 20 && endHour >= 22 && endHour <= 23;
+    const isFirstShift = startHour >= 8 && startHour < 14;
+    const isSecondShift = startHour >= 14 && startHour < 22;
     
     let bonusEarned = false;
     let bonusAmount = 0;
@@ -614,8 +582,8 @@ function autoCloseWorkday(username, myWorkday) {
     DB.workdayHistory.push({
         user: myWorkday.user || username,
         loginTime: myWorkday.startTime,
-        logoutTime: endTime,
-        duration: duration,
+        logoutTime: endTimeISO,
+        duration: durationMin,
         orderCount: dayOrders.length,
         revenue: totalRevenue,
         deposit: deposit,
@@ -630,7 +598,7 @@ function autoCloseWorkday(username, myWorkday) {
         bonusReason: bonusReason,
         isFirstShift: isFirstShift,
         isSecondShift: isSecondShift,
-        autoClosed: true // ⏰ Oznaka da je sistem zatvorio
+        autoClosed: true // ⏰ Presek u 7:00
     });
     
     // Očisti stavke sa stolova
@@ -649,6 +617,6 @@ function autoCloseWorkday(username, myWorkday) {
     removeWorkday(username);
     save();
     
-    console.log(`⏰ Auto-zatvorena smena: ${username} | Prihod: ${totalRevenue} | FinalCash: ${finalCash}`);
+    console.log('⏰ Auto-zatvorena smena: ' + username + ' | ' + startTime.toLocaleString('sr-RS') + ' → ' + endTime.toLocaleString('sr-RS') + ' | Prihod: ' + totalRevenue);
 }
 
