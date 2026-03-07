@@ -326,6 +326,20 @@ function showEfakturaApiResults(result, invoiceId) {
         const matchIcon = isExisting ? '🟢' : '🔵';
         const matchLabel = isExisting ? `→ ${existingMatch.name} (${existingMatch.stock} ${existingMatch.unit})` : 'Nova stavka';
         
+        // Ako postoji u lageru, preuzmi jedinicu i prilagodi količinu
+        let displayQty = item.qty;
+        let displayUnit = item.unit;
+        
+        if (isExisting) {
+            displayUnit = existingMatch.unit;
+            if (item.unit === 'kom' && (existingMatch.unit === 'l' || existingMatch.unit === 'kg' || existingMatch.unit === 'ml' || existingMatch.unit === 'g')) {
+                const volumeMatch = item.name.match(/(\d+[\.,]?\d*)\s*(l|L|lit|kg|g|ml|KG|G|ML)/);
+                if (volumeMatch) {
+                    displayQty = item.qty * parseFloat(volumeMatch[1].replace(',', '.'));
+                }
+            }
+        }
+        
         h += `<div style="background:#16213E;border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:4px solid ${matchColor}">
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
                 <input type="checkbox" id="efkapi_check_${idx}" checked style="accent-color:${matchColor};width:16px;height:16px">
@@ -334,11 +348,11 @@ function showEfakturaApiResults(result, invoiceId) {
             </div>
             <div style="color:${matchColor};font-size:11px;margin-left:22px">${matchIcon} ${matchLabel}</div>
             <div style="display:flex;gap:6px;margin-top:6px;margin-left:22px">
-                <span style="color:#888;font-size:12px">${item.qty} ${item.unit} × ${item.unitPrice.toFixed(0)} din</span>
+                <span style="color:#888;font-size:12px">${displayQty} ${displayUnit} × ${item.unitPrice.toFixed(0)} din</span>
             </div>
             <input type="hidden" id="efkapi_name_${idx}" value="${escapeHtml(item.name)}">
-            <input type="hidden" id="efkapi_qty_${idx}" value="${item.qty}">
-            <input type="hidden" id="efkapi_unit_${idx}" value="${item.unit}">
+            <input type="hidden" id="efkapi_qty_${idx}" value="${displayQty}">
+            <input type="hidden" id="efkapi_unit_${idx}" value="${displayUnit}">
             <input type="hidden" id="efkapi_price_${idx}" value="${item.unitPrice}">
             <input type="hidden" id="efkapi_cat_${idx}" value="${item.category}">
         </div>`;
@@ -507,31 +521,43 @@ function renderEfakturaTab() {
     
     // Invoice list
     if (efakturaInvoices.length > 0) {
+        // Loguj prvi objekat da vidimo strukturu
+        console.log('📥 Primer fakture (ključevi):', Object.keys(efakturaInvoices[0]));
+        console.log('📥 Primer fakture (JSON):', JSON.stringify(efakturaInvoices[0]).substring(0, 500));
+        
         h += `<div style="color:#888;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px">
             📋 Pronađeno ${efakturaInvoices.length} faktura
         </div>`;
         
         efakturaInvoices.forEach(inv => {
-            const supplierName = extractSupplierName(inv);
-            const invNumber = inv.invoiceNumber || inv.InvoiceNumber || inv.number || '';
-            const issueDate = inv.issueDate || inv.IssueDate || inv.date || '';
-            const total = inv.totalAmount || inv.TotalAmount || inv.payableAmount || inv.PayableAmount || 0;
-            const status = inv.status || inv.Status || '';
+            const supplierName = deepExtract(inv, 'supplier', 'name', 'party') 
+                || deepExtract(inv, 'sender', 'name')
+                || extractSupplierName(inv);
+            const invNumber = deepExtract(inv, 'invoice', 'number') 
+                || inv.invoiceNumber || inv.InvoiceNumber || inv.number || inv.Number || inv.documentNumber || inv.DocumentNumber || '';
+            const issueDate = inv.issueDate || inv.IssueDate || inv.date || inv.Date 
+                || inv.invoiceDate || inv.InvoiceDate || inv.dateOfIssue || inv.DateOfIssue || '';
+            const total = parseFloat(
+                inv.totalAmount || inv.TotalAmount || inv.payableAmount || inv.PayableAmount 
+                || inv.grossAmount || inv.GrossAmount || inv.amount || inv.Amount
+                || inv.totalAmountWithVat || inv.TotalAmountWithVat
+                || inv.totalToPay || inv.TotalToPay || 0
+            );
+            const status = inv.status || inv.Status || inv.invoiceStatus || inv.InvoiceStatus || '';
             
             h += `<div class="card" style="margin-bottom:8px;cursor:pointer;border-left:4px solid #9C27B0" 
                 onclick="efakturaFetchAndImport('${inv.id}')">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div style="flex:1;min-width:0">
                         <div style="font-weight:bold;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-                            📥 ${escapeHtml(supplierName || 'Faktura')}
+                            📥 ${escapeHtml(supplierName || 'Nepoznat dobavljač')}
                         </div>
                         <div style="color:#888;font-size:12px;margin-top:2px">
-                            ${invNumber ? '#' + invNumber + ' · ' : ''}${issueDate}
-                            ${status ? ' · <span style="color:#9C27B0">' + status + '</span>' : ''}
+                            ${invNumber ? '#' + invNumber + ' · ' : ''}${issueDate ? formatEfakturaDate(issueDate) + ' ' : ''}${status ? '<span style="color:#9C27B0">' + status + '</span>' : ''}
                         </div>
                     </div>
                     <div style="text-align:right;white-space:nowrap;margin-left:12px">
-                        <div style="font-size:18px;font-weight:bold;color:#FFD700">${parseFloat(total).toFixed(0)}</div>
+                        <div style="font-size:18px;font-weight:bold;color:#FFD700">${total ? total.toLocaleString('sr-RS') : '?'}</div>
                         <div style="color:#888;font-size:11px">din</div>
                     </div>
                 </div>
@@ -547,15 +573,61 @@ function renderEfakturaTab() {
 function extractSupplierName(inv) {
     if (inv.supplierName) return inv.supplierName;
     if (inv.SupplierName) return inv.SupplierName;
+    if (inv.senderName) return inv.senderName;
+    if (inv.SenderName) return inv.SenderName;
     if (inv.accountingSupplierParty) {
         const sp = inv.accountingSupplierParty;
-        return sp.partyName || sp.PartyName || sp.registrationName || sp.RegistrationName || '';
+        return sp.partyName || sp.PartyName || sp.registrationName || sp.RegistrationName || sp.name || sp.Name || '';
     }
     if (inv.AccountingSupplierParty) {
         const sp = inv.AccountingSupplierParty;
-        return sp.PartyName || sp.partyName || sp.RegistrationName || '';
+        return sp.PartyName || sp.partyName || sp.RegistrationName || sp.Name || '';
     }
     return '';
+}
+
+
+// Duboka pretraga objekta za polje čiji ključ sadrži sve navedene reči
+function deepExtract(obj, ...keywords) {
+    if (!obj || typeof obj !== 'object') return '';
+    
+    // Prvo traži u prvom nivou
+    for (const [key, val] of Object.entries(obj)) {
+        const keyLower = key.toLowerCase();
+        if (keywords.every(kw => keyLower.includes(kw.toLowerCase()))) {
+            if (typeof val === 'string' || typeof val === 'number') return val;
+        }
+    }
+    
+    // Traži u drugom nivou
+    for (const [key, val] of Object.entries(obj)) {
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+            for (const [k2, v2] of Object.entries(val)) {
+                const fullKey = (key + '.' + k2).toLowerCase();
+                if (keywords.every(kw => fullKey.includes(kw.toLowerCase()))) {
+                    if (typeof v2 === 'string' || typeof v2 === 'number') return v2;
+                }
+            }
+            // Traži i samo po child key
+            const childResult = deepExtract(val, ...keywords);
+            if (childResult) return childResult;
+        }
+    }
+    
+    return '';
+}
+
+
+// Formatiranje datuma iz raznih formata
+function formatEfakturaDate(dateStr) {
+    if (!dateStr) return '';
+    try {
+        const d = new Date(dateStr);
+        if (isNaN(d)) return dateStr;
+        return d.toLocaleDateString('sr-RS', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (e) {
+        return dateStr;
+    }
 }
 
 

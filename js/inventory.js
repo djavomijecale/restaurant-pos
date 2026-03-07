@@ -1366,6 +1366,25 @@ function showEfakturaResults(result) {
         const matchIcon = isExisting ? '🟢' : '🔵';
         const matchLabel = isExisting ? `→ ${existingMatch.name} (stanje: ${existingMatch.stock} ${existingMatch.unit})` : 'Nova stavka';
         
+        // ✅ Ako postoji u lageru, koristi jedinicu iz lagera
+        // i pokušaj da izvučeš zapreminu iz imena (npr. "20L" → 20)
+        let displayQty = item.qty;
+        let displayUnit = item.unit;
+        
+        if (isExisting) {
+            displayUnit = existingMatch.unit;
+            
+            // Ako je faktura u komadima ali lager u litrama/kg, pokušaj da izvučeš zapreminu iz imena
+            if (item.unit === 'kom' && (existingMatch.unit === 'l' || existingMatch.unit === 'kg' || existingMatch.unit === 'ml' || existingMatch.unit === 'g')) {
+                const volumeMatch = item.name.match(/(\d+[\.,]?\d*)\s*(l|L|lit|kg|g|ml|KG|G|ML)/);
+                if (volumeMatch) {
+                    const extractedVol = parseFloat(volumeMatch[1].replace(',', '.'));
+                    displayQty = item.qty * extractedVol;
+                    console.log('📦 ' + item.name + ': ' + item.qty + ' kom × ' + extractedVol + existingMatch.unit + ' = ' + displayQty + existingMatch.unit);
+                }
+            }
+        }
+        
         h += `<div style="background:#16213E;border-radius:10px;padding:10px 12px;margin-bottom:8px;border-left:4px solid ${matchColor}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                 <div style="flex:1;min-width:0">
@@ -1383,13 +1402,13 @@ function showEfakturaResults(result) {
             <div style="display:flex;gap:6px;margin-top:8px;margin-left:22px;flex-wrap:wrap">
                 <div style="flex:1;min-width:55px">
                     <div style="color:#888;font-size:10px">Količina</div>
-                    <input type="number" value="${item.qty}" id="efk_qty_${idx}" step="0.1" min="0"
+                    <input type="number" value="${displayQty}" id="efk_qty_${idx}" step="0.1" min="0"
                         style="width:100%;padding:5px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px;text-align:center">
                 </div>
                 <div style="flex:1;min-width:55px">
                     <div style="color:#888;font-size:10px">Jedinica</div>
                     <select id="efk_unit_${idx}" style="width:100%;padding:5px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:13px">
-                        ${['kom','kg','l','g','ml','pak'].map(u => `<option value="${u}" ${item.unit===u?'selected':''}>${u}</option>`).join('')}
+                        ${['kom','kg','l','g','ml','pak'].map(u => `<option value="${u}" ${displayUnit===u?'selected':''}>${u}</option>`).join('')}
                     </select>
                 </div>
                 <div style="flex:1;min-width:55px">
