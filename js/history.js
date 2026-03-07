@@ -292,6 +292,8 @@ function renderHistoryOrders(orders) {
                 minute: '2-digit'
             });
             
+            const isAdmin = DB.currentUser && DB.currentUser.role === 'admin';
+            
             h += `
                 <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
                     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
@@ -299,13 +301,16 @@ function renderHistoryOrders(orders) {
                             <div style="color:#FFD700;font-weight:bold">Narudžbina #${o.id}</div>
                             <div style="color:#B0B0B0;font-size:11px">${formatted} · ${o.createdBy || 'Nepoznato'}</div>
                         </div>
-                        <div style="text-align:right">
-                            <div style="color:#4CAF50;font-size:18px;font-weight:bold">${o.tot.toFixed(0)} din.</div>
-                            <div style="color:#B0B0B0;font-size:11px">${o.method}</div>
+                        <div style="display:flex;align-items:start;gap:8px">
+                            <div style="text-align:right">
+                                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${o.tot.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:11px">${o.method}</div>
+                            </div>
+                            ${isAdmin ? '<button onclick="deleteOrder(\'' + o.id + '\')" style="background:none;border:none;color:#E94560;font-size:18px;cursor:pointer;padding:4px" title="Obriši narudžbinu">🗑️</button>' : ''}
                         </div>
                     </div>
                     <div style="color:#B0B0B0;font-size:12px">
-                        ${o.items.map(it => `${it.name} x${it.qty}`).join(', ')}
+                        ${o.items.map(it => it.name + ' x' + it.qty).join(', ')}
                     </div>
                 </div>
             `;
@@ -469,5 +474,47 @@ function exportHistoryToExcel() {
     
     // Download
     XLSX.writeFile(wb, filename);
+}
+
+
+// ============================================
+// BRISANJE NARUDŽBINA (samo admin)
+// ============================================
+function deleteOrder(orderId) {
+    if (!DB.currentUser || DB.currentUser.role !== 'admin') {
+        showAlert('❌ Samo admin može da briše narudžbine!');
+        return;
+    }
+    
+    const order = DB.orders.find(function(o) { return String(o.id) === String(orderId); });
+    if (!order) {
+        showAlert('❌ Narudžbina nije pronađena');
+        return;
+    }
+    
+    const date = new Date(order.time);
+    const dateStr = date.toLocaleString('sr-RS', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    const itemList = order.items.map(function(it) { return it.name + ' x' + it.qty; }).join(', ');
+    
+    showConfirm('🗑️ Obriši Narudžbinu', 
+        'Narudžbina #' + orderId + '\n' +
+        dateStr + ' · ' + (order.createdBy || '?') + '\n' +
+        itemList + '\n' +
+        'Ukupno: ' + order.tot.toFixed(0) + ' din (' + order.method + ')\n\n' +
+        'Da li ste sigurni? Ovo se ne može poništiti!',
+        function(confirmed) {
+            if (!confirmed) return;
+            
+            var idx = DB.orders.findIndex(function(o) { return String(o.id) === String(orderId); });
+            if (idx === -1) return;
+            
+            var removed = DB.orders.splice(idx, 1)[0];
+            console.log('🗑️ Obrisana narudžbina #' + orderId + ': ' + removed.tot + ' din');
+            
+            save();
+            render();
+            showAlert('✅ Narudžbina #' + orderId + ' obrisana (' + removed.tot.toFixed(0) + ' din)');
+        }
+    );
 }
 

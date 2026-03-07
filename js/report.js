@@ -827,6 +827,7 @@ function renderReport(c) {
                     </div>
                     <div style="display:flex;align-items:center;gap:12px">
                         <div style="color:#4CAF50;font-size:18px;font-weight:bold">${order.tot.toFixed(0)} din.</div>
+                        ${!isWaiter ? `<button onclick="event.stopPropagation();deleteOrder('${order.id}')" style="background:none;border:none;color:#E94560;font-size:16px;cursor:pointer;padding:2px" title="Obriši">🗑️</button>` : ''}
                         <div style="color:#B0B0B0;font-size:20px" id="arrow_${order.id}">▼</div>
                     </div>
                 </div>
@@ -1059,6 +1060,9 @@ function showAllTodayOrders() {
         h += '</div></div>';
         h += '<div style="display:flex;align-items:center;gap:12px">';
         h += '<div style="color:#4CAF50;font-size:20px;font-weight:bold">' + order.tot.toFixed(0) + ' din.</div>';
+        if (DB.currentUser && DB.currentUser.role === 'admin') {
+            h += '<button onclick="event.stopPropagation();deleteOrder(\'' + order.id + '\')" style="background:none;border:none;color:#E94560;font-size:18px;cursor:pointer;padding:4px" title="Obriši">🗑️</button>';
+        }
         h += '<div style="color:#B0B0B0;font-size:20px" id="arrow_' + order.id + '">▼</div>';
         h += '</div></div>';
         
