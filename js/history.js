@@ -347,6 +347,15 @@ function renderHistorySessions(sessions) {
             const mins = duration % 60;
             const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
             
+            // Izračunaj keš/kartice iz narudžbina za ovu sesiju
+            const sessionOrders = DB.orders.filter(o => 
+                o.createdBy === s.user && 
+                o.time >= s.loginTime && 
+                (!s.logoutTime || o.time <= s.logoutTime)
+            );
+            const sessionCash = sessionOrders.filter(o => o.method === 'Cash').reduce((sum, o) => sum + o.tot, 0);
+            const sessionCard = sessionOrders.filter(o => o.method === 'Card').reduce((sum, o) => sum + o.tot, 0);
+            
             // BONUS INDIKATOR
             const bonusBadge = s.bonusEarned ? 
                 `<div style="background:linear-gradient(135deg, #FFD700 0%, #FFA500 100%);color:#000;padding:6px 12px;border-radius:20px;font-size:11px;font-weight:bold;margin-top:8px;display:inline-block;box-shadow:0 2px 8px rgba(255,215,0,0.3)">
@@ -369,25 +378,28 @@ function renderHistorySessions(sessions) {
                 '<span style="background:#4CAF50;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Prva smena</span>' : 
                 (s.isSecondShift ? '<span style="background:#9C27B0;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">Druga smena</span>' : '');
             
-            // Prikaži ukupan učinak ako ima depozit, inače samo revenue
-            const displayRevenue = s.deposit && s.deposit > 0 ? (s.totalPerformance || 0) : (s.revenue || 0);
-            const revenueLabel = s.deposit && s.deposit > 0 ? '📊 Učinak' : '💰 Prihod';
+            const autoClosedBadge = s.autoClosed ? ' <span style="color:#FF9800;font-size:10px">⏰ AUTO</span>' : '';
             
             h += `
                 <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;${s.bonusEarned ? 'border:2px solid #FFD700;' : ''}">
                     <div style="display:flex;justify-content:space-between;align-items:start">
                         <div style="flex:1">
-                            <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user || 'Nepoznato'}${shiftBadge}</div>
+                            <div style="color:#FFD700;font-weight:bold">👨‍🍳 ${s.user || 'Nepoznato'}${shiftBadge}${autoClosedBadge}</div>
                             <div style="color:#B0B0B0;font-size:11px">${dateStr}</div>
                             <div style="color:#FFF;font-size:12px;margin-top:4px">
                                 🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
                             </div>
+                            <div style="display:flex;gap:12px;margin-top:6px">
+                                <span style="color:#4CAF50;font-size:12px;font-weight:bold">💵 ${sessionCash.toFixed(0)} din</span>
+                                <span style="color:#2196F3;font-size:12px;font-weight:bold">💳 ${sessionCard.toFixed(0)} din</span>
+                                <span style="color:#888;font-size:12px">${sessionOrders.length} narudž.</span>
+                            </div>
                             ${bonusBadge}${salaryBadge}${depositBadge}
                         </div>
                         <div style="text-align:right">
-                            <div style="color:#4CAF50;font-size:18px;font-weight:bold">${displayRevenue.toFixed(0)} din.</div>
-                            <div style="color:#B0B0B0;font-size:11px">${s.orderCount || 0} narudžbina</div>
-                            ${s.deposit && s.deposit > 0 ? `<div style="color:#9C27B0;font-size:10px;margin-top:2px">(${(s.revenue||0).toFixed(0)} + ${(s.deposit||0).toFixed(0)} dep.)</div>` : ''}
+                            <div style="color:#4CAF50;font-size:18px;font-weight:bold">${(s.revenue || 0).toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:11px">ukupno</div>
+                            ${s.deposit && s.deposit > 0 ? `<div style="color:#9C27B0;font-size:10px;margin-top:2px">dep. ${(s.deposit||0).toFixed(0)}</div>` : ''}
                         </div>
                     </div>
                 </div>

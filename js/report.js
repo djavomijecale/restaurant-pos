@@ -894,26 +894,41 @@ function renderReport(c) {
         const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
         
         // Izračunaj depozit i smanjenja keša za ovaj radni dan
-        // DEPOZIT: samo od PRVE smene (originalni unos), ne od nasleđenih
+        // Gledaj I aktivne smene (DB.workdays) I zatvorene smene (DB.workdayHistory)
         let totalDeposit = 0;
         let totalCashReductions = 0;
-        let firstShiftDeposit = 0;
-        if (DB.workdays) {
-            const todayShifts = Object.values(DB.workdays).filter(wd => 
-                wd.startTime && wd.startTime >= businessDay.start && wd.startTime < businessDay.end
-            );
-            // Sortiraj po vremenu početka, najranija smena = prva
-            todayShifts.sort((a, b) => a.startTime.localeCompare(b.startTime));
-            todayShifts.forEach((wd, idx) => {
-                // Samo prva smena ima originalni depozit
-                if (idx === 0 || !wd.inheritedFrom) {
-                    totalDeposit += wd.deposit || 0;
+        
+        // 1. Zatvorene smene danas (iz istorije)
+        const closedTodayShifts = (DB.workdayHistory || []).filter(s =>
+            s.loginTime && s.loginTime >= businessDay.start && s.loginTime < businessDay.end
+        );
+        
+        // 2. Aktivne smene danas
+        const activeTodayShifts = Object.values(DB.workdays || {}).filter(wd =>
+            wd.startTime && wd.startTime >= businessDay.start && wd.startTime < businessDay.end
+        );
+        
+        // Spoji sve smene danas i sortiraj po početku
+        const allTodayShifts = [
+            ...closedTodayShifts.map(s => ({ startTime: s.loginTime, deposit: s.deposit || 0, inheritedFrom: s.inheritedFrom, cashReductions: s.cashReductions || [], totalCashReductions: s.totalCashReductions || 0, fromHistory: true })),
+            ...activeTodayShifts.map(wd => ({ startTime: wd.startTime, deposit: wd.deposit || 0, inheritedFrom: wd.inheritedFrom, cashReductions: wd.cashReductions || [], fromHistory: false }))
+        ];
+        allTodayShifts.sort((a, b) => a.startTime.localeCompare(b.startTime));
+        
+        allTodayShifts.forEach((shift, idx) => {
+            // Depozit: samo od PRVE smene ili smena bez inheritedFrom
+            if (idx === 0 || !shift.inheritedFrom) {
+                totalDeposit += shift.deposit || 0;
+            }
+            // Smanjenja keša: od svih smena
+            if (shift.fromHistory) {
+                totalCashReductions += shift.totalCashReductions || 0;
+            } else {
+                if (shift.cashReductions && shift.cashReductions.length > 0) {
+                    totalCashReductions += shift.cashReductions.reduce((sum, r) => sum + r.amount, 0);
                 }
-                if (wd.cashReductions && wd.cashReductions.length > 0) {
-                    totalCashReductions += wd.cashReductions.reduce((sum, r) => sum + r.amount, 0);
-                }
-            });
-        }
+            }
+        });
         
         // Keš = depozit + otkucani keš - smanjenja keša
         const finalDailyCash = totalDeposit + totalDailyCash - totalCashReductions;
