@@ -161,6 +161,32 @@ async function sendToOctopos(order) {
     console.log('📤 Šaljem na OctoPOS:', JSON.stringify(octoposData, null, 2));
 
     try {
+        // ✅ Prvo kreiraj proizvode koji ne postoje
+        for (const item of octoposData.Items) {
+            if (item.ProductCode.includes('POPUST')) continue; // Skip discount
+            try {
+                const prodResult = await octoposApiCall('POST', '/product', {
+                    Code: item.ProductCode,
+                    Name: item.Name,
+                    Price: item.UnitPrice,
+                    Unit: 'kom',
+                    Active: true,
+                    IsForSale: true,
+                    TaxRateLabel: '\u0402'
+                });
+                if (prodResult.Success) {
+                    console.log('📦 Kreiran: ' + item.ProductCode + ' - ' + item.Name);
+                } else {
+                    console.log('📦 ' + item.ProductCode + ': ' + (prodResult.Errors || []).join(', '));
+                }
+            } catch (e) {
+                // Log but continue - might already exist or sandbox issue
+                console.log('📦 ' + item.ProductCode + ': ' + e.message.substring(0, 100));
+            }
+            await new Promise(function(r) { setTimeout(r, 150); });
+        }
+
+        // Sada pošalji narudžbinu
         const result = await octoposApiCall('POST', '/weborder', octoposData);
 
         if (result.Success) {
