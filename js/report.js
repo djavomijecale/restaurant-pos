@@ -894,33 +894,34 @@ function renderReport(c) {
         const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
         
         // Izračunaj depozit i smanjenja keša za ovaj radni dan
-        // Gledaj I aktivne smene (DB.workdays) I zatvorene smene (DB.workdayHistory)
+        // DEPOZIT: SAMO od najranije smene dana (to je uvek originalni unos)
         let totalDeposit = 0;
         let totalCashReductions = 0;
         
-        // 1. Zatvorene smene danas (iz istorije)
+        // Zatvorene smene danas (iz istorije)
         const closedTodayShifts = (DB.workdayHistory || []).filter(s =>
             s.loginTime && s.loginTime >= businessDay.start && s.loginTime < businessDay.end
         );
         
-        // 2. Aktivne smene danas
+        // Aktivne smene danas
         const activeTodayShifts = Object.values(DB.workdays || {}).filter(wd =>
             wd.startTime && wd.startTime >= businessDay.start && wd.startTime < businessDay.end
         );
         
-        // Spoji sve smene danas i sortiraj po početku
+        // Spoji sve i sortiraj po početku
         const allTodayShifts = [
-            ...closedTodayShifts.map(s => ({ startTime: s.loginTime, deposit: s.deposit || 0, inheritedFrom: s.inheritedFrom, cashReductions: s.cashReductions || [], totalCashReductions: s.totalCashReductions || 0, fromHistory: true })),
-            ...activeTodayShifts.map(wd => ({ startTime: wd.startTime, deposit: wd.deposit || 0, inheritedFrom: wd.inheritedFrom, cashReductions: wd.cashReductions || [], fromHistory: false }))
+            ...closedTodayShifts.map(s => ({ startTime: s.loginTime, deposit: s.deposit || 0, cashReductions: s.cashReductions || [], totalCashReductions: s.totalCashReductions || 0, fromHistory: true })),
+            ...activeTodayShifts.map(wd => ({ startTime: wd.startTime, deposit: wd.deposit || 0, cashReductions: wd.cashReductions || [], fromHistory: false }))
         ];
         allTodayShifts.sort((a, b) => a.startTime.localeCompare(b.startTime));
         
-        allTodayShifts.forEach((shift, idx) => {
-            // Depozit: samo od PRVE smene ili smena bez inheritedFrom
-            if (idx === 0 || !shift.inheritedFrom) {
-                totalDeposit += shift.deposit || 0;
-            }
-            // Smanjenja keša: od svih smena
+        // Depozit = samo od PRVE smene (najranija po vremenu)
+        if (allTodayShifts.length > 0) {
+            totalDeposit = allTodayShifts[0].deposit || 0;
+        }
+        
+        // Smanjenja keša = od SVIH smena
+        allTodayShifts.forEach(shift => {
             if (shift.fromHistory) {
                 totalCashReductions += shift.totalCashReductions || 0;
             } else {

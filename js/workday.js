@@ -422,7 +422,8 @@ function closeWorkday() {
         bonusAmount: bonusAmount,
         bonusReason: bonusReason,
         isFirstShift: isFirstShift,
-        isSecondShift: isSecondShift
+        isSecondShift: isSecondShift,
+        inheritedFrom: myWorkday.inheritedFrom || null
     });
     
     console.log('✅ Sesija dodata u workdayHistory:', DB.workdayHistory.length, 'sesija ukupno');
@@ -598,7 +599,8 @@ function autoCloseWorkday(username, myWorkday) {
         bonusReason: bonusReason,
         isFirstShift: isFirstShift,
         isSecondShift: isSecondShift,
-        autoClosed: true // ⏰ Presek u 7:00
+        autoClosed: true,
+        inheritedFrom: myWorkday.inheritedFrom || null
     });
     
     // Očisti stavke sa stolova
