@@ -888,10 +888,16 @@ function renderReport(c) {
             o.time >= businessDay.start && o.time < businessDay.end
         );
         
-        const totalDailyRevenue = allTodayOrders.reduce((s,o)=>s+o.tot,0);
-        const totalDailyOrders = allTodayOrders.length;
-        const totalDailyCash = allTodayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
-        const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+        const totalDailyRevenue = allTodayOrders.filter(o => !o.isDebtPayment).reduce((s,o)=>s+o.tot,0);
+        const totalDailyOrders = allTodayOrders.filter(o => !o.isDebtPayment).length;
+        const totalDailyCash = allTodayOrders.filter(o=>o.method==='Cash' && !o.isDebtPayment).reduce((s,o)=>s+o.tot,0);
+        const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card' && !o.isDebtPayment).reduce((s,o)=>s+o.tot,0);
+        
+        // Vraćeni dugovi - odvojeno od otkucanog
+        const dailyDebtPayments = allTodayOrders.filter(o => o.isDebtPayment);
+        const dailyDebtCash = dailyDebtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
+        const dailyDebtCard = dailyDebtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+        const dailyDebtTotal = dailyDebtPayments.reduce((s,o) => s + o.tot, 0);
         
         // Izračunaj depozit i smanjenja keša za ovaj radni dan
         // DEPOZIT: SAMO od najranije smene dana (to je uvek originalni unos)
@@ -931,8 +937,8 @@ function renderReport(c) {
             }
         });
         
-        // Keš = depozit + otkucani keš - smanjenja keša
-        const finalDailyCash = totalDeposit + totalDailyCash - totalCashReductions;
+        // Keš u kasi = depozit + otkucani keš + vraćeni dugovi u kešu - smanjenja keša
+        const finalDailyCash = totalDeposit + totalDailyCash + dailyDebtCash - totalCashReductions;
         
         h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-top:20px;border:2px solid #2A2A4A">
             <h3 style="color:#FFD700;margin-bottom:16px">📊 Ukupan Dnevni Izveštaj (Svi Konobari)</h3>
@@ -958,15 +964,15 @@ function renderReport(c) {
             <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px">
                 <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
                     <div style="font-size:24px">💵</div>
-                    <div style="color:#4CAF50;font-size:10px;margin-top:4px">Depozit + Keš - Smanjenja</div>
+                    <div style="color:#4CAF50;font-size:10px;margin-top:4px">Depozit + Keš + Dugovi - Smanjenja</div>
                     <div style="color:#FFD700;font-size:22px;font-weight:bold;margin:8px 0">${finalDailyCash.toFixed(0)} din.</div>
                     <div style="color:#B0B0B0;font-size:11px">Keš u kasi</div>
                 </div>
                 <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
                     <div style="font-size:24px">💳</div>
                     <div style="color:transparent;font-size:10px;margin-top:4px">-</div>
-                    <div style="color:#FFD700;font-size:22px;font-weight:bold;margin:8px 0">${totalDailyCard.toFixed(0)} din.</div>
-                    <div style="color:#B0B0B0;font-size:11px">Kartice</div>
+                    <div style="color:#FFD700;font-size:22px;font-weight:bold;margin:8px 0">${(totalDailyCard + dailyDebtCard).toFixed(0)} din.</div>
+                    <div style="color:#B0B0B0;font-size:11px">Kartice${dailyDebtCard > 0 ? ' (sa dugovima)' : ''}</div>
                 </div>
             </div>
             
@@ -980,29 +986,18 @@ function renderReport(c) {
                     <span style="color:#4CAF50;font-weight:bold">+${totalDailyCash.toFixed(0)} din.</span>
                 </div>`;
         
-        // Vraćeni dugovi
-        const dailyDebtPayments = allTodayOrders.filter(o => o.isDebtPayment);
-        const dailyDebtCash = dailyDebtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
-        const dailyDebtCard = dailyDebtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
-        const dailyDebtTotal = dailyDebtPayments.reduce((s,o) => s + o.tot, 0);
-        
-        if (dailyDebtTotal > 0) {
+        // Vraćeni dugovi u kešu
+        if (dailyDebtCash > 0) {
             h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
-                    <span style="color:#B0B0B0;font-size:13px">📝 Vraćeni dugovi:</span>
-                    <span style="color:#FF9800;font-weight:bold">+${dailyDebtTotal.toFixed(0)} din.</span>
+                    <span style="color:#B0B0B0;font-size:13px">📝 Vraćeni dugovi (keš):</span>
+                    <span style="color:#FF9800;font-weight:bold">+${dailyDebtCash.toFixed(0)} din.</span>
                 </div>`;
-            if (dailyDebtCash > 0) {
-                h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px;padding-left:16px">
-                    <span style="color:#888;font-size:12px">↳ Keš:</span>
-                    <span style="color:#888;font-size:12px">${dailyDebtCash.toFixed(0)} din.</span>
+        }
+        if (dailyDebtCard > 0) {
+            h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                    <span style="color:#B0B0B0;font-size:13px">📝 Vraćeni dugovi (kartica):</span>
+                    <span style="color:#FF9800;font-weight:bold">+${dailyDebtCard.toFixed(0)} din.</span>
                 </div>`;
-            }
-            if (dailyDebtCard > 0) {
-                h += `<div style="display:flex;justify-content:space-between;margin-bottom:8px;padding-left:16px">
-                    <span style="color:#888;font-size:12px">↳ Kartica:</span>
-                    <span style="color:#888;font-size:12px">${dailyDebtCard.toFixed(0)} din.</span>
-                </div>`;
-            }
         }
         
         // Aktivna dugovanja danas

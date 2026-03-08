@@ -118,6 +118,11 @@ async function loginWaiter() {
         // KLJUČNO: Učitaj najnovije podatke PRE provere workday-a!
         await loadFromFirebase();
         
+        // ⏰ Auto-zatvori istekle smene (presek u 7:00)
+        if (typeof checkAndAutoCloseShifts === 'function') {
+            checkAndAutoCloseShifts();
+        }
+        
         // Vrati currentUser nakon load-a (loadFromFirebase ga ne dira)
         DB.currentUser = {username: user.username, role: user.role};
         DB.konobarName = user.username;
@@ -176,6 +181,11 @@ async function loginAdmin() {
         console.log('🔄 Admin login - učitavam najnovije podatke iz Firebase...');
         // Učitaj najnovije podatke pre nego što admin vidi bilo šta
         await loadFromFirebase();
+        
+        // ⏰ Auto-zatvori istekle smene (presek u 7:00)
+        if (typeof checkAndAutoCloseShifts === 'function') {
+            checkAndAutoCloseShifts();
+        }
         
         // Vrati currentUser nakon load-a
         DB.currentUser = {username: admin.username, role: admin.role};

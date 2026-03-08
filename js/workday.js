@@ -95,9 +95,17 @@ function openWorkday() {
     let inheritDeposit = null;
     let inheritFrom = '';
     
-    // Provera 1: Aktivna smena
+    // Provera 1: Aktivna smena KONOBARA (ne kuvara!)
     const otherActive = Object.entries(DB.workdays || {})
-        .find(([user, wd]) => user !== username && wd && wd.startTime);
+        .find(([user, wd]) => {
+            if (user === username) return false;
+            if (!wd || !wd.startTime) return false;
+            // Preskoči kuvare - oni nemaju veze sa depozitom
+            if (wd.role === 'kuvar') return false;
+            const userObj = (DB.users || []).find(u => u.username === user);
+            if (userObj && userObj.role === 'kuvar') return false;
+            return true;
+        });
     
     if (otherActive) {
         inheritDeposit = otherActive[1].deposit || 0;

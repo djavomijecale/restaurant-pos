@@ -589,6 +589,11 @@ function startWorkdayListener() {
         DB.workdays = mappedWorkdays;
         const newCount = Object.keys(DB.workdays).length;
         
+        // ⏰ Auto-zatvori istekle smene kad se podaci osvеže
+        if (typeof checkAndAutoCloseShifts === 'function') {
+            checkAndAutoCloseShifts();
+        }
+        
         // Re-renderuj samo ako se nešto promenilo
         if (newCount !== oldCount) {
             console.log('👥 Workdays ažurirani u realnom vremenu:', Object.keys(DB.workdays));
