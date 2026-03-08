@@ -145,6 +145,16 @@ function updateUserInfo() {
                 e.preventDefault();
                 e.stopPropagation();
                 
+                // ✅ Konobar ne može da se odjavi bez zatvaranja smene (kuvari i admin mogu)
+                var role = DB.currentUser ? DB.currentUser.role : '';
+                var username = DB.currentUser ? DB.currentUser.username : '';
+                var hasOpenShift = DB.workdays && DB.workdays[username] && role === 'konobar';
+                
+                if (hasOpenShift) {
+                    showAlert('⚠️ Ne možete se odjaviti!\n\nImate otvorenu smenu. Prvo zatvorite radni dan.\n\nIdite na: Izveštaj → Zatvori Dan');
+                    return;
+                }
+                
                 // Logout korisnika ALI workdays OSTAJU u Firebase!
                 DB.currentUser = null;
                 DB.selectedTable = null;
@@ -154,10 +164,10 @@ function updateUserInfo() {
                 localStorage.removeItem('currentUser');
                 localStorage.removeItem('konobarName');
                 
-                // VAŽNO: NE brišemo DB.workdays - oni ostaju u Firebase!
-                // Workday se briše samo kada konobar ZATVORI radni dan
+                console.log('✅ Logout uspešan');
                 
-                console.log('✅ Logout uspešan - workdays ostaju aktivni');
+                // 📍 Zaustavi geo tracking
+                if (typeof stopGeoTracking === 'function') stopGeoTracking();
                 
                 page = 'login';
                 render();

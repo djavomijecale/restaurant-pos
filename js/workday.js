@@ -649,3 +649,145 @@ function autoCloseWorkday(username, myWorkday) {
     console.log('⏰ Auto-zatvorena smena: ' + username + ' | ' + startTime.toLocaleString('sr-RS') + ' → ' + endTime.toLocaleString('sr-RS') + ' | Prihod: ' + totalRevenue);
 }
 
+
+// ============================================
+// PODSETNIK ZA ZATVARANJE SMENE
+// ============================================
+let shiftReminderShown = {};
+let adminNotificationSent = {};
+
+function checkShiftReminders() {
+    if (!DB.currentUser) return;
+    if (!DB.workdays) return;
+    
+    var now = new Date();
+    var username = DB.currentUser.username;
+    var role = DB.currentUser.role;
+    
+    // Za konobara: proveri NJEGOVU smenu
+    if (role !== 'admin') {
+        var myWd = DB.workdays[username];
+        if (!myWd || !myWd.startTime) return;
+        if (myWd.role === 'kuvar') return;
+        
+        var shiftStart = new Date(myWd.startTime);
+        var hoursWorked = (now - shiftStart) / 1000 / 3600;
+        var startHour = shiftStart.getHours();
+        
+        // Odredi očekivan kraj smene
+        var expectedEnd;
+        if (startHour >= 8 && startHour < 14) {
+            // Prva smena → kraj oko 16:00
+            expectedEnd = new Date(shiftStart);
+            expectedEnd.setHours(16, 0, 0, 0);
+        } else if (startHour >= 14 && startHour < 22) {
+            // Druga smena → kraj oko 23:00
+            expectedEnd = new Date(shiftStart);
+            expectedEnd.setHours(23, 0, 0, 0);
+        } else {
+            // Noćna → podseti posle 8h
+            expectedEnd = new Date(shiftStart.getTime() + 8 * 3600000);
+        }
+        
+        // Podseti 30min pre kraja
+        var reminderTime = new Date(expectedEnd.getTime() - 30 * 60000);
+        var reminderId = username + '_' + shiftStart.toISOString().substring(0, 10);
+        
+        if (now >= reminderTime && !shiftReminderShown[reminderId]) {
+            shiftReminderShown[reminderId] = true;
+            var minsLeft = Math.max(0, Math.round((expectedEnd - now) / 60000));
+            showAlert('⏰ Podsetnik!\n\nVaša smena traje već ' + Math.floor(hoursWorked) + 'h ' + Math.round((hoursWorked % 1) * 60) + 'min.\n' +
+                (minsLeft > 0 ? 'Očekivani kraj za ' + minsLeft + ' min.\n\n' : 'Smena je trebalo da se završi.\n\n') +
+                'Ne zaboravite da zatvorite radni dan!\nIzveštaj → Zatvori Dan');
+            console.log('⏰ Podsetnik za zatvaranje smene: ' + username);
+        }
+        return;
+    }
+    
+    // Za admina: proveri SVE otvorene smene
+    var openShifts = Object.entries(DB.workdays).filter(function(entry) {
+        var wd = entry[1];
+        if (!wd || !wd.startTime) return false;
+        if (wd.role === 'kuvar') return false;
+        
+        var start = new Date(wd.startTime);
+        var hours = (now - start) / 1000 / 3600;
+        return hours > 9; // Smena traje više od 9h
+    });
+    
+    if (openShifts.length > 0) {
+        openShifts.forEach(function(entry) {
+            var user = entry[0];
+            var wd = entry[1];
+            var start = new Date(wd.startTime);
+            var hours = Math.floor((now - start) / 1000 / 3600);
+            var notifId = user + '_' + start.toISOString().substring(0, 10);
+            
+            if (!adminNotificationSent[notifId]) {
+                adminNotificationSent[notifId] = true;
+                showAlert('⚠️ Otvorena smena!\n\n' + user + ' ima smenu otvorenu ' + hours + 'h!\nPočetak: ' + start.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}) + '\n\nMožete je zatvoriti u: Osoblje → 🔒 Zatvori Smenu');
+                console.log('⚠️ Admin notifikacija: ' + user + ' ima otvorenu smenu ' + hours + 'h');
+                
+                // Pošalji email adminu ako je podešeno
+                if (typeof sendShiftReportEmail === 'function' && DB.settings && DB.settings.reportEmails) {
+                    sendOpenShiftNotification(user, wd, hours);
+                }
+            }
+        });
+    }
+}
+
+async function sendOpenShiftNotification(username, workday, hours) {
+    var settings = DB.settings || {};
+    var serviceId = settings.emailjsServiceId || '';
+    var templateId = settings.emailjsTemplateId || '';
+    var publicKey = settings.emailjsPublicKey || '';
+    var recipients = settings.reportEmails || '';
+    
+    if (!serviceId || !templateId || !publicKey || !recipients) return;
+    
+    if (typeof emailjs === 'undefined') return;
+    emailjs.init(publicKey);
+    
+    var startTime = new Date(workday.startTime);
+    var restName = settings.name || 'Restaurant POS';
+    
+    var emailList = recipients.split(',').map(function(e) { return e.trim(); }).filter(function(e) { return e.includes('@'); });
+    
+    for (var i = 0; i < emailList.length; i++) {
+        try {
+            await emailjs.send(serviceId, templateId, {
+                to_email: emailList[i],
+                waiter_name: username,
+                date: new Date().toLocaleDateString('sr-RS'),
+                restaurant_name: restName,
+                report_text: '⚠️ UPOZORENJE: NEZATVORENA SMENA\n\n' +
+                    'Konobar: ' + username + '\n' +
+                    'Početak smene: ' + startTime.toLocaleString('sr-RS') + '\n' +
+                    'Trajanje: ' + hours + ' sati\n\n' +
+                    'Ova smena nije zatvorena! Ulogujte se kao admin i zatvorite je ručno.\n' +
+                    'Osoblje → 🔒 Zatvori Smenu za ' + username,
+                total_revenue: '0',
+                cash: '0',
+                card: '0',
+                order_count: '0',
+                final_cash: '0',
+                salary: '0'
+            });
+            console.log('📧 Notifikacija o otvorenoj smeni poslata na: ' + emailList[i]);
+        } catch (err) {
+            console.error('📧 Greška pri slanju notifikacije:', err);
+        }
+    }
+}
+
+
+// Pokreni proveru svakih 5 min
+var shiftReminderInterval = null;
+function startShiftReminders() {
+    if (shiftReminderInterval) clearInterval(shiftReminderInterval);
+    shiftReminderInterval = setInterval(checkShiftReminders, 5 * 60 * 1000);
+    // Prva provera posle 1min (da se app učita)
+    setTimeout(checkShiftReminders, 60000);
+}
+

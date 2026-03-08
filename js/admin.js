@@ -81,6 +81,7 @@ function renderUsers(c) {
                         <button class="btn" style="width:auto;padding:8px 16px;background:#E94560" onclick="deleteWaiter('${w.username}')">🗑️ Obriši</button>
                     </div>
                 </div>
+                ${isActive ? `<div style="margin-top:8px"><button class="btn" style="width:100%;background:#FF9800;padding:10px" onclick="adminCloseShift('${w.username}')">🔒 Zatvori Smenu za ${w.username}</button></div>` : ''}
             </div>`;
         });
     }
@@ -710,6 +711,8 @@ function renderSettings(c) {
             
             ${typeof renderEmailSettings === 'function' ? renderEmailSettings() : ''}
             
+            ${typeof renderGeoSettings === 'function' ? renderGeoSettings() : ''}
+            
             <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
             
             <div style="border-top:3px solid #FF9800;margin:32px 0;padding-top:24px">
@@ -1182,5 +1185,42 @@ function resetAllData() {
             }
         });
     });
+}
+
+
+// ============================================
+// ADMIN: RUČNO ZATVARANJE TUĐE SMENE
+// ============================================
+function adminCloseShift(username) {
+    if (!DB.currentUser || DB.currentUser.role !== 'admin') {
+        showAlert('❌ Samo admin može da zatvori tuđu smenu!');
+        return;
+    }
+    
+    var myWorkday = DB.workdays && DB.workdays[username];
+    if (!myWorkday) {
+        showAlert('❌ ' + username + ' nema otvorenu smenu');
+        return;
+    }
+    
+    var startTime = new Date(myWorkday.startTime);
+    var startStr = startTime.toLocaleString('sr-RS', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    
+    showConfirm('🔒 Zatvori Smenu', 
+        'Konobar: ' + username + '\nPočetak: ' + startStr + '\nDepozit: ' + (myWorkday.deposit || 0) + ' din\n\nDa li ste sigurni da želite da zatvorite ovu smenu?',
+        function(confirmed) {
+            if (!confirmed) return;
+            
+            // Koristi autoCloseWorkday jer ne zahteva da smo ulogovani kao taj konobar
+            if (typeof autoCloseWorkday === 'function') {
+                autoCloseWorkday(username, myWorkday);
+                save();
+                render();
+                showAlert('✅ Smena za ' + username + ' zatvorena!');
+            } else {
+                showAlert('❌ Greška: funkcija za zatvaranje nije dostupna');
+            }
+        }
+    );
 }
 

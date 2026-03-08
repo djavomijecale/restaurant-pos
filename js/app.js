@@ -48,6 +48,16 @@ async function initApp() {
         // Start auto-refresh
         startAutoRefresh();
         
+        // 📍 Start geo tracking ako je aktivno
+        if (typeof startGeoTracking === 'function') {
+            startGeoTracking();
+        }
+        
+        // ⏰ Start shift reminders
+        if (typeof startShiftReminders === 'function') {
+            startShiftReminders();
+        }
+        
         // Initial render
         render();
         

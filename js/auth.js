@@ -101,6 +101,28 @@ async function loginWaiter() {
         // Prikaži loading
         document.getElementById('content').innerHTML = `
             <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
+                <div style="font-size:64px;margin-bottom:20px">📍</div>
+                <h2 style="color:#E94560">Prijavljivanje...</h2>
+                <p style="color:#B0B0B0">Proveravam lokaciju...</p>
+            </div>
+        `;
+        
+        // 📍 GPS PROVERA - samo za konobare i kuvare
+        if (typeof checkUserLocation === 'function' && typeof isGeoEnabled === 'function' && isGeoEnabled()) {
+            DB.currentUser = {username: user.username, role: user.role};
+            var geoResult = await checkUserLocation();
+            if (!geoResult.allowed) {
+                DB.currentUser = null;
+                localStorage.removeItem('currentUser');
+                showAlert('📍 Pristup odbijen!\n\n' + geoResult.message);
+                page = 'login';
+                render();
+                return;
+            }
+        }
+        
+        document.getElementById('content').innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh">
                 <div style="font-size:64px;margin-bottom:20px">🔄</div>
                 <h2 style="color:#E94560">Prijavljivanje...</h2>
                 <p style="color:#B0B0B0">Proveravam status radnog dana...</p>
@@ -153,6 +175,12 @@ async function loginWaiter() {
                 page = 'tables';
             }
         }
+        
+        // 📍 Pokreni geo tracking
+        if (typeof startGeoTracking === 'function') {
+            startGeoTracking();
+        }
+        
         render();
     } else {
         showAlert('Pogrešna šifra');
