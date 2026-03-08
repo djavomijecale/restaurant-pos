@@ -411,6 +411,11 @@ function closeWorkday() {
         console.log(`🎁 BONUS OSTVAREN! ${myWorkday.user}: ${bonusAmount} din (${bonusReason})`);
     }
     
+    // Dodaj bonus u finalReport za email
+    finalReport.bonusEarned = bonusEarned;
+    finalReport.bonusAmount = bonusAmount;
+    finalReport.bonusReason = bonusReason;
+    
     console.log(`💰 PLATA: ${myWorkday.user}: ${salary} din (${(duration/60).toFixed(2)} sati × ${hourlyRate} din/sat)`);
     
     if (deposit > 0) {
@@ -464,6 +469,11 @@ function closeWorkday() {
     removeWorkday(username);
     console.log('✅ Workday zatvoren za:', username);
     save();
+    
+    // 📧 Pošalji izveštaj na email
+    if (typeof sendShiftReportEmail === 'function') {
+        sendShiftReportEmail(finalReport);
+    }
     
     page = 'finalreport';
     render();

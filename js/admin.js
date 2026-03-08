@@ -708,6 +708,8 @@ function renderSettings(c) {
             
             ${typeof renderEfakturaSettings === 'function' ? renderEfakturaSettings() : ''}
             
+            ${typeof renderEmailSettings === 'function' ? renderEmailSettings() : ''}
+            
             <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
             
             <div style="border-top:3px solid #FF9800;margin:32px 0;padding-top:24px">
