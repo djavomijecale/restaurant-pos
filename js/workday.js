@@ -312,9 +312,16 @@ function closeWorkday() {
         o.time >= myWorkday.startTime && 
         o.createdBy === username
     );
-    const totalRevenue = dayOrders.reduce((s,o)=>s+o.tot,0);
-    const cash = dayOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
-    const card = dayOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+    
+    // Pravi promet - BEZ vraćenih dugova (dugovi nisu otkucani promet)
+    const realOrders = dayOrders.filter(o => !o.isDebtPayment);
+    const totalRevenue = realOrders.reduce((s,o)=>s+o.tot,0);
+    const cash = realOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
+    const card = realOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+    
+    // Vraćeni dugovi - odvojeno (novac je u kasi ali nije promet)
+    const debtOrders = dayOrders.filter(o => o.isDebtPayment);
+    const debtCash = debtOrders.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
     
     // SMANJENJA KEŠA - oduzmi od keša
     const cashReductions = myWorkday.cashReductions || [];
@@ -322,8 +329,8 @@ function closeWorkday() {
     
     // DEPOZIT - dodaj na ukupan učinak
     const deposit = myWorkday.deposit || 0;
-    const finalCash = deposit + cash - totalCashReductions; // Stvarno stanje kase: depozit + keš prihod - smanjenja
-    const totalPerformance = totalRevenue + deposit; // Ukupan učinak = otkucano + depozit
+    const finalCash = deposit + cash + debtCash - totalCashReductions; // Keš u kasi: depozit + keš + vraćeni dugovi keš - smanjenja
+    const totalPerformance = totalRevenue + deposit; // Ukupan učinak = otkucano + depozit (bez dugova)
     
     const endTime = new Date().toISOString();
     const startTime = new Date(myWorkday.startTime);
@@ -348,7 +355,7 @@ function closeWorkday() {
         totalCashReductions: totalCashReductions,
         finalCash: finalCash,
         cardRevenue: card,
-        orderCount: dayOrders.length,
+        orderCount: realOrders.length,
         duration: duration,
         salary: salary,
         hourlyRate: hourlyRate
@@ -417,7 +424,7 @@ function closeWorkday() {
         loginTime: myWorkday.startTime,
         logoutTime: endTime,
         duration: duration,
-        orderCount: dayOrders.length,
+        orderCount: realOrders.length,
         revenue: totalRevenue,
         deposit: deposit,
         totalPerformance: totalPerformance,
@@ -540,15 +547,17 @@ function autoCloseWorkday(username, myWorkday) {
         o.time <= endTimeISO &&
         o.createdBy === username
     );
-    const totalRevenue = dayOrders.reduce((s, o) => s + o.tot, 0);
-    const cash = dayOrders.filter(o => o.method === 'Cash').reduce((s, o) => s + o.tot, 0);
-    const card = dayOrders.filter(o => o.method === 'Card').reduce((s, o) => s + o.tot, 0);
+    const realOrders = dayOrders.filter(o => !o.isDebtPayment);
+    const totalRevenue = realOrders.reduce((s, o) => s + o.tot, 0);
+    const cash = realOrders.filter(o => o.method === 'Cash').reduce((s, o) => s + o.tot, 0);
+    const card = realOrders.filter(o => o.method === 'Card').reduce((s, o) => s + o.tot, 0);
+    const debtCash = dayOrders.filter(o => o.isDebtPayment && o.method === 'Cash').reduce((s, o) => s + o.tot, 0);
     
     const cashReductions = myWorkday.cashReductions || [];
     const totalCashReductions = cashReductions.reduce((sum, r) => sum + r.amount, 0);
     
     const deposit = myWorkday.deposit || 0;
-    const finalCash = deposit + cash - totalCashReductions;
+    const finalCash = deposit + cash + debtCash - totalCashReductions;
     const totalPerformance = totalRevenue + deposit;
     
     // Plata
@@ -593,7 +602,7 @@ function autoCloseWorkday(username, myWorkday) {
         loginTime: myWorkday.startTime,
         logoutTime: endTimeISO,
         duration: durationMin,
-        orderCount: dayOrders.length,
+        orderCount: realOrders.length,
         revenue: totalRevenue,
         deposit: deposit,
         totalPerformance: totalPerformance,

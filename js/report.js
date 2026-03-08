@@ -558,10 +558,10 @@ function renderReport(c) {
     const cash = ords.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
     const card = ords.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
     
-    // Grupisanje po konobarima (samo za admina)
+    // Grupisanje po konobarima (samo za admina) - BEZ vraćenih dugova
     const ordersByUser = {};
     if (!isWaiter) {
-        ords.forEach(order => {
+        ords.filter(o => !o.isDebtPayment).forEach(order => {
             const user = order.createdBy || 'Nepoznato';
             if(!ordersByUser[user]) ordersByUser[user] = {count: 0, revenue: 0};
             ordersByUser[user].count++;
@@ -591,22 +591,27 @@ function renderReport(c) {
     // ===== 2. NAČINI PLAĆANJA =====
     const debtPayments = ords.filter(o => o.isDebtPayment);
     const debtTotal = debtPayments.reduce((s,o) => s + o.tot, 0);
-    const regularRev = rev - debtTotal;
-    const regularCash = ords.filter(o => o.method==='Cash' && !o.isDebtPayment).reduce((s,o) => s + o.tot, 0);
-    const regularCard = ords.filter(o => o.method==='Card' && !o.isDebtPayment).reduce((s,o) => s + o.tot, 0);
+    const debtCash = debtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
+    const debtCard = debtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+    
+    // Pravi promet - BEZ vraćenih dugova
+    const realOrds = ords.filter(o => !o.isDebtPayment);
+    const realRev = realOrds.reduce((s,o) => s + o.tot, 0);
+    const realCash = realOrds.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
+    const realCard = realOrds.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
     
     h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
         <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
         <div style="display:flex;gap:16px">
             <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
                 <div style="font-size:32px">💵</div>
-                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${cash.toFixed(0)} din.</div>
-                <div style="color:#B0B0B0;font-size:12px">Cash (${rev>0?Math.round(cash/rev*100):0}%)</div>
+                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${realCash.toFixed(0)} din.</div>
+                <div style="color:#B0B0B0;font-size:12px">Cash (${realRev>0?Math.round(realCash/realRev*100):0}%)</div>
             </div>
             <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
                 <div style="font-size:32px">💳</div>
-                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${card.toFixed(0)} din.</div>
-                <div style="color:#B0B0B0;font-size:12px">Card (${rev>0?Math.round(card/rev*100):0}%)</div>
+                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${realCard.toFixed(0)} din.</div>
+                <div style="color:#B0B0B0;font-size:12px">Card (${realRev>0?Math.round(realCard/realRev*100):0}%)</div>
             </div>
         </div>`;
     
@@ -621,7 +626,7 @@ function renderReport(c) {
                 <span style="color:#FF9800;font-weight:bold;font-size:16px">+${debtTotal.toFixed(0)} din.</span>
             </div>
             <div style="color:#888;font-size:12px;margin-top:4px">
-                Uračunato u ukupan prihod${regularRev > 0 ? ' · Bez dugova: ' + regularRev.toFixed(0) + ' din.' : ''}
+                Nije uračunato u prihod${debtCash > 0 ? ' · Keš: ' + debtCash.toFixed(0) : ''}${debtCard > 0 ? ' · Kartica: ' + debtCard.toFixed(0) : ''}
             </div>
         </div>`;
     }
@@ -666,16 +671,16 @@ function renderReport(c) {
     h += `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:20px 0">
         <div class="stat-card">
             <div class="stat-label">${isWaiter ? 'Moj prihod' : 'Ukupan prihod'}</div>
-            <div class="stat-value">${rev.toFixed(0)}</div>
+            <div class="stat-value">${realRev.toFixed(0)}</div>
             <div class="stat-label">din.</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">${isWaiter ? 'Moje narudžbine' : 'Narudžbi danas'}</div>
-            <div class="stat-value" style="color:#E94560">${ords.length}</div>
+            <div class="stat-value" style="color:#E94560">${realOrds.length}</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Prosečan račun</div>
-            <div class="stat-value" style="color:#4CAF50">${ords.length > 0 ? (rev/ords.length).toFixed(0) : 0}</div>
+            <div class="stat-value" style="color:#4CAF50">${realOrds.length > 0 ? (realRev/realOrds.length).toFixed(0) : 0}</div>
             <div class="stat-label">din.</div>
         </div>
     </div>`;
