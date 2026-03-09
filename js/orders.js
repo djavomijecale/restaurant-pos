@@ -639,10 +639,17 @@ function renderReceipt(c) {
         </div>
         <hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">
         <div style="display:flex;justify-content:space-between"><span>Plaćanje:</span><span>${o.method==='Cash'?'💵':o.method==='Wire'?'🏦':'💳'} ${o.method==='Wire'?'Prenos':o.method}</span></div>
-        ${o.octoposSent ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#4CAF50"><span>🧾 Fiskalni račun:</span><span>✅ Poslat</span></div>' : (o.octoposRequested ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#FF9800"><span>🧾 Fiskalni račun:</span><span>⏳ Šalje se...</span></div>' : (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#888"><span>🧾 Fiskalni račun:</span><span>— Nije tražen</span></div>' : ''))}
+        ${o.octoposSent ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#4CAF50"><span>🧾 Fiskalni račun:</span><span>✅ #' + (o.octoposId || '') + '</span></div>' : (o.octoposRequested ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#FF9800"><span>🧾 Fiskalni račun:</span><span>⏳ Šalje se...</span></div>' : (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#888"><span>🧾 Fiskalni račun:</span><span>— Nije tražen</span></div>' : ''))}
     </div>
-    <button class="btn" style="max-width:400px;margin:24px auto 0" onclick="newOrder()">Nazad na Stolove</button>
+    ${o.fiscalReceipt ? '<button class="btn" style="max-width:400px;margin:16px auto 0;background:#00BCD4" onclick="showFiscalReceipt(' + o.id + ')">🧾 Prikaži Fiskalni Račun</button>' : ''}
+    <button class="btn" style="max-width:400px;margin:16px auto 0" onclick="newOrder()">Nazad na Stolove</button>
 </div>`;
+    
+    // Ako se fiskalni račun još šalje, proveri ponovo za 2 sekunde
+    if (o.octoposRequested && !o.octoposSent) {
+        setTimeout(function() { if (page === 'receipt') render(); }, 2000);
+    }
+    
     c.innerHTML = h;
 }
 
@@ -654,6 +661,43 @@ function newOrder() {
     window._lastPayMethodForOcto = null;
     page = 'tables';
     render();
+}
+
+
+function showFiscalReceipt(orderId) {
+    var order = DB.orders.find(function(o) { return o.id === orderId; });
+    if (!order || !order.fiscalReceipt) {
+        showAlert('❌ Fiskalni račun nije dostupan za ovu narudžbinu');
+        return;
+    }
+    
+    var receipt = order.fiscalReceipt;
+    var text = '';
+    
+    // Ako je string (tekstualni prikaz)
+    if (typeof receipt === 'string') {
+        text = receipt;
+    }
+    // Ako je objekat sa TextualRepresentation
+    else if (receipt.TextualRepresentation) {
+        text = receipt.TextualRepresentation;
+    }
+    // Ako je objekat sa Data.TextualRepresentation
+    else if (receipt.Data && receipt.Data.TextualRepresentation) {
+        text = receipt.Data.TextualRepresentation;
+    }
+    // Fallback: JSON prikaz
+    else {
+        text = JSON.stringify(receipt, null, 2);
+    }
+    
+    var h = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="this.remove()">';
+    h += '<div onclick="event.stopPropagation()" style="background:#FFF;color:#000;padding:20px;border-radius:8px;max-width:420px;width:100%;max-height:80vh;overflow-y:auto;font-family:monospace;font-size:12px;white-space:pre-wrap;line-height:1.4">';
+    h += '<div style="text-align:right;margin-bottom:8px"><button onclick="this.parentElement.parentElement.remove()" style="background:#E94560;color:#FFF;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:14px">✕ Zatvori</button></div>';
+    h += text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    h += '</div></div>';
+    
+    document.body.insertAdjacentHTML('beforeend', h);
 }
 
 

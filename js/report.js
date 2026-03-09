@@ -1200,6 +1200,17 @@ function toggleOrderDetails(orderId) {
         if(detailsDiv.style.display === 'none') {
             detailsDiv.style.display = 'block';
             arrowDiv.textContent = '▲';
+            
+            // Dodaj dugme za fiskalni račun ako postoji i još nije dodato
+            var order = DB.orders.find(function(o) { return o.id === orderId; });
+            if (order && order.octoposSent && !document.getElementById('fiscalBtn_' + orderId)) {
+                var btn = document.createElement('button');
+                btn.id = 'fiscalBtn_' + orderId;
+                btn.innerHTML = '🧾 Prikaži Fiskalni Račun';
+                btn.style.cssText = 'width:100%;margin-top:8px;padding:8px;background:#00BCD4;color:#FFF;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold';
+                btn.onclick = function(e) { e.stopPropagation(); showFiscalReceipt(orderId); };
+                detailsDiv.appendChild(btn);
+            }
         } else {
             detailsDiv.style.display = 'none';
             arrowDiv.textContent = '▼';
