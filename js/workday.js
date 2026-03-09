@@ -318,6 +318,7 @@ function closeWorkday() {
     const totalRevenue = realOrders.reduce((s,o)=>s+o.tot,0);
     const cash = realOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+o.tot,0);
     const card = realOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+o.tot,0);
+    const wire = realOrders.filter(o=>o.method==='Wire').reduce((s,o)=>s+o.tot,0);
     
     // Vraćeni dugovi - odvojeno (novac je u kasi ali nije promet)
     const debtOrders = dayOrders.filter(o => o.isDebtPayment);
@@ -355,6 +356,7 @@ function closeWorkday() {
         totalCashReductions: totalCashReductions,
         finalCash: finalCash,
         cardRevenue: card,
+        wireRevenue: wire,
         orderCount: realOrders.length,
         duration: duration,
         salary: salary,
@@ -561,6 +563,7 @@ function autoCloseWorkday(username, myWorkday) {
     const totalRevenue = realOrders.reduce((s, o) => s + o.tot, 0);
     const cash = realOrders.filter(o => o.method === 'Cash').reduce((s, o) => s + o.tot, 0);
     const card = realOrders.filter(o => o.method === 'Card').reduce((s, o) => s + o.tot, 0);
+    const wire = realOrders.filter(o => o.method === 'Wire').reduce((s, o) => s + o.tot, 0);
     const debtCash = dayOrders.filter(o => o.isDebtPayment && o.method === 'Cash').reduce((s, o) => s + o.tot, 0);
     
     const cashReductions = myWorkday.cashReductions || [];

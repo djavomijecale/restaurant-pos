@@ -592,27 +592,33 @@ function renderReport(c) {
     const debtPayments = ords.filter(o => o.isDebtPayment);
     const debtTotal = debtPayments.reduce((s,o) => s + o.tot, 0);
     const debtCash = debtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
-    const debtCard = debtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+    const debtCard = debtPayments.filter(o => o.method === 'Card' || o.method === 'Wire').reduce((s,o) => s + o.tot, 0);
     
     // Pravi promet - BEZ vraćenih dugova
     const realOrds = ords.filter(o => !o.isDebtPayment);
     const realRev = realOrds.reduce((s,o) => s + o.tot, 0);
     const realCash = realOrds.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
     const realCard = realOrds.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+    const realWire = realOrds.filter(o => o.method === 'Wire').reduce((s,o) => s + o.tot, 0);
     
     h += `<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
         <h3 style="color:#E94560;margin-bottom:16px">💰 Načini Plaćanja</h3>
-        <div style="display:flex;gap:16px">
-            <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:90px;background:#16213E;padding:16px;border-radius:8px;text-align:center">
                 <div style="font-size:32px">💵</div>
                 <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${realCash.toFixed(0)} din.</div>
                 <div style="color:#B0B0B0;font-size:12px">Cash (${realRev>0?Math.round(realCash/realRev*100):0}%)</div>
             </div>
-            <div style="flex:1;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+            <div style="flex:1;min-width:90px;background:#16213E;padding:16px;border-radius:8px;text-align:center">
                 <div style="font-size:32px">💳</div>
                 <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${realCard.toFixed(0)} din.</div>
                 <div style="color:#B0B0B0;font-size:12px">Card (${realRev>0?Math.round(realCard/realRev*100):0}%)</div>
             </div>
+            ${realWire > 0 ? `<div style="flex:1;min-width:90px;background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                <div style="font-size:32px">🏦</div>
+                <div style="color:#FFD700;font-size:20px;font-weight:bold;margin:8px 0">${realWire.toFixed(0)} din.</div>
+                <div style="color:#B0B0B0;font-size:12px">Prenos (${realRev>0?Math.round(realWire/realRev*100):0}%)</div>
+            </div>` : ''}
         </div>`;
     
     // Debt payments info
@@ -897,11 +903,12 @@ function renderReport(c) {
         const totalDailyOrders = allTodayOrders.filter(o => !o.isDebtPayment).length;
         const totalDailyCash = allTodayOrders.filter(o=>o.method==='Cash' && !o.isDebtPayment).reduce((s,o)=>s+o.tot,0);
         const totalDailyCard = allTodayOrders.filter(o=>o.method==='Card' && !o.isDebtPayment).reduce((s,o)=>s+o.tot,0);
+        const totalDailyWire = allTodayOrders.filter(o=>o.method==='Wire' && !o.isDebtPayment).reduce((s,o)=>s+o.tot,0);
         
         // Vraćeni dugovi - odvojeno od otkucanog
         const dailyDebtPayments = allTodayOrders.filter(o => o.isDebtPayment);
         const dailyDebtCash = dailyDebtPayments.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
-        const dailyDebtCard = dailyDebtPayments.filter(o => o.method === 'Card').reduce((s,o) => s + o.tot, 0);
+        const dailyDebtCard = dailyDebtPayments.filter(o => o.method === 'Card' || o.method === 'Wire').reduce((s,o) => s + o.tot, 0);
         const dailyDebtTotal = dailyDebtPayments.reduce((s,o) => s + o.tot, 0);
         
         // Izračunaj depozit i smanjenja keša za ovaj radni dan
@@ -979,6 +986,12 @@ function renderReport(c) {
                     <div style="color:#FFD700;font-size:22px;font-weight:bold;margin:8px 0">${(totalDailyCard + dailyDebtCard).toFixed(0)} din.</div>
                     <div style="color:#B0B0B0;font-size:11px">Kartice${dailyDebtCard > 0 ? ' (sa dugovima)' : ''}</div>
                 </div>
+                ${totalDailyWire > 0 ? `<div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                    <div style="font-size:24px">🏦</div>
+                    <div style="color:transparent;font-size:10px;margin-top:4px">-</div>
+                    <div style="color:#FFD700;font-size:22px;font-weight:bold;margin:8px 0">${totalDailyWire.toFixed(0)} din.</div>
+                    <div style="color:#B0B0B0;font-size:11px">Prenos na račun</div>
+                </div>` : ''}
             </div>
             
             <div style="background:#16213E;padding:16px;border-radius:8px">

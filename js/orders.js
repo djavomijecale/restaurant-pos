@@ -443,6 +443,17 @@ function proceedToPayment(tableNum) {
 function renderPayment(c) {
     const table = DB.tables.find(t=>t.num===DB.selectedTable);
     
+    // Postavi default za fiskalni toggle na osnovu admin podešavanja
+    if (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled) {
+        if (window._lastPayMethodForOcto !== payMethod) {
+            window._lastPayMethodForOcto = payMethod;
+            if (payMethod === 'Card') window.octoposSendThis = OCTOPOS_CONFIG.autoSendCard !== false;
+            else if (payMethod === 'Wire') window.octoposSendThis = !!DB.settings.octoposAutoWire;
+            else if (payMethod === 'Cash') window.octoposSendThis = !!OCTOPOS_CONFIG.autoSendCash;
+            else window.octoposSendThis = false;
+        }
+    }
+    
     const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
     const currentUsername = DB.currentUser ? DB.currentUser.username : null;
     
@@ -495,8 +506,19 @@ function renderPayment(c) {
             <div class="payment-option ${payMethod==='Card'?'selected':''}" onclick="payMethod='Card';render()">
                 <div style="font-size:48px">💳</div><h3>Card</h3>
             </div>
+            <div class="payment-option ${payMethod==='Wire'?'selected':''}" onclick="payMethod='Wire';render()">
+                <div style="font-size:48px">🏦</div><h3>Prenos</h3>
+            </div>
         </div>
-        <button class="btn" style="margin-top:24px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>
+        ${typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? `
+        <div onclick="window.octoposSendThis=!window.octoposSendThis;render()" style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px;padding:12px;background:#16213E;border-radius:8px;cursor:pointer;border:2px solid ${window.octoposSendThis ? '#4CAF50' : '#2A2A4A'}">
+            <div style="width:40px;height:22px;border-radius:11px;background:${window.octoposSendThis ? '#4CAF50' : '#555'};position:relative;transition:0.3s">
+                <div style="position:absolute;top:2px;${window.octoposSendThis ? 'right:2px' : 'left:2px'};width:18px;height:18px;border-radius:50%;background:white;transition:0.3s"></div>
+            </div>
+            <span style="color:${window.octoposSendThis ? '#4CAF50' : '#888'};font-weight:bold;font-size:14px">🧾 Fiskalni račun</span>
+        </div>
+        ` : ''}
+        <button class="btn" style="margin-top:16px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>
         <div style="display:flex;gap:12px;margin-top:12px">
             <button class="btn" style="flex:1;background:#E94560" onclick="showDebtModal()">📝 Zapiši na Dug</button>
             <button class="btn" style="flex:1;background:#FF9800" onclick="showHouseModal()">🏠 Kuća</button>
@@ -550,9 +572,10 @@ function confirmPay() {
     
     DB.orders.push(newOrder);
     
-    // 🧾 OCTOPOS INTEGRACIJA - automatski pošalji fiskalni račun
-    if (typeof sendToOctopos === 'function' && OCTOPOS_CONFIG && OCTOPOS_CONFIG.enabled) {
-        sendToOctopos(newOrder).then(result => {
+    // 🧾 OCTOPOS INTEGRACIJA - pošalji fiskalni račun ako je konobar uključio toggle
+    if (typeof sendToOctopos === 'function' && OCTOPOS_CONFIG && OCTOPOS_CONFIG.enabled && window.octoposSendThis) {
+        newOrder.octoposRequested = true;
+        sendToOctopos(newOrder, true).then(result => {
             if (result.success) {
                 console.log('✅ OctoPOS fiskalni račun kreiran:', result.receiptId);
                 // Ažuriraj order sa OctoPOS ID-jem
@@ -615,8 +638,8 @@ function renderReceipt(c) {
             <span>UKUPNO:</span><span style="color:#FFD700">${o.tot.toFixed(0)} din.</span>
         </div>
         <hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">
-        <div style="display:flex;justify-content:space-between"><span>Plaćanje:</span><span>${o.method==='Cash'?'💵':'💳'} ${o.method}</span></div>
-        ${o.octoposSent ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#4CAF50"><span>🧾 Fiskalni račun:</span><span>✅ Poslat na OctoPOS</span></div>' : (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#FF9800"><span>🧾 Fiskalni račun:</span><span>⏳ Šalje se...</span></div>' : '')}
+        <div style="display:flex;justify-content:space-between"><span>Plaćanje:</span><span>${o.method==='Cash'?'💵':o.method==='Wire'?'🏦':'💳'} ${o.method==='Wire'?'Prenos':o.method}</span></div>
+        ${o.octoposSent ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#4CAF50"><span>🧾 Fiskalni račun:</span><span>✅ Poslat</span></div>' : (o.octoposRequested ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#FF9800"><span>🧾 Fiskalni račun:</span><span>⏳ Šalje se...</span></div>' : (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#888"><span>🧾 Fiskalni račun:</span><span>— Nije tražen</span></div>' : ''))}
     </div>
     <button class="btn" style="max-width:400px;margin:24px auto 0" onclick="newOrder()">Nazad na Stolove</button>
 </div>`;
@@ -627,6 +650,8 @@ function renderReceipt(c) {
 function newOrder() {
     DB.selectedTable = null;
     payMethod = '';
+    window.octoposSendThis = false;
+    window._lastPayMethodForOcto = null;
     page = 'tables';
     render();
 }

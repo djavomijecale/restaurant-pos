@@ -26,6 +26,9 @@ function buildShiftReportText(report) {
     lines.push('Ukupan prihod: ' + (report.totalRevenue || 0).toLocaleString('sr-RS') + ' din');
     lines.push('  💵 Keš: ' + (report.cashRevenue || 0).toLocaleString('sr-RS') + ' din');
     lines.push('  💳 Kartica: ' + (report.cardRevenue || 0).toLocaleString('sr-RS') + ' din');
+    if (report.wireRevenue > 0) {
+        lines.push('  🏦 Prenos: ' + (report.wireRevenue || 0).toLocaleString('sr-RS') + ' din');
+    }
     lines.push('Broj narudžbina: ' + (report.orderCount || 0));
     lines.push('');
     

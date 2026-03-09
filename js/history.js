@@ -355,6 +355,7 @@ function renderHistorySessions(sessions) {
             );
             const sessionCash = sessionOrders.filter(o => o.method === 'Cash').reduce((sum, o) => sum + o.tot, 0);
             const sessionCard = sessionOrders.filter(o => o.method === 'Card').reduce((sum, o) => sum + o.tot, 0);
+            const sessionWire = sessionOrders.filter(o => o.method === 'Wire').reduce((sum, o) => sum + o.tot, 0);
             
             // BONUS INDIKATOR
             const bonusBadge = s.bonusEarned ? 
@@ -392,6 +393,7 @@ function renderHistorySessions(sessions) {
                             <div style="display:flex;gap:12px;margin-top:6px">
                                 <span style="color:#4CAF50;font-size:12px;font-weight:bold">💵 ${sessionCash.toFixed(0)} din</span>
                                 <span style="color:#2196F3;font-size:12px;font-weight:bold">💳 ${sessionCard.toFixed(0)} din</span>
+                                ${sessionWire > 0 ? '<span style="color:#9C27B0;font-size:12px;font-weight:bold">🏦 ' + sessionWire.toFixed(0) + ' din</span>' : ''}
                                 <span style="color:#888;font-size:12px">${sessionOrders.length} narudž.</span>
                             </div>
                             ${bonusBadge}${salaryBadge}${depositBadge}

@@ -37,50 +37,44 @@ const OCTOPOS_CONFIG = {
 // MAPIRANJE STAVKI IZ TVOJE APP → OCTOPOS FORMAT
 // ============================================
 function mapOrderToOctopos(order) {
-    const items = order.items.map(function(item, idx) {
-        // Koristi indeks artikla u meniju za stabilan Code
-        var menuIdx = DB.menu.findIndex(function(m) { return m.name === item.name; });
-        var code = OCTOPOS_CONFIG.productPrefix + (menuIdx >= 0 ? menuIdx : idx);
-        return {
-            ProductCode: code,
-            Name: item.name,
-            Quantity: item.qty,
-            UnitPrice: item.price,
-            TotalPrice: item.price * item.qty,
-            TaxRateLabel: item.taxLabel || String.fromCharCode(0x402) // Ђ = 20% PDV
-        };
-    });
-
-    if (order.disc > 0) {
+    // Koristi mapiranje iz DB.settings.octoposProductMap
+    // Format: { "Moj Artikal": "OCTO_CODE_123", ... }
+    var productMap = DB.settings.octoposProductMap || {};
+    
+    var items = [];
+    order.items.forEach(function(item) {
+        var octoCode = productMap[item.name];
+        if (!octoCode) {
+            console.warn('⚠️ OctoPOS: nema mapiranja za "' + item.name + '"');
+            return; // Preskoči nemapiran artikal
+        }
         items.push({
-            ProductCode: OCTOPOS_CONFIG.productPrefix + 'POPUST',
-            Name: 'Popust ' + (order.discountPercent || 0) + '%',
-            Quantity: 1,
-            UnitPrice: -order.disc,
-            TotalPrice: -order.disc,
-            TaxRateLabel: String.fromCharCode(0x402)
+            ProductCode: octoCode,
+            Quantity: item.qty
         });
-    }
-
-    // Mapiranje načina plaćanja na OctoPOS format
-    let paymentType;
+    });
+    
+    // FiscalPaymentType: 1=Cash, 2=Card, 4=WireTransfer
+    // Đorđe kaže: ako korisnik unosi podatke o kartici → WireTransfer(4)
+    // Za POS terminal kartice → CreditCard(2)
+    var fiscalPayment;
     switch (order.method) {
         case 'Card':
-            paymentType = 'Card'; // ili 'WireTransfer' zavisno od OctoPOS konfiguracije
+            fiscalPayment = 2; // CreditCard
+            break;
+        case 'Wire':
+            fiscalPayment = 4; // Wire transfer (Prenos na račun)
             break;
         case 'Cash':
         default:
-            paymentType = 'Cash';
+            fiscalPayment = 1; // Cash
             break;
     }
 
     return {
-        ExternalId: 'WPB_' + order.id, // Unique ID za tvoju app
         Items: items,
-        PaymentType: paymentType,
-        // Opciono: dodatne informacije
-        Note: `${order.tableName || 'Sto ' + order.table} | ${order.createdBy || 'Admin'}`,
-        // InvoiceType: 'Normal' // Normal, Proforma, Copy, Training
+        FiscalPaymentType: fiscalPayment,
+        Note: (order.tableName || 'Sto ' + order.table) + ' | ' + (order.createdBy || 'Admin')
     };
 }
 
@@ -135,7 +129,7 @@ async function octoposApiCall(method, endpoint, body) {
 }
 
 
-async function sendToOctopos(order) {
+async function sendToOctopos(order, skipAutoCheck) {
     if (!OCTOPOS_CONFIG.enabled) {
         console.log('⚠️ OctoPOS integracija nije aktivirana');
         return { success: false, error: 'OctoPOS nije aktiviran' };
@@ -146,47 +140,30 @@ async function sendToOctopos(order) {
         return { success: false, error: 'Nedostaje API URL ili Token. Podesi u Postavkama.' };
     }
 
-    // Proveri da li treba slati za ovaj tip plaćanja
-    if (order.method === 'Card' && !OCTOPOS_CONFIG.autoSendCard) {
-        console.log('ℹ️ OctoPOS: Auto-slanje za karticu je isključeno');
-        return { success: false, error: 'Auto-slanje za karticu isključeno' };
-    }
-    if (order.method === 'Cash' && !OCTOPOS_CONFIG.autoSendCash) {
-        console.log('ℹ️ OctoPOS: Auto-slanje za keš je isključeno');
-        return { success: false, error: 'Auto-slanje za keš isključeno' };
+    // Proveri auto-send podešavanja (preskoči ako je konobar ručno izabrao)
+    if (!skipAutoCheck) {
+        if (order.method === 'Card' && !OCTOPOS_CONFIG.autoSendCard) {
+            return { success: false, error: 'Auto-slanje za karticu isključeno' };
+        }
+        if (order.method === 'Cash' && !OCTOPOS_CONFIG.autoSendCash) {
+            return { success: false, error: 'Auto-slanje za keš isključeno' };
+        }
+        if (order.method === 'Wire' && !DB.settings.octoposAutoWire) {
+            return { success: false, error: 'Auto-slanje za prenos isključeno' };
+        }
     }
 
     const octoposData = mapOrderToOctopos(order);
 
+    if (octoposData.Items.length === 0) {
+        console.warn('⚠️ OctoPOS: nijedan artikal nije mapiran! Otvorite Postavke → OctoPOS → Mapiranje');
+        showAlert('⚠️ OctoPOS: Nijedan artikal nije mapiran na OctoPOS proizvod.\n\nOtvorite Postavke → OctoPOS → Povuci Proizvode');
+        return { success: false, error: 'Nema mapiranih artikala' };
+    }
+
     console.log('📤 Šaljem na OctoPOS:', JSON.stringify(octoposData, null, 2));
 
     try {
-        // ✅ Prvo kreiraj proizvode koji ne postoje
-        for (const item of octoposData.Items) {
-            if (item.ProductCode.includes('POPUST')) continue; // Skip discount
-            try {
-                const prodResult = await octoposApiCall('POST', '/product', {
-                    Code: item.ProductCode,
-                    Name: item.Name,
-                    Price: item.UnitPrice,
-                    Unit: 'kom',
-                    Active: true,
-                    IsForSale: true,
-                    TaxRateLabel: '\u0402'
-                });
-                if (prodResult.Success) {
-                    console.log('📦 Kreiran: ' + item.ProductCode + ' - ' + item.Name);
-                } else {
-                    console.log('📦 ' + item.ProductCode + ': ' + (prodResult.Errors || []).join(', '));
-                }
-            } catch (e) {
-                // Log but continue - might already exist or sandbox issue
-                console.log('📦 ' + item.ProductCode + ': ' + e.message.substring(0, 100));
-            }
-            await new Promise(function(r) { setTimeout(r, 150); });
-        }
-
-        // Sada pošalji narudžbinu
         const result = await octoposApiCall('POST', '/weborder', octoposData);
 
         if (result.Success) {
@@ -300,54 +277,131 @@ async function testOctoposConnection() {
 
 
 // ============================================
-// SINHRONIZACIJA MENIJA SA OCTOPOS
+// POVLAČENJE PROIZVODA IZ OCTOPOS-a
 // ============================================
-async function syncMenuToOctopos() {
-    if (!OCTOPOS_CONFIG.enabled || !OCTOPOS_CONFIG.apiUrl || !OCTOPOS_CONFIG.apiToken) {
+async function fetchOctoposProducts() {
+    if (!OCTOPOS_CONFIG.apiUrl || !OCTOPOS_CONFIG.apiToken) {
         showAlert('❌ OctoPOS nije konfigurisan');
         return;
     }
-
-    let synced = 0;
-    let errors = 0;
-    let lastError = '';
-
-    for (let i = 0; i < DB.menu.length; i++) {
-        const item = DB.menu[i];
-        try {
-            var code = OCTOPOS_CONFIG.productPrefix + i;
-            const productData = {
-                Code: code,
-                Name: item.name.substring(0, 100),
-                Price: parseFloat(item.price) || 0,
-                Active: true,
-                IsForSale: true,
-                TaxRateLabel: String.fromCharCode(0x402) // Ђ = 20% PDV
-            };
-
-            const result = await octoposApiCall('POST', '/product', productData);
-            
-            if (result.Success) {
-                synced++;
-            } else {
-                errors++;
-                lastError = (result.Errors || []).join(', ') || 'Nepoznata greška';
-                console.warn('⚠️ OctoPOS product error for ' + item.name + ':', lastError);
-            }
-            
-            // Pauza da ne pogodimo rate limit
-            await new Promise(r => setTimeout(r, 200));
-        } catch (e) {
-            errors++;
-            lastError = e.message;
-            console.error('❌ Greška za ' + item.name + ':', e.message);
+    
+    showAlert('🔄 Povlačim proizvode iz OctoPOS-a...');
+    
+    try {
+        var data = await octoposApiCall('GET', '/product?active=true&isForSale=true&pageSize=500');
+        
+        if (!data.Data || data.Data.length === 0) {
+            showAlert('⚠️ Nema proizvoda u OctoPOS-u (ili su svi neaktivni)');
+            return;
         }
+        
+        var products = data.Data;
+        DB.settings.octoposProducts = products.map(function(p) {
+            return { code: p.Code, name: p.Name, price: p.Price };
+        });
+        
+        // Auto-mapiranje po imenu
+        var autoMapped = 0;
+        if (!DB.settings.octoposProductMap) DB.settings.octoposProductMap = {};
+        
+        DB.menu.forEach(function(menuItem) {
+            if (DB.settings.octoposProductMap[menuItem.name]) return; // Već mapirano
+            
+            // Traži tačno poklapanje po imenu (case insensitive)
+            var match = products.find(function(p) {
+                return p.Name.toLowerCase().trim() === menuItem.name.toLowerCase().trim();
+            });
+            if (match) {
+                DB.settings.octoposProductMap[menuItem.name] = match.Code;
+                autoMapped++;
+            }
+        });
+        
+        save();
+        
+        var mapped = Object.keys(DB.settings.octoposProductMap).length;
+        var total = DB.menu.length;
+        
+        showAlert('✅ Povučeno ' + products.length + ' proizvoda!\n\n' +
+            '🔗 Auto-mapirano: ' + autoMapped + ' novih\n' +
+            '📊 Ukupno mapirano: ' + mapped + '/' + total + ' artikala\n\n' +
+            (mapped < total ? 'Kliknite "Mapiranje" da ručno povežete ostale.' : 'Sve je mapirano!'));
+        
+        render();
+        
+    } catch (e) {
+        showAlert('❌ Greška: ' + e.message);
     }
+}
 
-    let msg = 'Sinhronizacija menija:\n✅ ' + synced + ' stavki uspešno';
-    if (errors > 0) msg += '\n❌ ' + errors + ' grešaka';
-    if (lastError) msg += '\n\nPoslednja greška:\n' + lastError.substring(0, 150);
-    showAlert(msg);
+
+// ============================================
+// UI ZA RUČNO MAPIRANJE PROIZVODA
+// ============================================
+function showProductMapping() {
+    var octoProducts = DB.settings.octoposProducts || [];
+    var productMap = DB.settings.octoposProductMap || {};
+    
+    if (octoProducts.length === 0) {
+        showAlert('❌ Prvo povucite proizvode iz OctoPOS-a!');
+        return;
+    }
+    
+    var h = '<div style="max-height:70vh;overflow-y:auto;padding:8px">';
+    h += '<h3 style="color:#00BCD4;margin-bottom:12px">🔗 Mapiranje: Tvoj Meni → OctoPOS</h3>';
+    h += '<p style="color:#888;font-size:12px;margin-bottom:16px">Za svaki artikal izaberite odgovarajući OctoPOS proizvod</p>';
+    
+    DB.menu.forEach(function(item, idx) {
+        var currentCode = productMap[item.name] || '';
+        var currentProduct = octoProducts.find(function(p) { return p.code === currentCode; });
+        var statusColor = currentCode ? '#4CAF50' : '#E94560';
+        var statusIcon = currentCode ? '✅' : '❌';
+        
+        h += '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:6px;border-left:3px solid ' + statusColor + '">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">';
+        h += '<div style="flex:1;min-width:0">';
+        h += '<div style="color:#FFD700;font-size:13px;font-weight:bold">' + statusIcon + ' ' + item.name + '</div>';
+        h += '<div style="color:#888;font-size:11px">' + item.price + ' din</div>';
+        h += '</div>';
+        h += '<select id="octoMap_' + idx + '" onchange="updateProductMap(' + idx + ')" ' +
+             'style="flex:1;padding:6px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:12px;max-width:200px">';
+        h += '<option value="">-- Izaberi --</option>';
+        octoProducts.forEach(function(p) {
+            var selected = (p.code === currentCode) ? ' selected' : '';
+            h += '<option value="' + p.code + '"' + selected + '>' + p.name + ' (' + p.price + ' din)</option>';
+        });
+        h += '</select>';
+        h += '</div></div>';
+    });
+    
+    var mapped = Object.keys(productMap).length;
+    h += '<div style="margin-top:12px;text-align:center;color:#B0B0B0;font-size:12px">';
+    h += 'Mapirano: ' + mapped + '/' + DB.menu.length;
+    h += '</div>';
+    h += '</div>';
+    
+    showConfirm('🔗 Mapiranje Proizvoda', h, function(ok) {
+        if (ok) {
+            save();
+            showAlert('✅ Mapiranje sačuvano!');
+        }
+    });
+}
+
+function updateProductMap(menuIdx) {
+    var item = DB.menu[menuIdx];
+    if (!item) return;
+    
+    var select = document.getElementById('octoMap_' + menuIdx);
+    if (!select) return;
+    
+    if (!DB.settings.octoposProductMap) DB.settings.octoposProductMap = {};
+    
+    if (select.value) {
+        DB.settings.octoposProductMap[item.name] = select.value;
+    } else {
+        delete DB.settings.octoposProductMap[item.name];
+    }
 }
 
 
@@ -386,15 +440,8 @@ function renderOctoposSettings() {
             <label style="color:#E94560;font-weight:bold">API Token</label>
             <input type="password" id="octoposToken" value="${DB.settings.octoposApiToken || ''}" 
                    placeholder="Vaš OctoPOS API token">
-            <p style="color:#B0B0B0;font-size:11px;margin-top:2px;margin-bottom:12px">
-                💡 Token ste dobili na email od OctoPOS podrške (Đorđe Pandurović)
-            </p>
-            
-            <label style="color:#E94560;font-weight:bold">Prefix za proizvode</label>
-            <input type="text" id="octoposPrefix" value="${DB.settings.octoposProductPrefix || 'WPB_'}" 
-                   placeholder="WPB_" style="width:120px">
             <p style="color:#B0B0B0;font-size:11px;margin-top:2px;margin-bottom:16px">
-                💡 Prefix za identifikaciju vaših proizvoda u OctoPOS-u (npr. WPB_ za Wood Pizza Bar)
+                💡 Token ste dobili na email od OctoPOS podrške (Đorđe Pandurović)
             </p>
             
             <div style="background:#16213E;padding:16px;border-radius:8px;margin-bottom:16px">
@@ -410,6 +457,11 @@ function renderOctoposSettings() {
                                style="width:20px;height:20px">
                         💵 Keš
                     </label>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;color:#B0B0B0">
+                        <input type="checkbox" id="octoposAutoWire" ${DB.settings.octoposAutoWire ? 'checked' : ''} 
+                               style="width:20px;height:20px">
+                        🏦 Prenos
+                    </label>
                 </div>
                 <p style="color:#B0B0B0;font-size:11px;margin-top:8px">
                     Štikliraj za koji način plaćanja želiš automatski fiskalni račun
@@ -422,13 +474,28 @@ function renderOctoposSettings() {
             </div>
             
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-                <button class="btn btn-secondary" style="flex:1;min-width:140px;background:#FF9800" onclick="syncMenuToOctopos()">📋 Sync Meni</button>
+                <button class="btn btn-secondary" style="flex:1;min-width:140px;background:#FF9800" onclick="fetchOctoposProducts()">📦 Povuci Proizvode</button>
+                <button class="btn btn-secondary" style="flex:1;min-width:140px;background:#9C27B0" onclick="showProductMapping()">🔗 Mapiranje</button>
                 ${pendingCount > 0 ? `
                     <button class="btn btn-secondary" style="flex:1;min-width:140px;background:#E94560" onclick="retryPendingOctoposReceipts()">
                         🔄 Pošalji ponovo (${pendingCount})
                     </button>
                 ` : ''}
             </div>
+            
+            ${(() => {
+                var map = DB.settings.octoposProductMap || {};
+                var mapped = Object.keys(map).length;
+                var total = DB.menu.length;
+                var pct = total > 0 ? Math.round(mapped / total * 100) : 0;
+                var barColor = pct === 100 ? '#4CAF50' : (pct > 50 ? '#FF9800' : '#E94560');
+                return mapped > 0 ? '<div style="background:#16213E;padding:12px;border-radius:8px;margin-top:12px">' +
+                    '<div style="display:flex;justify-content:space-between;margin-bottom:6px">' +
+                    '<span style="color:#B0B0B0;font-size:12px">🔗 Mapirano proizvoda</span>' +
+                    '<span style="color:' + barColor + ';font-weight:bold;font-size:12px">' + mapped + '/' + total + ' (' + pct + '%)</span></div>' +
+                    '<div style="background:#2A2A4A;height:6px;border-radius:3px;overflow:hidden">' +
+                    '<div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:3px"></div></div></div>' : '';
+            })()}
             
             ${pendingCount > 0 ? `
                 <div style="background:#1a1a2e;border:1px solid #E94560;padding:12px;border-radius:8px;margin-top:12px">
@@ -448,9 +515,9 @@ function renderOctoposSettings() {
 function saveOctoposSettings() {
     DB.settings.octoposApiUrl = document.getElementById('octoposUrl').value.trim();
     DB.settings.octoposApiToken = document.getElementById('octoposToken').value.trim();
-    DB.settings.octoposProductPrefix = document.getElementById('octoposPrefix').value.trim() || 'WPB_';
     DB.settings.octoposAutoCard = document.getElementById('octoposAutoCard').checked;
     DB.settings.octoposAutoCash = document.getElementById('octoposAutoCash').checked;
+    DB.settings.octoposAutoWire = document.getElementById('octoposAutoWire').checked;
     
     save();
     showAlert('✅ OctoPOS podešavanja sačuvana!');

@@ -188,6 +188,9 @@ function proceedSplitPayment(tableNum) {
             <div id="splitCard" onclick="selectSplitPay('Card')" style="flex:1;background:#16213E;padding:24px;border-radius:12px;text-align:center;cursor:pointer;border:3px solid transparent">
                 <div style="font-size:48px">💳</div><h3>Card</h3>
             </div>
+            <div id="splitWire" onclick="selectSplitPay('Wire')" style="flex:1;background:#16213E;padding:24px;border-radius:12px;text-align:center;cursor:pointer;border:3px solid transparent">
+                <div style="font-size:48px">🏦</div><h3>Prenos</h3>
+            </div>
         </div>
         <button class="btn" style="margin-top:24px" id="splitConfirmBtn" disabled onclick="confirmSplitPay(${tableNum})">Potvrdi</button>
     </div>`;
@@ -199,6 +202,7 @@ function selectSplitPay(method) {
     splitPayMethod = method;
     document.getElementById('splitCash').style.borderColor = method === 'Cash' ? '#E94560' : 'transparent';
     document.getElementById('splitCard').style.borderColor = method === 'Card' ? '#E94560' : 'transparent';
+    document.getElementById('splitWire').style.borderColor = method === 'Wire' ? '#E94560' : 'transparent';
     document.getElementById('splitConfirmBtn').disabled = false;
 }
 
