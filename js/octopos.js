@@ -37,45 +37,45 @@ const OCTOPOS_CONFIG = {
 // MAPIRANJE STAVKI IZ TVOJE APP → OCTOPOS FORMAT
 // ============================================
 function mapOrderToOctopos(order) {
-    // Koristi mapiranje iz DB.settings.octoposProductMap
-    // Format: { "Moj Artikal": "OCTO_CODE_123", ... }
     var productMap = DB.settings.octoposProductMap || {};
+    var octoProducts = DB.settings.octoposProducts || [];
     
     var items = [];
     order.items.forEach(function(item) {
         var octoCode = productMap[item.name];
         if (!octoCode) {
             console.warn('⚠️ OctoPOS: nema mapiranja za "' + item.name + '"');
-            return; // Preskoči nemapiran artikal
+            return;
         }
+        var octoProd = octoProducts.find(function(p) { return p.code === octoCode; });
         items.push({
-            ProductCode: octoCode,
-            Quantity: item.qty
+            ProductId: octoProd ? octoProd.id : 0,
+            Quantity: item.qty,
+            Price: octoProd ? octoProd.price : item.price
         });
     });
     
-    // FiscalPaymentType: 1=Cash, 2=Card, 4=WireTransfer
-    // Đorđe kaže: ako korisnik unosi podatke o kartici → WireTransfer(4)
-    // Za POS terminal kartice → CreditCard(2)
+    // FiscalPaymentTypeId: 1=Cash, 2=Card, 4=WireTransfer
     var fiscalPayment;
     switch (order.method) {
-        case 'Card':
-            fiscalPayment = 2; // CreditCard
-            break;
-        case 'Wire':
-            fiscalPayment = 4; // Wire transfer (Prenos na račun)
-            break;
-        case 'Cash':
-        default:
-            fiscalPayment = 1; // Cash
-            break;
+        case 'Card': fiscalPayment = 2; break;
+        case 'Wire': fiscalPayment = 4; break;
+        default: fiscalPayment = 1; break;
     }
 
+    var totalAmount = items.reduce(function(sum, it) { return sum + it.Price * it.Quantity; }, 0);
+
     return {
+        ExternalId: 'WPB_' + order.id,
         Items: items,
         Payments: [{
-            PaymentType: fiscalPayment
+            Amount: totalAmount,
+            FiscalPaymentTypeId: fiscalPayment
         }],
+        FiscalReceiptData: {
+            ReturnTextualRepresentation: true,
+            LineWidth: 40
+        },
         Note: (order.tableName || 'Sto ' + order.table) + ' | ' + (order.createdBy || 'Admin')
     };
 }
@@ -299,7 +299,7 @@ async function fetchOctoposProducts() {
         
         var products = data.Data;
         DB.settings.octoposProducts = products.map(function(p) {
-            return { code: p.Code, name: p.Name, price: p.Price };
+            return { id: p.Id, code: p.Code, name: p.Name, price: p.Price };
         });
         
         // Auto-mapiranje po imenu
