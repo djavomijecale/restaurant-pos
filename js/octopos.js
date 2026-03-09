@@ -73,7 +73,10 @@ function mapOrderToOctopos(order) {
 
     return {
         Items: items,
-        FiscalPaymentType: fiscalPayment,
+        Payments: [{
+            PaymentType: fiscalPayment,
+            Amount: order.tot
+        }],
         Note: (order.tableName || 'Sto ' + order.table) + ' | ' + (order.createdBy || 'Admin')
     };
 }
