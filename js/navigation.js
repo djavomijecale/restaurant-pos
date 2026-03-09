@@ -71,6 +71,7 @@ function render() {
     else if(page==='users') renderUsers(c);
     else if(page==='edit') renderEdit(c);
     else if(page==='settings') renderSettings(c);
+    else if(page==='octoposMapping') renderOctoposMapping(c);
     else if(page==='payment') renderPayment(c);
     else if(page==='receipt') renderReceipt(c);
     else if(page==='kitchen') renderKitchen(c);

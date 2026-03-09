@@ -347,25 +347,43 @@ function showProductMapping() {
         return;
     }
     
-    var h = '<div style="max-height:70vh;overflow-y:auto;padding:8px">';
-    h += '<h3 style="color:#00BCD4;margin-bottom:12px">🔗 Mapiranje: Tvoj Meni → OctoPOS</h3>';
-    h += '<p style="color:#888;font-size:12px;margin-bottom:16px">Za svaki artikal izaberite odgovarajući OctoPOS proizvod</p>';
+    // Renderuj kao zasebnu stranicu
+    page = 'octoposMapping';
+    render();
+}
+
+function renderOctoposMapping(c) {
+    var octoProducts = DB.settings.octoposProducts || [];
+    var productMap = DB.settings.octoposProductMap || {};
+    var mapped = Object.keys(productMap).length;
+    var total = DB.menu.length;
+    var pct = total > 0 ? Math.round(mapped / total * 100) : 0;
     
+    var h = '<h2>🔗 Mapiranje Proizvoda</h2>';
+    h += '<p style="color:#888;font-size:13px;text-align:center;margin-bottom:8px">Tvoj meni → OctoPOS proizvodi · Mapirano: <strong style="color:#FFD700">' + mapped + '/' + total + '</strong></p>';
+    
+    // Progress bar
+    var barColor = pct === 100 ? '#4CAF50' : (pct > 50 ? '#FF9800' : '#E94560');
+    h += '<div style="background:#2A2A4A;height:8px;border-radius:4px;overflow:hidden;margin-bottom:16px">';
+    h += '<div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:4px"></div></div>';
+    
+    // Search
+    h += '<input type="text" id="mapSearchInput" oninput="filterMappingList()" placeholder="🔍 Pretraži artikle..." style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:14px;margin-bottom:12px">';
+    
+    h += '<div id="mappingList">';
     DB.menu.forEach(function(item, idx) {
         var currentCode = productMap[item.name] || '';
-        var currentProduct = octoProducts.find(function(p) { return p.code === currentCode; });
         var statusColor = currentCode ? '#4CAF50' : '#E94560';
         var statusIcon = currentCode ? '✅' : '❌';
         
-        h += '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:6px;border-left:3px solid ' + statusColor + '">';
-        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">';
-        h += '<div style="flex:1;min-width:0">';
+        h += '<div class="mapItem" data-name="' + item.name.toLowerCase() + '" style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:6px;border-left:3px solid ' + statusColor + '">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">';
+        h += '<div style="min-width:120px">';
         h += '<div style="color:#FFD700;font-size:13px;font-weight:bold">' + statusIcon + ' ' + item.name + '</div>';
         h += '<div style="color:#888;font-size:11px">' + item.price + ' din</div>';
         h += '</div>';
-        h += '<select id="octoMap_' + idx + '" onchange="updateProductMap(' + idx + ')" ' +
-             'style="flex:1;padding:6px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:12px;max-width:200px">';
-        h += '<option value="">-- Izaberi --</option>';
+        h += '<select id="octoMap_' + idx + '" onchange="updateProductMap(' + idx + ')" style="flex:1;min-width:150px;padding:8px;background:#0F3460;border:1px solid #2A2A4A;border-radius:6px;color:#FFF;font-size:12px">';
+        h += '<option value="">-- Izaberi OctoPOS proizvod --</option>';
         octoProducts.forEach(function(p) {
             var selected = (p.code === currentCode) ? ' selected' : '';
             h += '<option value="' + p.code + '"' + selected + '>' + p.name + ' (' + p.price + ' din)</option>';
@@ -373,19 +391,31 @@ function showProductMapping() {
         h += '</select>';
         h += '</div></div>';
     });
-    
-    var mapped = Object.keys(productMap).length;
-    h += '<div style="margin-top:12px;text-align:center;color:#B0B0B0;font-size:12px">';
-    h += 'Mapirano: ' + mapped + '/' + DB.menu.length;
-    h += '</div>';
     h += '</div>';
     
-    showConfirm('🔗 Mapiranje Proizvoda', h, function(ok) {
-        if (ok) {
-            save();
-            showAlert('✅ Mapiranje sačuvano!');
-        }
+    h += '<div style="display:flex;gap:8px;margin-top:16px;position:sticky;bottom:0;background:#1a1a2e;padding:12px 0">';
+    h += '<button class="btn" style="flex:1;background:#4CAF50" onclick="saveProductMapping()">💾 Sačuvaj</button>';
+    h += '<button class="btn btn-secondary" style="flex:1" onclick="page=\'settings\';render()">← Nazad</button>';
+    h += '</div>';
+    
+    c.innerHTML = h;
+}
+
+function filterMappingList() {
+    var query = (document.getElementById('mapSearchInput') || {}).value || '';
+    query = query.toLowerCase();
+    var items = document.querySelectorAll('.mapItem');
+    items.forEach(function(el) {
+        var name = el.getAttribute('data-name') || '';
+        el.style.display = name.includes(query) ? '' : 'none';
     });
+}
+
+function saveProductMapping() {
+    save();
+    showAlert('✅ Mapiranje sačuvano!');
+    page = 'settings';
+    render();
 }
 
 function updateProductMap(menuIdx) {
