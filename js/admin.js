@@ -281,7 +281,7 @@ function saveMenuItem() {
             cat: cat,
             group: group || ''
         });
-        showAlert(`✅ Stavka "${name}" je dodata! ${cat === 'Hrana' ? '🍳 Biće slana u kuhinju.' : ''}`);
+        showAlert(`✅ Stavka "${name}" je dodata! ${shouldSendToKitchen({cat:cat}) ? '🍳 Biće slana u kuhinju.' : ''}`);
     }
     
     save();
@@ -710,6 +710,16 @@ function renderSettings(c) {
             ${typeof renderEfakturaSettings === 'function' ? renderEfakturaSettings() : ''}
             
             ${typeof renderEmailSettings === 'function' ? renderEmailSettings() : ''}
+            
+            <div class="card" style="margin-bottom:16px;border:2px solid #FF9800">
+                <h3 style="color:#FF9800;margin-bottom:12px">🍳 Kuhinjske Kategorije</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:12px">Kategorije koje <strong>NE</strong> idu u kuhinju (razdvojene zarezom). Sve ostale kategorije se automatski šalju kuvaru.</p>
+                <input type="text" id="nonKitchenCats" value="${(DB.settings && DB.settings.nonKitchenCategories) || ''}" 
+                    placeholder="Piće, Voda, Sokovi, Kafa..." 
+                    style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:13px;margin-bottom:8px">
+                <p style="color:#888;font-size:11px;margin-bottom:12px">💡 Ako ostavite prazno, automatski prepoznaje kategorije pića po imenu</p>
+                <button class="btn" style="background:#FF9800" onclick="DB.settings.nonKitchenCategories=document.getElementById('nonKitchenCats').value;save();showAlert('✅ Sačuvano!')">💾 Sačuvaj</button>
+            </div>
             
             ${typeof renderGeoSettings === 'function' ? renderGeoSettings() : ''}
             

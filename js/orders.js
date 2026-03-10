@@ -2,6 +2,24 @@
 // ORDER OPERATIONS & PAYMENT
 // ============================================
 
+// Kategorije koje NE idu u kuhinju (pića, itd.)
+// Admin može da podesi u Postavke → Kuhinjske Kategorije
+function shouldSendToKitchen(menuItem) {
+    if (!menuItem || !menuItem.cat) return false;
+    
+    // Ako admin definiše listu, koristi nju
+    var skipCats = (DB.settings && DB.settings.nonKitchenCategories) || '';
+    if (skipCats) {
+        var skipList = skipCats.split(',').map(function(c) { return c.trim().toLowerCase(); });
+        return !skipList.includes(menuItem.cat.toLowerCase());
+    }
+    
+    // Default: šalji sve osim pića
+    var drinkKeywords = ['piće', 'pice', 'pića', 'drink', 'napit', 'sok', 'kafa', 'coffee', 'vino', 'wine', 'pivo', 'beer', 'žestina', 'žestoko', 'koktel', 'cocktail', 'voda', 'water', 'čaj', 'tea'];
+    var catLower = menuItem.cat.toLowerCase();
+    return !drinkKeywords.some(function(kw) { return catLower.includes(kw); });
+}
+
 
 function addToTable(itemId) {
     const table = DB.tables.find(t=>t.num===DB.selectedTable);
@@ -11,10 +29,10 @@ function addToTable(itemId) {
     if(existing) {
         existing.qty++;
         
-        // Ako je hrana, ažuriraj količinu u kuhinjskoj narudžbini
-        if(menuItem.cat === 'Hrana') {
+        // Ako ide u kuhinju, ažuriraj količinu u kuhinjskoj narudžbini
+        if(shouldSendToKitchen(menuItem)) {
             const kitchenOrder = DB.kitchenOrders.find(ko => 
-                ko.status !== 'completed' && 
+                (ko.status === 'pending' || ko.status === 'preparing') && 
                 ko.tableNum === table.num && 
                 ko.waiterUsername === DB.currentUser.username
             );
@@ -42,13 +60,13 @@ function addToTable(itemId) {
             addedAt: new Date().toISOString()
         });
         
-        // 🍳 Ako je hrana, pošalji u kuhinju!
-        if(menuItem.cat === 'Hrana') {
+        // 🍳 Ako ide u kuhinju, pošalji!
+        if(shouldSendToKitchen(menuItem)) {
             console.log('🍳 Slanje u kuhinju:', menuItem.name);
             
-            // Pronađi postojeću pending narudžbinu ili kreiraj novu
+            // Pronađi postojeću AKTIVNU narudžbinu (samo pending/preparing)
             let kitchenOrder = DB.kitchenOrders.find(ko => 
-                ko.status !== 'completed' && 
+                (ko.status === 'pending' || ko.status === 'preparing') && 
                 ko.tableNum === table.num && 
                 ko.waiterUsername === DB.currentUser.username
             );
