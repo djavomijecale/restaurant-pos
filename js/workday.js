@@ -298,7 +298,7 @@ function confirmCashReduction() {
 }
 
 
-function closeWorkday() {
+async function closeWorkday() {
     const username = DB.currentUser.username;
     const myWorkday = DB.workdays ? DB.workdays[username] : null;
     
@@ -472,9 +472,13 @@ function closeWorkday() {
     console.log('✅ Workday zatvoren za:', username);
     save();
     
-    // 📧 Pošalji izveštaj na email
+    // 📧 Pošalji izveštaj na email (čekaj da se pošalje pre renderovanja)
     if (typeof sendShiftReportEmail === 'function') {
-        sendShiftReportEmail(finalReport);
+        try {
+            await sendShiftReportEmail(finalReport);
+        } catch(e) {
+            console.error('📧 Email greška:', e);
+        }
     }
     
     page = 'finalreport';

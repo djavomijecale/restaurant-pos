@@ -110,19 +110,24 @@ function renderHistory(c) {
             <div style="display:flex;gap:8px;margin-bottom:20px;overflow-x:auto">
                 <button class="btn ${filter.viewMode==='summary'?'':'btn-secondary'}" 
                     onclick="window.historyFilter.viewMode='summary';render()" 
-                    style="flex:1;min-width:120px">📊 Pregled</button>
+                    style="flex:1;min-width:100px">📊 Pregled</button>
+                ${!isWaiter ? `<button class="btn ${filter.viewMode==='daily'?'':'btn-secondary'}" 
+                    onclick="window.historyFilter.viewMode='daily';render()" 
+                    style="flex:1;min-width:100px">📅 Dnevni</button>` : ''}
                 <button class="btn ${filter.viewMode==='orders'?'':'btn-secondary'}" 
                     onclick="window.historyFilter.viewMode='orders';render()"
-                    style="flex:1;min-width:120px">📋 Narudžbine</button>
+                    style="flex:1;min-width:100px">📋 Narudžbine</button>
                 <button class="btn ${filter.viewMode==='sessions'?'':'btn-secondary'}" 
                     onclick="window.historyFilter.viewMode='sessions';render()"
-                    style="flex:1;min-width:120px">👥 Sesije</button>
+                    style="flex:1;min-width:100px">👥 Sesije</button>
             </div>
     `;
     
     // Render based on view mode
     if (filter.viewMode === 'summary') {
         h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours);
+    } else if (filter.viewMode === 'daily') {
+        h += renderHistoryDaily(filteredOrders, filteredSessions, ordersByDate, isWaiter);
     } else if (filter.viewMode === 'orders') {
         h += renderHistoryOrders(filteredOrders);
     } else if (filter.viewMode === 'sessions') {
@@ -252,12 +257,15 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
         const formatted = dateObj.toLocaleDateString('sr-RS', {weekday: 'short', day: 'numeric', month: 'short'});
         
         h += `
-            <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+            <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="window.historyDailyDate='${date}';window.historyFilter.viewMode='daily';render()">
                 <div>
                     <div style="color:#FFD700;font-weight:bold">${formatted}</div>
                     <div style="color:#B0B0B0;font-size:11px">${data.orders.length} narudžbina</div>
                 </div>
-                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${data.revenue.toFixed(0)} din.</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <div style="color:#4CAF50;font-size:18px;font-weight:bold">${data.revenue.toFixed(0)} din.</div>
+                    <div style="color:#888;font-size:16px">→</div>
+                </div>
             </div>
         `;
     });
@@ -411,6 +419,157 @@ function renderHistorySessions(sessions) {
     }
     
     h += `</div>`;
+    return h;
+}
+
+
+// ============================================
+// DNEVNI IZVEŠTAJ ZA ODABRANI DAN
+// ============================================
+function renderHistoryDaily(allOrders, allSessions, ordersByDate, isWaiter) {
+    var selectedDay = window.historyDailyDate || window.historyFilter.endDate;
+    
+    var h = '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:16px">';
+    h += '<div style="display:flex;align-items:center;gap:8px">';
+    h += '<button class="btn btn-secondary" onclick="var d=new Date(\'' + selectedDay + '\');d.setDate(d.getDate()-1);window.historyDailyDate=d.toISOString().split(\'T\')[0];render()" style="padding:8px 14px;font-size:18px">◀</button>';
+    h += '<input type="date" id="dailyReportDate" value="' + selectedDay + '" onchange="window.historyDailyDate=this.value;render()" style="flex:1;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:14px;text-align:center">';
+    h += '<button class="btn btn-secondary" onclick="var d=new Date(\'' + selectedDay + '\');d.setDate(d.getDate()+1);window.historyDailyDate=d.toISOString().split(\'T\')[0];render()" style="padding:8px 14px;font-size:18px">▶</button>';
+    h += '</div></div>';
+    
+    // Business day: 7:00 - 7:00
+    var cutoff = typeof DAILY_CUTOFF_HOUR !== 'undefined' ? DAILY_CUTOFF_HOUR : 7;
+    var dayDate = new Date(selectedDay);
+    var bdStart = new Date(dayDate); bdStart.setHours(cutoff, 0, 0, 0);
+    var bdEnd = new Date(dayDate); bdEnd.setDate(bdEnd.getDate() + 1); bdEnd.setHours(cutoff, 0, 0, 0);
+    var bdStartISO = bdStart.toISOString();
+    var bdEndISO = bdEnd.toISOString();
+    
+    var dayOrders = allOrders.filter(function(o) { return o.time >= bdStartISO && o.time < bdEndISO; });
+    var daySessions = allSessions.filter(function(s) { return s.loginTime >= bdStartISO && s.loginTime < bdEndISO; });
+    
+    var realOrders = dayOrders.filter(function(o) { return !o.isDebtPayment; });
+    var debtOrders = dayOrders.filter(function(o) { return o.isDebtPayment; });
+    
+    var totalRevenue = realOrders.reduce(function(s, o) { return s + o.tot; }, 0);
+    var totalCash = realOrders.filter(function(o) { return o.method === 'Cash'; }).reduce(function(s, o) { return s + o.tot; }, 0);
+    var totalCard = realOrders.filter(function(o) { return o.method === 'Card'; }).reduce(function(s, o) { return s + o.tot; }, 0);
+    var totalWire = realOrders.filter(function(o) { return o.method === 'Wire'; }).reduce(function(s, o) { return s + o.tot; }, 0);
+    var debtCash = debtOrders.filter(function(o) { return o.method === 'Cash'; }).reduce(function(s, o) { return s + o.tot; }, 0);
+    var debtCard = debtOrders.filter(function(o) { return o.method !== 'Cash'; }).reduce(function(s, o) { return s + o.tot; }, 0);
+    
+    var sortedSessions = daySessions.slice().sort(function(a, b) { return a.loginTime.localeCompare(b.loginTime); });
+    var deposit = sortedSessions.length > 0 ? (sortedSessions[0].deposit || 0) : 0;
+    var totalReductions = daySessions.reduce(function(s, ses) { return s + (ses.totalCashReductions || 0); }, 0);
+    var cashInRegister = deposit + totalCash + debtCash - totalReductions;
+    
+    var totalSalary = daySessions.reduce(function(s, ses) { return s + (ses.salary || 0); }, 0);
+    var totalBonus = daySessions.reduce(function(s, ses) { return s + (ses.bonusAmount || 0); }, 0);
+    var totalHours = daySessions.reduce(function(s, ses) { return s + (ses.duration || 0); }, 0) / 60;
+    
+    var dayName = dayDate.toLocaleDateString('sr-RS', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+    h += '<h3 style="text-align:center;color:#FFD700;margin-bottom:16px">' + dayName + '</h3>';
+    
+    if (realOrders.length === 0 && daySessions.length === 0) {
+        h += '<div style="text-align:center;color:#888;padding:40px;background:#0F3460;border-radius:12px">Nema podataka za ovaj dan</div>';
+        return h;
+    }
+    
+    // GLAVNI BROJEVI
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">';
+    h += '<div class="stat-card"><div class="stat-label">Ukupan prihod</div><div class="stat-value">' + totalRevenue.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
+    h += '<div class="stat-card"><div class="stat-label">Narudžbi</div><div class="stat-value" style="color:#E94560">' + realOrders.length + '</div></div>';
+    h += '<div class="stat-card"><div class="stat-label">Prosečan račun</div><div class="stat-value" style="color:#4CAF50">' + (realOrders.length > 0 ? (totalRevenue / realOrders.length).toFixed(0) : 0) + '</div><div class="stat-label">din.</div></div>';
+    h += '<div class="stat-card"><div class="stat-label">Smena</div><div class="stat-value" style="color:#FFD700">' + daySessions.length + '</div></div>';
+    h += '</div>';
+    
+    // KEŠ U KASI
+    h += '<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:16px">';
+    h += '<h3 style="color:#E94560;margin-bottom:16px">💰 Stanje Kase</h3>';
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:16px">';
+    h += '<div style="background:#16213E;padding:14px;border-radius:8px;text-align:center"><div style="font-size:24px">💵</div><div style="color:#FFD700;font-size:20px;font-weight:bold;margin:6px 0">' + cashInRegister.toFixed(0) + '</div><div style="color:#888;font-size:11px">Keš u kasi</div></div>';
+    h += '<div style="background:#16213E;padding:14px;border-radius:8px;text-align:center"><div style="font-size:24px">💳</div><div style="color:#FFD700;font-size:20px;font-weight:bold;margin:6px 0">' + (totalCard + debtCard).toFixed(0) + '</div><div style="color:#888;font-size:11px">Kartice</div></div>';
+    if (totalWire > 0) {
+        h += '<div style="background:#16213E;padding:14px;border-radius:8px;text-align:center"><div style="font-size:24px">🏦</div><div style="color:#FFD700;font-size:20px;font-weight:bold;margin:6px 0">' + totalWire.toFixed(0) + '</div><div style="color:#888;font-size:11px">Prenos</div></div>';
+    }
+    h += '</div>';
+    
+    // Detalji keša
+    h += '<div style="background:#16213E;padding:12px;border-radius:8px">';
+    h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💵 Depozit:</span><span style="color:#9C27B0;font-weight:bold">' + deposit.toFixed(0) + ' din.</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💵 Otkucani keš:</span><span style="color:#4CAF50;font-weight:bold">+' + totalCash.toFixed(0) + ' din.</span></div>';
+    if (debtCash > 0) h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">📝 Vraćeni dugovi (keš):</span><span style="color:#FF9800;font-weight:bold">+' + debtCash.toFixed(0) + ' din.</span></div>';
+    if (totalReductions > 0) h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💸 Smanjenja keša:</span><span style="color:#E94560;font-weight:bold">-' + totalReductions.toFixed(0) + ' din.</span></div>';
+    h += '<div style="border-top:1px solid #2A2A4A;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between"><span style="color:#FFD700;font-weight:bold">= Keš u kasi:</span><span style="color:#FFD700;font-weight:bold;font-size:16px">' + cashInRegister.toFixed(0) + ' din.</span></div>';
+    h += '</div></div>';
+    
+    // PO KONOBARIMA
+    if (!isWaiter) {
+        var byWaiter = {};
+        realOrders.forEach(function(o) {
+            var user = o.createdBy || 'Nepoznato';
+            if (!byWaiter[user]) byWaiter[user] = { count: 0, revenue: 0, cash: 0, card: 0, wire: 0 };
+            byWaiter[user].count++;
+            byWaiter[user].revenue += o.tot;
+            if (o.method === 'Cash') byWaiter[user].cash += o.tot;
+            else if (o.method === 'Card') byWaiter[user].card += o.tot;
+            else if (o.method === 'Wire') byWaiter[user].wire += o.tot;
+        });
+        
+        h += '<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:16px">';
+        h += '<h3 style="color:#E94560;margin-bottom:16px">👥 Po Konobarima</h3>';
+        
+        Object.entries(byWaiter).sort(function(a, b) { return b[1].revenue - a[1].revenue; }).forEach(function(entry) {
+            var user = entry[0], data = entry[1];
+            var ses = daySessions.find(function(s) { return s.user === user; });
+            var salary = ses ? (ses.salary || 0) : 0;
+            var bonus = ses ? (ses.bonusAmount || 0) : 0;
+            
+            h += '<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:6px">';
+            h += '<div style="display:flex;justify-content:space-between;align-items:start"><div>';
+            h += '<div style="color:#FFD700;font-weight:bold">👨‍🍳 ' + user + '</div>';
+            h += '<div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap">';
+            h += '<span style="color:#4CAF50;font-size:12px">💵 ' + data.cash.toFixed(0) + '</span>';
+            h += '<span style="color:#2196F3;font-size:12px">💳 ' + data.card.toFixed(0) + '</span>';
+            if (data.wire > 0) h += '<span style="color:#9C27B0;font-size:12px">🏦 ' + data.wire.toFixed(0) + '</span>';
+            h += '<span style="color:#888;font-size:12px">' + data.count + ' narudž.</span></div>';
+            if (salary > 0 || bonus > 0) {
+                h += '<div style="margin-top:4px;font-size:11px">';
+                if (salary > 0) h += '<span style="color:#4CAF50">💰 ' + salary.toFixed(0) + '</span> ';
+                if (bonus > 0) h += '<span style="color:#FFD700">🎁 ' + bonus.toFixed(0) + '</span>';
+                h += '</div>';
+            }
+            h += '</div><div style="color:#4CAF50;font-size:18px;font-weight:bold">' + data.revenue.toFixed(0) + ' din.</div></div></div>';
+        });
+        h += '</div>';
+    }
+    
+    // PLATE I BONUSI
+    if (daySessions.length > 0) {
+        h += '<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:16px">';
+        h += '<h3 style="color:#E94560;margin-bottom:16px">💰 Plate i Bonusi</h3>';
+        h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px">';
+        h += '<div style="background:#16213E;padding:14px;border-radius:8px;text-align:center"><div style="font-size:24px">💰</div><div style="color:#4CAF50;font-size:18px;font-weight:bold;margin:6px 0">' + totalSalary.toFixed(0) + '</div><div style="color:#888;font-size:11px">Plate (' + totalHours.toFixed(1) + 'h)</div></div>';
+        h += '<div style="background:#16213E;padding:14px;border-radius:8px;text-align:center"><div style="font-size:24px">🎁</div><div style="color:#FFD700;font-size:18px;font-weight:bold;margin:6px 0">' + totalBonus.toFixed(0) + '</div><div style="color:#888;font-size:11px">Bonusi</div></div>';
+        h += '<div style="background:#16213E;padding:14px;border-radius:8px;text-align:center"><div style="font-size:24px">💎</div><div style="color:#FFD700;font-size:18px;font-weight:bold;margin:6px 0">' + (totalSalary + totalBonus).toFixed(0) + '</div><div style="color:#888;font-size:11px">Ukupna zarada</div></div>';
+        h += '</div></div>';
+    }
+    
+    // SMENE
+    if (daySessions.length > 0) {
+        h += '<div style="background:#0F3460;padding:20px;border-radius:12px">';
+        h += '<h3 style="color:#E94560;margin-bottom:16px">👥 Smene (' + daySessions.length + ')</h3>';
+        daySessions.forEach(function(s) {
+            var lt = new Date(s.loginTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+            var lo = s.logoutTime ? new Date(s.logoutTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}) : '—';
+            var hrs = Math.floor((s.duration || 0) / 60), mins = (s.duration || 0) % 60;
+            h += '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center">';
+            h += '<div><div style="color:#FFD700;font-weight:bold">👨‍🍳 ' + (s.user || '?') + (s.autoClosed ? ' <span style="color:#FF9800;font-size:10px">⏰ AUTO</span>' : '') + '</div>';
+            h += '<div style="color:#888;font-size:12px">🔓 ' + lt + ' → 🔒 ' + lo + ' · ' + hrs + 'h ' + mins + 'min</div></div>';
+            h += '<div style="color:#4CAF50;font-weight:bold">' + (s.revenue || 0).toFixed(0) + ' din.</div></div></div>';
+        });
+        h += '</div>';
+    }
+    
     return h;
 }
 

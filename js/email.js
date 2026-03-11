@@ -91,57 +91,69 @@ async function sendShiftReportEmail(report) {
         return;
     }
     
-    var reportText = buildShiftReportText(report);
-    var restName = settings.name || 'Restaurant POS';
-    var dateStr = new Date(report.startTime).toLocaleDateString('sr-RS');
-    
-    // EmailJS init
-    if (typeof emailjs !== 'undefined') {
-        emailjs.init(publicKey);
-    } else {
-        console.error('📧 EmailJS biblioteka nije učitana');
-        return;
-    }
-    
-    // Pošalji na svaki email
-    var emailList = recipients.split(',').map(function(e) { return e.trim(); }).filter(function(e) { return e.includes('@'); });
-    
-    if (emailList.length === 0) {
-        console.log('📧 Nema validnih email adresa');
-        return;
-    }
-    
-    var sent = 0;
-    var failed = 0;
-    
-    for (var i = 0; i < emailList.length; i++) {
-        try {
-            await emailjs.send(serviceId, templateId, {
-                to_email: emailList[i],
-                waiter_name: report.user || 'Nepoznato',
-                date: dateStr,
-                restaurant_name: restName,
-                report_text: reportText,
-                total_revenue: (report.totalRevenue || 0).toFixed(0),
-                cash: (report.cashRevenue || 0).toFixed(0),
-                card: (report.cardRevenue || 0).toFixed(0),
-                order_count: report.orderCount || 0,
-                final_cash: (report.finalCash || 0).toFixed(0),
-                salary: (report.salary || 0).toFixed(0)
-            });
-            sent++;
-            console.log('📧 Email poslat na: ' + emailList[i]);
-        } catch (err) {
-            failed++;
-            console.error('📧 Greška za ' + emailList[i] + ':', err);
+    try {
+        var reportText = buildShiftReportText(report);
+        var restName = settings.name || 'Restaurant POS';
+        var dateStr = new Date(report.startTime).toLocaleDateString('sr-RS');
+        
+        // EmailJS init — čekaj da se učita ako treba
+        if (typeof emailjs === 'undefined') {
+            console.warn('📧 EmailJS nije učitan, pokušavam ponovo za 2s...');
+            await new Promise(function(r) { setTimeout(r, 2000); });
+            if (typeof emailjs === 'undefined') {
+                console.error('📧 EmailJS biblioteka nije učitana — email NIJE poslat!');
+                showAlert('⚠️ Email izveštaj NIJE poslat!\n\nEmailJS biblioteka se nije učitala.\nProverite internet konekciju.');
+                return;
+            }
         }
-    }
-    
-    if (sent > 0) {
-        console.log('📧 Izveštaj smene poslat na ' + sent + ' adresa');
-    }
-    if (failed > 0) {
-        console.warn('📧 Neuspelo slanje na ' + failed + ' adresa');
+        
+        emailjs.init(publicKey);
+        
+        var emailList = recipients.split(',').map(function(e) { return e.trim(); }).filter(function(e) { return e.includes('@'); });
+        
+        if (emailList.length === 0) {
+            console.log('📧 Nema validnih email adresa');
+            return;
+        }
+        
+        var sent = 0;
+        var failed = 0;
+        var lastError = '';
+        
+        for (var i = 0; i < emailList.length; i++) {
+            try {
+                await emailjs.send(serviceId, templateId, {
+                    to_email: emailList[i],
+                    waiter_name: report.user || 'Nepoznato',
+                    date: dateStr,
+                    restaurant_name: restName,
+                    report_text: reportText,
+                    total_revenue: (report.totalRevenue || 0).toFixed(0),
+                    cash: (report.cashRevenue || 0).toFixed(0),
+                    card: (report.cardRevenue || 0).toFixed(0),
+                    order_count: report.orderCount || 0,
+                    final_cash: (report.finalCash || 0).toFixed(0),
+                    salary: (report.salary || 0).toFixed(0)
+                });
+                sent++;
+                console.log('📧 Email poslat na: ' + emailList[i]);
+            } catch (err) {
+                failed++;
+                lastError = err.text || err.message || String(err);
+                console.error('📧 Greška za ' + emailList[i] + ':', lastError);
+            }
+        }
+        
+        if (sent > 0 && failed === 0) {
+            console.log('📧 Izveštaj smene poslat na ' + sent + ' adresa');
+        } else if (sent > 0 && failed > 0) {
+            showAlert('⚠️ Email izveštaj: poslat na ' + sent + ', neuspelo ' + failed + '\n\n' + lastError);
+        } else if (failed > 0) {
+            showAlert('❌ Email izveštaj NIJE poslat!\n\n' + lastError);
+        }
+    } catch (e) {
+        console.error('📧 Kritična greška pri slanju emaila:', e);
+        showAlert('❌ Email izveštaj NIJE poslat!\n\nGreška: ' + (e.message || e));
     }
 }
 
