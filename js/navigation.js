@@ -5,7 +5,7 @@
 
 function nav(p) {
     // Provera pristupa za konobare
-    if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users')) {
+    if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'history')) {
         showAlert('Nemate pristup ovoj stranici');
         return;
     }
