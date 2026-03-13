@@ -53,6 +53,9 @@ function renderLogin(c) {
                     <input type="password" id="adminPassword" placeholder="Unesite admin lozinku" style="margin-bottom:12px">
                     <button class="btn" onclick="loginAdmin()">Prijavi se kao Admin</button>
                 </div>
+                
+                ${typeof DEMO_MODE !== 'undefined' && !DEMO_MODE ? '<div style="border-top:1px solid #2A2A4A;margin:24px 0"></div><button class="btn" style="background:linear-gradient(135deg,#9C27B0,#E91E63);width:100%" onclick="startDemo()">🎮 Probaj Demo Verziju</button><p style="color:#888;font-size:11px;text-align:center;margin-top:8px">Bez registracije · Svi podaci lokalni</p>' : ''}
+                ${typeof DEMO_MODE !== 'undefined' && DEMO_MODE ? '<div style="border-top:1px solid #2A2A4A;margin:24px 0"></div><button class="btn" style="background:#E94560;width:100%" onclick="exitDemo()">✕ Izađi iz Demo Mode</button>' : ''}
             </div>
         </div>
     `;

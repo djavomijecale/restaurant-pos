@@ -45,6 +45,21 @@ function nav(p) {
 function render() {
     const c = document.getElementById('content');
     
+    // 🎮 Demo banner
+    var demoBanner = document.getElementById('demoBanner');
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
+        if (!demoBanner) {
+            demoBanner = document.createElement('div');
+            demoBanner.id = 'demoBanner';
+            demoBanner.style.cssText = 'background:linear-gradient(135deg,#9C27B0,#E91E63);color:#FFF;text-align:center;padding:6px 12px;font-size:13px;font-weight:bold;cursor:pointer;position:sticky;top:0;z-index:9999';
+            demoBanner.innerHTML = '🎮 DEMO MODE — Podaci su lokalni i neće se sačuvati · <u>Izađi</u>';
+            demoBanner.onclick = function() { exitDemo(); };
+            document.body.insertBefore(demoBanner, document.body.firstChild);
+        }
+    } else if (demoBanner) {
+        demoBanner.remove();
+    }
+    
     // Dodaj/ukloni role klase na body u zavisnosti od uloge korisnika
     if (DB.currentUser && (DB.currentUser.role === 'waiter' || DB.currentUser.role === 'konobar')) {
         document.body.classList.add('waiter-role');

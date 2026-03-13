@@ -31,12 +31,14 @@ function addToTable(itemId) {
         
         // Ako ide u kuhinju, ažuriraj količinu u kuhinjskoj narudžbini
         if(shouldSendToKitchen(menuItem)) {
-            const kitchenOrder = DB.kitchenOrders.find(ko => 
-                (ko.status === 'pending' || ko.status === 'preparing') && 
-                ko.tableNum === table.num && 
+            // Samo dodaj u PENDING narudzbinu (kuvar je jos nije video)
+            // Ako je vec 'preparing', ne diraj je - kreiraj novu dole
+            const kitchenOrder = DB.kitchenOrders.find(ko =>
+                ko.status === 'pending' &&
+                ko.tableNum === table.num &&
                 ko.waiterUsername === DB.currentUser.username
             );
-            
+
             if(kitchenOrder) {
                 const kitchenItem = kitchenOrder.items.find(i => i.id === itemId);
                 if(kitchenItem) {
@@ -64,10 +66,11 @@ function addToTable(itemId) {
         if(shouldSendToKitchen(menuItem)) {
             console.log('🍳 Slanje u kuhinju:', menuItem.name);
             
-            // Pronađi postojeću AKTIVNU narudžbinu (samo pending/preparing)
-            let kitchenOrder = DB.kitchenOrders.find(ko => 
-                (ko.status === 'pending' || ko.status === 'preparing') && 
-                ko.tableNum === table.num && 
+            // Pronađi postojeću PENDING narudžbinu (kuvar je jos nije video)
+            // Ako je 'preparing' - kuvar vec radi na njoj, ne dodajemo u nju
+            let kitchenOrder = DB.kitchenOrders.find(ko =>
+                ko.status === 'pending' &&
+                ko.tableNum === table.num &&
                 ko.waiterUsername === DB.currentUser.username
             );
             

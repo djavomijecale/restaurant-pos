@@ -9,6 +9,7 @@
 
 // Load data from Firebase
 async function loadFromFirebase() {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return false;
     // ✅ ZAŠTITA: Ne učitavaj dok se čuva - prepisalo bi lokalne promene
     if (isSaving || saveQueued) {
         console.log('⏳ loadFromFirebase odložen - save u toku');
@@ -438,15 +439,28 @@ let _saveDebounceTimer = null;
 function save() {
     localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
     localStorage.setItem('konobarName', DB.konobarName);
-    hasPendingChanges = true; // Odmah markiraj da imamo nesačuvane promene
+    
+    // Demo mode: čuvaj lokalno, ne u Firebase
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
+        if (typeof demoSave === 'function') demoSave();
+        return;
+    }
+    
+    hasPendingChanges = true;
     saveToFirebase();
 }
 
 // Debounced save - za brzo dodavanje stavki (klik-klik-klik)
-// Čeka 500ms pre nego pošalje, tako da 10 brzih klikova = 1 save
 function saveDebounced() {
     localStorage.setItem('currentUser', JSON.stringify(DB.currentUser));
     localStorage.setItem('konobarName', DB.konobarName);
+    
+    // Demo mode
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
+        if (typeof demoSave === 'function') demoSave();
+        return;
+    }
+    
     hasPendingChanges = true;
     
     if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer);
@@ -558,6 +572,7 @@ function sanitizeFirebaseKey(str) {
 let workdayListenerActive = false;
 
 function startWorkdayListener() {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
     if (workdayListenerActive) return;
     workdayListenerActive = true;
     
@@ -607,6 +622,7 @@ function startWorkdayListener() {
 
 // Otvori smenu za korisnika - piše SAMO na /workdays/{safeKey}
 async function saveWorkday(username, workdayData) {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
     const safeKey = sanitizeFirebaseKey(username);
     try {
         // Uvek čuvaj originalni username u podacima
@@ -629,6 +645,10 @@ async function saveWorkday(username, workdayData) {
 
 // Zatvori smenu za korisnika - briše SAMO /workdays/{safeKey}
 async function removeWorkday(username) {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
+        delete DB.workdays[username];
+        return;
+    }
     const safeKey = sanitizeFirebaseKey(username);
     try {
         await database.ref('/workdays/' + safeKey).remove();
@@ -643,6 +663,10 @@ async function removeWorkday(username) {
 
 // Ažuriraj workday podatke (npr. cashReductions) - piše SAMO na /workdays/{safeKey}
 async function updateWorkday(username, updates) {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
+        if (DB.workdays[username]) Object.assign(DB.workdays[username], updates);
+        return;
+    }
     const safeKey = sanitizeFirebaseKey(username);
     try {
         await database.ref('/workdays/' + safeKey).update(updates);

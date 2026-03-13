@@ -7,7 +7,27 @@
 // INITIALIZATION
 // ============================================
 async function initApp() {
-    console.log('🚀 Starting Restaurant POS with Firebase...');
+    console.log('🚀 Starting Restaurant POS...');
+    
+    // 🎮 Proveri demo mode
+    if (typeof initDemoOverrides === 'function') {
+        initDemoOverrides();
+    }
+    
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {
+        console.log('🎮 DEMO MODE aktivan - Firebase preskočen');
+        
+        if(DB.currentUser) {
+            if(DB.currentUser.role === 'kuvar') page = 'kitchen';
+            else page = 'tables';
+        } else {
+            page = 'login';
+        }
+        
+        render();
+        console.log('🎮 Demo POS ready!');
+        return;
+    }
     
     // IMPORTANT: Clear old localStorage workday to prevent conflicts
     localStorage.removeItem('workday');
