@@ -4,6 +4,7 @@
 
 let debtSearch = '';
 let debtsTab = 'active';
+let expandedDebtId = null;
 
 function renderDebts(c) {
     if (!DB.debts) DB.debts = [];
@@ -115,23 +116,44 @@ function renderActiveDebts(active, byDebtor) {
             const date = new Date(debt.time);
             const dateStr = date.toLocaleDateString('sr-RS', {day:'2-digit', month:'2-digit'});
             const timeStr = date.toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
-            const itemNames = debt.items ? debt.items.map(i => i.qty + 'x ' + i.name).join(', ') : '';
-            
+            const isExpanded = expandedDebtId === debt.id;
+
             h += `<div style="background:#16213E;padding:10px 12px;border-radius:8px;margin-bottom:6px">
-                <div style="display:flex;justify-content:space-between;align-items:center">
+                <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="expandedDebtId=expandedDebtId==='${debt.id}'?null:'${debt.id}';render()">
                     <div style="flex:1;min-width:0">
                         <div style="font-size:13px;font-weight:bold;color:#FFD700">${debt.remaining.toFixed(0)} din${debt.remaining < debt.originalTotal ? ` <span style="color:#4CAF50;font-size:11px">(od ${debt.originalTotal.toFixed(0)})</span>` : ''}</div>
-                        <div style="color:#888;font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${itemNames}">
-                            ${debt.tableName || 'Sto'} · ${dateStr} ${timeStr}${itemNames ? ' · ' + itemNames : ''}
+                        <div style="color:#888;font-size:11px;margin-top:2px">
+                            ${debt.tableName || 'Sto'} · ${dateStr} ${timeStr} · ${isExpanded ? '▲' : '▼'} ${debt.items ? debt.items.length : 0} artikala
                         </div>
                     </div>
-                    <div style="display:flex;gap:6px;margin-left:8px">
+                    <div style="display:flex;gap:6px;margin-left:8px" onclick="event.stopPropagation()">
                         <button onclick="payPartialDebt('${debt.id}')" style="background:#FF9800;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Uplati deo">💰</button>
                         <button onclick="payFullDebt('${debt.id}')" style="background:#4CAF50;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Vrati ceo dug">✅</button>
                         <button onclick="deleteDebt('${debt.id}')" style="background:#E94560;border:none;color:#FFF;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:bold" title="Obriši (bez naplate)">🗑️</button>
                     </div>
-                </div>
-            </div>`;
+                </div>`;
+
+            // Expanded items detail
+            if (isExpanded && debt.items && debt.items.length > 0) {
+                h += `<div style="margin-top:10px;border-top:1px solid #2A2A4A;padding-top:10px">`;
+                debt.items.forEach(item => {
+                    const itemTotal = (item.price || 0) * (item.qty || 1);
+                    h += `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
+                        <span style="color:#DDD">${item.qty || 1}x ${item.name}</span>
+                        <span style="color:#FFD700">${itemTotal.toFixed(0)} din</span>
+                    </div>`;
+                });
+                h += `<div style="display:flex;justify-content:space-between;padding-top:8px;margin-top:8px;border-top:1px solid #2A2A4A;font-weight:bold;font-size:14px">
+                    <span style="color:#B0B0B0">Ukupno:</span>
+                    <span style="color:#FFD700">${(debt.originalTotal || 0).toFixed(0)} din</span>
+                </div>`;
+                if (debt.createdBy) {
+                    h += `<div style="color:#888;font-size:11px;margin-top:6px">Zapisao: ${debt.createdBy}</div>`;
+                }
+                h += `</div>`;
+            }
+
+            h += `</div>`;
         });
         
         h += '</div>';
