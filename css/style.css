@@ -181,10 +181,10 @@
         }
         .table-card:hover { border-color: #E94560; transform: scale(1.1); }
         .table-card.occupied { background: #E94560; }
-        .table-card .table-icon { font-size: 28px; }
-        .table-card .table-number { font-size: 14px; font-weight: bold; margin-top: 4px; }
-        .table-card .table-status { font-size: 10px; color: #B0B0B0; margin-top: 2px; display: none; }
-        .table-card.occupied .table-status { color: #FFF; }
+        .table-card .table-icon { font-size: 22px; line-height: 1; }
+        .table-card .table-number { font-size: 12px; font-weight: bold; margin-top: 1px; line-height: 1; }
+        .table-card .table-status { font-size: 10px; color: #FFD700; font-weight: bold; margin-top: 1px; line-height: 1; display: block !important; }
+        .table-card.occupied .table-status { color: #FFD700; display: block !important; }
         
         /* Waiter indicator u table-card */
         .table-card > div[style*="display:flex"] {

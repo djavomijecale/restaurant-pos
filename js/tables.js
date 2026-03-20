@@ -59,7 +59,6 @@ function renderTableSelect(c) {
                 <div class="table-icon">🪑</div>
                 <div class="table-number">${t.name || ('Sto ' + t.num)}</div>
                 ${info.isOccupied ? `<div class="table-status">${info.total.toFixed(0)}din</div>` : ''}
-                ${info.waiterIndicator}
             </div>`;
         });
         
