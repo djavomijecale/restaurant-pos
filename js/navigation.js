@@ -165,26 +165,46 @@ function updateUserInfo() {
                 var role = DB.currentUser ? DB.currentUser.role : '';
                 var username = DB.currentUser ? DB.currentUser.username : '';
                 var hasOpenShift = DB.workdays && DB.workdays[username] && role === 'konobar';
-                
+
                 if (hasOpenShift) {
                     showAlert('⚠️ Ne možete se odjaviti!\n\nImate otvorenu smenu. Prvo zatvorite radni dan.\n\nIdite na: Izveštaj → Zatvori Dan');
                     return;
                 }
-                
+
+                // 🍳 Kuvar - pitaj da li zeli da zavrsi smenu pre odjave
+                if (role === 'kuvar' && localStorage.getItem('kuvarLoginTime')) {
+                    showConfirm('🍳 Završi Smenu', 'Da li želiš da završiš smenu pre odjave?', function(confirmed) {
+                        if (confirmed && typeof closeKuvarShift === 'function') {
+                            closeKuvarShift();
+                            return;
+                        }
+                        // Odjavi bez zatvaranja smene
+                        DB.currentUser = null;
+                        DB.selectedTable = null;
+                        DB.konobarName = null;
+                        localStorage.removeItem('currentUser');
+                        localStorage.removeItem('konobarName');
+                        if (typeof stopGeoTracking === 'function') stopGeoTracking();
+                        page = 'login';
+                        render();
+                    });
+                    return;
+                }
+
                 // Logout korisnika ALI workdays OSTAJU u Firebase!
                 DB.currentUser = null;
                 DB.selectedTable = null;
                 DB.konobarName = null;
-                
+
                 // Očisti samo lokalne podatke
                 localStorage.removeItem('currentUser');
                 localStorage.removeItem('konobarName');
-                
+
                 console.log('✅ Logout uspešan');
-                
+
                 // 📍 Zaustavi geo tracking
                 if (typeof stopGeoTracking === 'function') stopGeoTracking();
-                
+
                 page = 'login';
                 render();
             });

@@ -154,8 +154,18 @@ async function loginWaiter() {
         
         // Redirect na osnovu uloge
         if(user.role === 'kuvar') {
-            // Kuvar nema smenu/workday - samo ide na kuhinju
-            localStorage.setItem('kuvarLoginTime', new Date().toISOString());
+            // Pitaj kuvara da li zeli da otvori smenu
+            const existingLogin = localStorage.getItem('kuvarLoginTime');
+            if (!existingLogin) {
+                showConfirm('🍳 Otvaranje Smene', 'Da li želiš da otvoriš smenu?', (confirmed) => {
+                    if (confirmed) {
+                        localStorage.setItem('kuvarLoginTime', new Date().toISOString());
+                    }
+                    page = 'kitchen';
+                    render();
+                });
+                return;
+            }
             page = 'kitchen';
         } else {
             // Konobar - proveri workday
