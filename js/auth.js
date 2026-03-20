@@ -154,18 +154,8 @@ async function loginWaiter() {
         
         // Redirect na osnovu uloge
         if(user.role === 'kuvar') {
-            // Kuvar IDE DIREKTNO NA KUHINJU + otvori radni dan ako nema
-            if (!DB.workdays) DB.workdays = {};
-            if (!DB.workdays[user.username]) {
-                const cookWorkday = {
-                    user: user.username,
-                    startTime: new Date().toISOString(),
-                    role: 'kuvar'
-                };
-                DB.workdays[user.username] = cookWorkday;
-                // ✅ ATOMIČKI SAVE za kuvara
-                saveWorkday(user.username, cookWorkday);
-            }
+            // Kuvar nema smenu/workday - samo ide na kuhinju
+            localStorage.setItem('kuvarLoginTime', new Date().toISOString());
             page = 'kitchen';
         } else {
             // Konobar - proveri workday

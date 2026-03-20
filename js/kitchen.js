@@ -7,10 +7,9 @@
 // KITCHEN DISPLAY SYSTEM - KUHINJA
 // ============================================
 function renderKitchen(c) {
-    // Ako je kuvar sa aktivnom smenom, prikaži samo narudžbine od početka smene
     const isKuvar = DB.currentUser && DB.currentUser.role === 'kuvar';
-    const myWorkday = isKuvar && DB.workdays ? DB.workdays[DB.currentUser.username] : null;
-    const shiftStart = myWorkday ? myWorkday.startTime : null;
+    // Kuvar koristi login vreme za filtriranje (čuva se u localStorage)
+    const shiftStart = isKuvar ? localStorage.getItem('kuvarLoginTime') : null;
     
     let allOrders = DB.kitchenOrders;
     if (isKuvar && shiftStart) {
@@ -38,13 +37,40 @@ function renderKitchen(c) {
         save();
     }
     
+    // Bonus tracking za kuvara
+    const kuvarUsername = isKuvar ? DB.currentUser.username : null;
+    const kuvarBonusData = isKuvar && DB.kuvarBonus ? (DB.kuvarBonus[kuvarUsername] || {total: 0}) : {total: 0};
+    const completedDishesInShift = allOrders.filter(ko => ko.status === 'completed' || ko.status === 'ready')
+        .reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
+    const totalDishesForBonus = kuvarBonusData.total + completedDishesInShift;
+    const bonusCount = Math.floor(totalDishesForBonus / 30);
+    const dishesToNextBonus = 30 - (totalDishesForBonus % 30);
+
     let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <h2>🍳 Kuhinja</h2>
-        <div style="font-size:14px;color:#B0B0B0">
-            ${pendingOrders.length} aktivnih${isKuvar && shiftStart ? ' (ova smena)' : ''}
+        <div style="display:flex;gap:8px;align-items:center">
+            <div style="font-size:14px;color:#B0B0B0">
+                ${pendingOrders.length} aktivnih
+            </div>
+            ${isKuvar ? `<button class="btn" style="width:auto;padding:6px 14px;background:#E94560;font-size:13px" onclick="closeKuvarShift()">Završi smenu</button>` : ''}
         </div>
     </div>`;
-    
+
+    // Bonus prikaz za kuvara
+    if (isKuvar) {
+        const bonusProgress = ((totalDishesForBonus % 30) / 30 * 100).toFixed(0);
+        h += `<div style="background:linear-gradient(135deg,#0F3460,#16213E);padding:16px;border-radius:12px;margin-bottom:16px;border:2px solid #FFD700">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span style="color:#FFD700;font-weight:bold">🏆 Bonus: ${bonusCount}x</span>
+                <span style="color:#B0B0B0;font-size:12px">${totalDishesForBonus} jela ukupno</span>
+            </div>
+            <div style="background:#1A1A2E;border-radius:8px;height:12px;overflow:hidden;margin-bottom:6px">
+                <div style="background:linear-gradient(90deg,#FFD700,#FF9800);height:100%;width:${bonusProgress}%;border-radius:8px;transition:width 0.5s"></div>
+            </div>
+            <div style="color:#B0B0B0;font-size:11px;text-align:center">Još ${dishesToNextBonus} jela do sledećeg bonusa</div>
+        </div>`;
+    }
+
     // Statistika
     h += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
         <div style="background:#0F3460;padding:12px;border-radius:8px;text-align:center">
@@ -288,26 +314,26 @@ function renderKitchenReady(c) {
 // ============================================
 function renderKuvarReport(c) {
     const username = DB.currentUser.username;
-    const myWorkday = DB.workdays && DB.workdays[username];
+    const loginTime = localStorage.getItem('kuvarLoginTime');
     const today = new Date().toISOString().split('T')[0];
-    
+
     let h = '<div style="max-width:800px;margin:0 auto">';
     h += '<h2 style="text-align:center;margin-bottom:8px">📊 Izveštaj Kuvara</h2>';
     h += `<p style="color:#B0B0B0;text-align:center;margin-bottom:24px">${new Date().toLocaleDateString('sr-RS')}</p>`;
-    
-    if (!myWorkday) {
+
+    if (!loginTime) {
         h += `<div class="empty">
             <div style="font-size:64px">⚠️</div>
-            <h3>Smena nije otvorena</h3>
-            <p style="color:#B0B0B0">Odjavite se i ponovo se prijavite da otvorite smenu.</p>
+            <h3>Niste prijavljeni</h3>
+            <p style="color:#B0B0B0">Odjavite se i ponovo se prijavite.</p>
         </div>`;
         h += '</div>';
         c.innerHTML = h;
         return;
     }
-    
+
     // Izračunaj vreme smene
-    const startTime = new Date(myWorkday.startTime);
+    const startTime = new Date(loginTime);
     const now = new Date();
     const diffMins = Math.floor((now - startTime) / 60000);
     const hours = Math.floor(diffMins / 60);
@@ -319,8 +345,8 @@ function renderKuvarReport(c) {
     );
     
     // Narudžbine tokom ove smene
-    const shiftOrders = DB.kitchenOrders.filter(ko => 
-        ko.orderedAt && ko.orderedAt >= myWorkday.startTime
+    const shiftOrders = DB.kitchenOrders.filter(ko =>
+        ko.orderedAt && ko.orderedAt >= loginTime
     );
     
     const completedInShift = shiftOrders.filter(ko => ko.status === 'completed').length;
@@ -456,56 +482,79 @@ function renderKuvarReport(c) {
 }
 
 
-function closeKuvarWorkday() {
+function closeKuvarShift() {
     const username = DB.currentUser.username;
-    const myWorkday = DB.workdays && DB.workdays[username];
-    
-    if (!myWorkday) {
-        showAlert('❌ Nema aktivne smene!');
-        return;
-    }
-    
-    showConfirm('🍳 Zatvori Smenu', 'Da li želite da zatvorite smenu?', (confirmed) => {
+    const loginTime = localStorage.getItem('kuvarLoginTime');
+
+    showConfirm('🍳 Završi Smenu', 'Da li želite da završite smenu?', (confirmed) => {
         if (!confirmed) return;
-        
+
         const endTime = new Date().toISOString();
-        const startTime = new Date(myWorkday.startTime);
+        const startTime = loginTime ? new Date(loginTime) : new Date();
         const duration = Math.floor((new Date(endTime) - startTime) / 1000 / 60);
-        
-        // Narudžbine tokom smene
-        const shiftOrders = DB.kitchenOrders.filter(ko => 
-            ko.orderedAt && ko.orderedAt >= myWorkday.startTime
+
+        // Narudzbine u ovoj smeni
+        let shiftOrders = DB.kitchenOrders;
+        if (loginTime) {
+            shiftOrders = DB.kitchenOrders.filter(ko => ko.orderedAt && ko.orderedAt >= loginTime);
+        }
+
+        const completedOrders = shiftOrders.filter(ko => ko.status === 'completed' || ko.status === 'ready');
+        const completedCount = completedOrders.length;
+        const totalDishes = completedOrders.reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
+
+        // Bonus tracking - dodaj jela u ukupan broj
+        if (!DB.kuvarBonus) DB.kuvarBonus = {};
+        if (!DB.kuvarBonus[username]) DB.kuvarBonus[username] = {total: 0};
+        const prevTotal = DB.kuvarBonus[username].total;
+        DB.kuvarBonus[username].total += totalDishes;
+        const newTotal = DB.kuvarBonus[username].total;
+
+        // Proveri da li je dostignut novi bonus
+        const prevBonuses = Math.floor(prevTotal / 30);
+        const newBonuses = Math.floor(newTotal / 30);
+        const earnedBonuses = newBonuses - prevBonuses;
+
+        // Obrisi completed narudzbine (kuvar ih ne treba vise, admin ih vidi u istoriji narudzbina)
+        DB.kitchenOrders = DB.kitchenOrders.filter(ko =>
+            ko.status !== 'completed'
         );
-        
-        const completedCount = shiftOrders.filter(ko => ko.status === 'completed' || ko.status === 'ready').length;
-        const totalDishes = shiftOrders.filter(ko => ko.status === 'completed' || ko.status === 'ready')
-            .reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
-        
-        // Sačuvaj u istoriju
+
+        // Sacuvaj u istoriju
         if (!DB.workdayHistory) DB.workdayHistory = [];
-        
         DB.workdayHistory.push({
             user: username,
             role: 'kuvar',
-            loginTime: myWorkday.startTime,
+            loginTime: loginTime || endTime,
             logoutTime: endTime,
             duration: duration,
             ordersProcessed: completedCount,
             totalOrders: shiftOrders.length,
             dishesCompleted: totalDishes
         });
-        
-        // Obriši workday
-        // ✅ ATOMIČKI DELETE za kuvara
-        removeWorkday(username);
+
         save();
-        
-        // Prikaži rezime
+
+        // Resetuj login vreme
+        localStorage.removeItem('kuvarLoginTime');
+
+        // Prikazi rezime
         const hours = Math.floor(duration / 60);
         const mins = duration % 60;
-        showAlert(`✅ Smena zatvorena!\n\n⏱️ Trajanje: ${hours}h ${mins}min\n📋 Narudžbine: ${completedCount}\n🍽️ Jela: ${totalDishes}`);
-        
-        page = 'kitchen';
+        let msg = `✅ Smena završena!\n\n⏱️ Trajanje: ${hours}h ${mins}min\n📋 Narudžbine: ${completedCount}\n🍽️ Jela: ${totalDishes}\n🏆 Ukupno jela: ${newTotal}`;
+        if (earnedBonuses > 0) {
+            msg += `\n\n🎉 BONUS x${earnedBonuses}! (ukupno ${newBonuses} bonusa)`;
+        } else {
+            msg += `\n\nJoš ${30 - (newTotal % 30)} jela do sledećeg bonusa`;
+        }
+        showAlert(msg);
+
+        // Odjavi kuvara
+        DB.currentUser = null;
+        DB.konobarName = null;
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('konobarName');
+        page = 'login';
         render();
     });
 }
