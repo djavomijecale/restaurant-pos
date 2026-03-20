@@ -195,7 +195,7 @@ function deleteWaiter(username) {
 
 
 function renderEdit(c) {
-    let h = '<div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>✏️ Izmeni Menu</h2><div><button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-right:8px" onclick="importCSV()">⬆ Import</button><button class="btn" style="width:auto;padding:8px 16px" onclick="addMenuItem()">+ Dodaj</button></div></div>';
+    let h = '<div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>✏️ Izmeni Menu</h2><div><button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-right:8px" onclick="exportMenu()">📥 Export</button><button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-right:8px" onclick="importCSV()">⬆ Import</button><button class="btn" style="width:auto;padding:8px 16px" onclick="addMenuItem()">+ Dodaj</button></div></div>';
     DB.menu.forEach(i => {
         h += `<div class="card" style="cursor:default">
             <div style="display:flex;justify-content:space-between;align-items:center">

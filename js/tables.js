@@ -494,3 +494,39 @@ function filterGroup(group) {
     render();
 }
 
+
+function exportMenu() {
+    if (!DB.menu || DB.menu.length === 0) {
+        showAlert('Meni je prazan!');
+        return;
+    }
+
+    // CSV header
+    let csv = 'Naziv,Kategorija,Grupa,Cena,Opis\n';
+
+    // Sort by category then group then name
+    const sorted = [...DB.menu].sort((a, b) => {
+        if (a.cat !== b.cat) return (a.cat || '').localeCompare(b.cat || '');
+        if ((a.group || '') !== (b.group || '')) return (a.group || '').localeCompare(b.group || '');
+        return a.name.localeCompare(b.name);
+    });
+
+    sorted.forEach(item => {
+        const esc = (val) => {
+            const s = String(val || '');
+            return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+        };
+        csv += esc(item.name) + ',' + esc(item.cat) + ',' + esc(item.group) + ',' + (item.price || 0) + ',' + esc(item.desc) + '\n';
+    });
+
+    // Download
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel to recognize Serbian chars
+    const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'meni_' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
