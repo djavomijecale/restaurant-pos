@@ -498,7 +498,27 @@ function renderHistoryDaily(allOrders, allSessions, ordersByDate, isWaiter) {
     h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💵 Depozit:</span><span style="color:#9C27B0;font-weight:bold">' + deposit.toFixed(0) + ' din.</span></div>';
     h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💵 Otkucani keš:</span><span style="color:#4CAF50;font-weight:bold">+' + totalCash.toFixed(0) + ' din.</span></div>';
     if (debtCash > 0) h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">📝 Vraćeni dugovi (keš):</span><span style="color:#FF9800;font-weight:bold">+' + debtCash.toFixed(0) + ' din.</span></div>';
-    if (totalReductions > 0) h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💸 Smanjenja keša:</span><span style="color:#E94560;font-weight:bold">-' + totalReductions.toFixed(0) + ' din.</span></div>';
+    if (totalReductions > 0) {
+        h += '<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="color:#888;font-size:13px">💸 Smanjenja keša:</span><span style="color:#E94560;font-weight:bold">-' + totalReductions.toFixed(0) + ' din.</span></div>';
+        // Detalji svakog smanjenja
+        var allReductions = [];
+        daySessions.forEach(function(ses) {
+            if (ses.cashReductions && ses.cashReductions.length > 0) {
+                ses.cashReductions.forEach(function(r) { allReductions.push({amount: r.amount, reason: r.reason, timestamp: r.timestamp, user: ses.user || r.createdBy || ''}); });
+            }
+        });
+        if (allReductions.length > 0) {
+            h += '<div style="margin:4px 0 8px 12px">';
+            allReductions.forEach(function(r) {
+                var time = r.timestamp ? new Date(r.timestamp).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}) : '';
+                h += '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:12px;color:#B0B0B0">';
+                h += '<span>' + (time ? time + ' · ' : '') + (r.user ? r.user + ' · ' : '') + (r.reason || 'Bez opisa') + '</span>';
+                h += '<span style="color:#E94560">-' + (r.amount || 0).toFixed(0) + ' din.</span>';
+                h += '</div>';
+            });
+            h += '</div>';
+        }
+    }
     h += '<div style="border-top:1px solid #2A2A4A;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between"><span style="color:#FFD700;font-weight:bold">= Keš u kasi:</span><span style="color:#FFD700;font-weight:bold;font-size:16px">' + cashInRegister.toFixed(0) + ' din.</span></div>';
     h += '</div></div>';
     
