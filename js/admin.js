@@ -195,8 +195,13 @@ function deleteWaiter(username) {
 
 
 function renderEdit(c) {
+    if (!window.editMenuSearch) window.editMenuSearch = '';
     let h = '<div style="display:flex;justify-content:space-between;margin-bottom:16px"><h2>✏️ Izmeni Menu</h2><div><button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-right:8px" onclick="exportMenu()">📥 Export</button><button class="btn btn-secondary" style="width:auto;padding:8px 16px;margin-right:8px" onclick="importCSV()">⬆ Import</button><button class="btn" style="width:auto;padding:8px 16px" onclick="addMenuItem()">+ Dodaj</button></div></div>';
-    DB.menu.forEach(i => {
+    h += '<div style="margin-bottom:16px"><input type="text" id="editMenuSearchInput" placeholder="Pretraži artikle..." value="' + window.editMenuSearch.replace(/"/g, '&quot;') + '" oninput="window.editMenuSearch=this.value;render()" style="width:100%;padding:12px 16px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:14px"></div>';
+    const searchTerm = window.editMenuSearch.toLowerCase();
+    const filteredMenu = searchTerm ? DB.menu.filter(function(i) { return i.name.toLowerCase().includes(searchTerm) || (i.cat && i.cat.toLowerCase().includes(searchTerm)) || (i.group && i.group.toLowerCase().includes(searchTerm)); }) : DB.menu;
+    if (searchTerm) h += '<div style="color:#888;font-size:13px;margin-bottom:12px">' + filteredMenu.length + ' od ' + DB.menu.length + ' artikala</div>';
+    filteredMenu.forEach(i => {
         h += `<div class="card" style="cursor:default">
             <div style="display:flex;justify-content:space-between;align-items:center">
                 <div style="flex:1">
