@@ -373,23 +373,88 @@ let isSaving = false;
 let saveQueued = false;
 let hasPendingChanges = false; // Flag: imamo lokalne promene koje čekaju save
 
+// Merge nizova po ID-ju - nikad ne gubi podatke, samo dodaje
+function mergeArraysById(local, server, idField) {
+    if (!server || !Array.isArray(server)) return local || [];
+    if (!local || !Array.isArray(local)) return server;
+
+    const merged = [...server];
+    const serverIds = new Set(server.map(item => item[idField]));
+
+    local.forEach(item => {
+        if (!serverIds.has(item[idField])) {
+            merged.push(item);
+        }
+    });
+
+    // Azuriraj postojece stavke iz lokala (npr. debt.remaining se menjao)
+    merged.forEach((item, idx) => {
+        const localItem = local.find(l => l[idField] === item[idField]);
+        if (localItem) {
+            // Uzmi noviji podatak (po vremenu izmene)
+            const serverTime = item.clearedAt || item.deletedAt || item.time || '';
+            const localTime = localItem.clearedAt || localItem.deletedAt || localItem.time || '';
+            if (localTime > serverTime) {
+                merged[idx] = localItem;
+            }
+        }
+    });
+
+    return merged;
+}
+
 async function saveToFirebase() {
     if (isLoading) return;
-    
+
     if (isSaving) {
         saveQueued = true;
         return;
     }
     isSaving = true;
     hasPendingChanges = true;
-    
+
     if (!isFirebaseAuthReady) {
         console.warn('⚠️ Auth nije spreman - pokušavam save bez auth-a...');
     }
-    
+
+    // ✅ ZAŠTITA: Pre save-a, učitaj kritične podatke sa servera i mergeuj
+    // Ovo sprečava da stariji localStorage prepiše novije podatke
+    try {
+        const criticalSnapshot = await database.ref('/').once('value');
+        const serverData = criticalSnapshot.val();
+
+        if (serverData) {
+            // Merge orders - nikad ne brisemo narudzbine
+            DB.orders = mergeArraysById(DB.orders || [], serverData.orders || [], 'id');
+
+            // Merge debts - nikad ne brisemo dugove
+            DB.debts = mergeArraysById(DB.debts || [], serverData.debts || [], 'id');
+
+            // Merge workdayHistory - nikad ne brisemo istoriju smena
+            DB.workdayHistory = mergeArraysById(DB.workdayHistory || [], serverData.workdayHistory || [], 'id');
+
+            // Merge houseOrders
+            DB.houseOrders = mergeArraysById(DB.houseOrders || [], serverData.houseOrders || [], 'id');
+
+            // Merge removedItems (nemaju uvek ID, koristi timestamp)
+            if (serverData.removedItems && Array.isArray(serverData.removedItems)) {
+                const localTimes = new Set((DB.removedItems || []).map(r => r.removedAt));
+                serverData.removedItems.forEach(item => {
+                    if (!localTimes.has(item.removedAt)) {
+                        DB.removedItems.push(item);
+                    }
+                });
+            }
+
+            console.log('🔀 Merge završen - orders:', DB.orders.length, 'debts:', DB.debts.length, 'history:', DB.workdayHistory.length);
+        }
+    } catch (mergeErr) {
+        console.warn('⚠️ Merge pre save-a nije uspeo, nastavljam sa lokalnim podacima:', mergeErr.message);
+    }
+
     // VAŽNO: Generišemo timestamp PRE slanja i čuvamo ga lokalno
     const saveTimestamp = new Date().toISOString();
-    
+
     const dataToSave = {
         menu: DB.menu,
         tables: DB.tables,
@@ -412,7 +477,7 @@ async function saveToFirebase() {
         houseOrders: DB.houseOrders || [],
         lastUpdated: saveTimestamp
     };
-    
+
     try {
         await database.ref('/').update(dataToSave);
         // ✅ KLJUČNA POPRAVKA: Ažuriraj lokalni lastUpdate POSLE uspešnog save-a
