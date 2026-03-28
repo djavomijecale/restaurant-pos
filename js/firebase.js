@@ -374,6 +374,24 @@ let saveQueued = false;
 let hasPendingChanges = false; // Flag: imamo lokalne promene koje čekaju save
 
 // Merge nizova po ID-ju - nikad ne gubi podatke, samo dodaje
+// Merge workdayHistory po user+loginTime (nema id polje)
+function mergeWorkdayHistory(local, server) {
+    if (!server || !Array.isArray(server)) return local || [];
+    if (!local || !Array.isArray(local)) return server;
+
+    const merged = [...server];
+    const serverKeys = new Set(server.map(s => (s.user || '') + '|' + (s.loginTime || '')));
+
+    local.forEach(item => {
+        const key = (item.user || '') + '|' + (item.loginTime || '');
+        if (!serverKeys.has(key)) {
+            merged.push(item);
+        }
+    });
+
+    return merged;
+}
+
 function mergeArraysById(local, server, idField) {
     if (!server || !Array.isArray(server)) return local || [];
     if (!local || !Array.isArray(local)) return server;
@@ -430,8 +448,8 @@ async function saveToFirebase() {
             // Merge debts - nikad ne brisemo dugove
             DB.debts = mergeArraysById(DB.debts || [], serverData.debts || [], 'id');
 
-            // Merge workdayHistory - nikad ne brisemo istoriju smena
-            DB.workdayHistory = mergeArraysById(DB.workdayHistory || [], serverData.workdayHistory || [], 'id');
+            // Merge workdayHistory - koristi loginTime kao jedinstven kljuc (nema id polje)
+            DB.workdayHistory = mergeWorkdayHistory(DB.workdayHistory || [], serverData.workdayHistory || []);
 
             // Merge houseOrders
             DB.houseOrders = mergeArraysById(DB.houseOrders || [], serverData.houseOrders || [], 'id');
