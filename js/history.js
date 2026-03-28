@@ -446,6 +446,32 @@ function renderHistoryDaily(allOrders, allSessions, ordersByDate, isWaiter) {
     
     var dayOrders = allOrders.filter(function(o) { return o.time >= bdStartISO && o.time < bdEndISO; });
     var daySessions = allSessions.filter(function(s) { return s.loginTime >= bdStartISO && s.loginTime < bdEndISO; });
+
+    // Dodaj aktivne (otvorene) smene za ovaj dan
+    if (DB.workdays && typeof DB.workdays === 'object') {
+        Object.keys(DB.workdays).forEach(function(username) {
+            var wd = DB.workdays[username];
+            if (wd && wd.startTime && wd.startTime >= bdStartISO && wd.startTime < bdEndISO) {
+                // Proveri da vec nije u daySessions
+                var alreadyExists = daySessions.some(function(s) { return s.loginTime === wd.startTime && s.user === wd.user; });
+                if (!alreadyExists) {
+                    var reductions = wd.cashReductions || [];
+                    var totalRed = reductions.reduce(function(s, r) { return s + (r.amount || 0); }, 0);
+                    daySessions.push({
+                        user: wd.user || username,
+                        loginTime: wd.startTime,
+                        logoutTime: null,
+                        duration: 0,
+                        deposit: wd.deposit || 0,
+                        cashReductions: reductions,
+                        totalCashReductions: totalRed,
+                        salary: 0,
+                        isActive: true
+                    });
+                }
+            }
+        });
+    }
     
     var realOrders = dayOrders.filter(function(o) { return !o.isDebtPayment; });
     var debtOrders = dayOrders.filter(function(o) { return o.isDebtPayment; });
