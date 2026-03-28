@@ -85,8 +85,30 @@ function renderWorkday(c) {
 }
 
 
-function openWorkday() {
+async function openWorkday() {
     const username = DB.currentUser.username;
+
+    // ✅ Učitaj sveze podatke iz Firebase pre otvaranja smene
+    // Ovo sprečava korišćenje zastarelih podataka (npr. stari depozit)
+    // kad drugi uređaj upravo zatvori smenu
+    try {
+        if (typeof database !== 'undefined' && (typeof DEMO_MODE === 'undefined' || !DEMO_MODE)) {
+            const snap = await database.ref('/').once('value');
+            const serverData = snap.val();
+            if (serverData) {
+                if (serverData.workdays && typeof serverData.workdays === 'object') {
+                    DB.workdays = serverData.workdays;
+                }
+                if (serverData.workdayHistory && Array.isArray(serverData.workdayHistory)) {
+                    DB.workdayHistory = serverData.workdayHistory;
+                }
+                console.log('🔄 Sveži podaci učitani pre otvaranja smene');
+            }
+        }
+    } catch(e) {
+        console.warn('⚠️ Nije uspelo učitavanje svežih podataka:', e.message);
+    }
+
     const businessDayStart = getBusinessDayStart();
     
     // Pronađi depozit za nasleđivanje:
