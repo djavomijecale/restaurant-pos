@@ -726,6 +726,21 @@ async function saveWorkday(username, workdayData) {
 }
 
 
+// Atomički dodaj zapis u workdayHistory na Firebase
+// Ovo je KRITIČNO - mora se sacuvati PRE brisanja workday-a
+// jer drugi uredjaji citaju workdayHistory za nasleđivanje depozita
+async function pushWorkdayHistory(historyEntry) {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
+    try {
+        await database.ref('/workdayHistory').set(DB.workdayHistory);
+        console.log('✅ WorkdayHistory atomički sačuvan, ukupno:', DB.workdayHistory.length);
+    } catch (err) {
+        console.error('❌ Greška pri čuvanju workdayHistory:', err);
+        throw err;
+    }
+}
+
+
 // Zatvori smenu za korisnika - briše SAMO /workdays/{safeKey}
 async function removeWorkday(username) {
     if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) {

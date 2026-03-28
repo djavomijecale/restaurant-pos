@@ -449,14 +449,23 @@ async function closeWorkday() {
     });
     
     console.log('✅ Sesija dodata u workdayHistory:', DB.workdayHistory.length, 'sesija ukupno');
-    
+
+    // ✅ KRITIČNO: Sačuvaj workdayHistory ATOMIČKI pre brisanja workday-a
+    // Ovo sprečava race condition gde drugi uređaj vidi da je workday obrisan
+    // ali workdayHistory još nije ažuriran (pa nasledi pogrešan depozit)
+    try {
+        await pushWorkdayHistory();
+    } catch(e) {
+        console.error('⚠️ pushWorkdayHistory greška, nastavljam:', e);
+    }
+
     // Resetuj samo stavke ovog konobara sa stolova
     // ALI NE BRIŠEMO NARUDŽBINE - one ostaju u bazi zauvek!
     DB.tables.forEach(table => {
         if (table.order && table.order.length > 0) {
             // Filtriraj samo stavke drugih konobara (zadrži ih)
             table.order = table.order.filter(item => item.createdBy && item.createdBy !== username);
-            
+
             // Ako je sto prazan nakon filtriranja, resetuj discount
             if (table.order.length === 0) {
                 table.discount = 0;
@@ -465,10 +474,10 @@ async function closeWorkday() {
             }
         }
     });
-    
-    // Obriši SAMO workday ovog konobara
+
+    // Obriši SAMO workday ovog konobara - TEK NAKON što je history sačuvan
     // ✅ ATOMIČKI DELETE - briše SAMO /workdays/{username}
-    removeWorkday(username);
+    await removeWorkday(username);
     console.log('✅ Workday zatvoren za:', username);
     save();
     
@@ -537,7 +546,7 @@ function checkAndAutoCloseShifts() {
 }
 
 
-function autoCloseWorkday(username, myWorkday) {
+async function autoCloseWorkday(username, myWorkday) {
     console.log('⏰ Auto-zatvaranje smene za: ' + username);
     
     const startTime = new Date(myWorkday.startTime);
@@ -637,6 +646,13 @@ function autoCloseWorkday(username, myWorkday) {
         inheritedFrom: myWorkday.inheritedFrom || null
     });
     
+    // ✅ KRITIČNO: Sačuvaj workdayHistory ATOMIČKI pre brisanja workday-a
+    try {
+        await pushWorkdayHistory();
+    } catch(e) {
+        console.error('⚠️ pushWorkdayHistory greška u auto-close:', e);
+    }
+
     // Očisti stavke sa stolova
     DB.tables.forEach(table => {
         if (table.order && table.order.length > 0) {
@@ -648,11 +664,11 @@ function autoCloseWorkday(username, myWorkday) {
             }
         }
     });
-    
-    // Obriši workday
-    removeWorkday(username);
+
+    // Obriši workday - TEK NAKON što je history sačuvan
+    await removeWorkday(username);
     save();
-    
+
     console.log('⏰ Auto-zatvorena smena: ' + username + ' | ' + startTime.toLocaleString('sr-RS') + ' → ' + endTime.toLocaleString('sr-RS') + ' | Prihod: ' + totalRevenue);
 }
 
