@@ -307,10 +307,31 @@ function changeTableQty(tableNum, itemId, delta, createdBy) {
         
         item.qty += delta;
         if(item.qty <= 0) delTableItem(tableNum, itemId, createdBy);
-        else { 
-            if (typeof saveDebounced === 'function') saveDebounced(); 
-            else save(); 
-            render(); 
+        else {
+            // Ažuriraj količinu u PENDING kuhinjskoj narudžbini
+            if (delta < 0 && shouldSendToKitchen(item)) {
+                const kitchenOrder = DB.kitchenOrders.find(ko =>
+                    ko.status === 'pending' &&
+                    ko.tableNum === tableNum &&
+                    ko.waiterUsername === DB.currentUser.username
+                );
+                if (kitchenOrder) {
+                    const kitchenItem = kitchenOrder.items.find(i => i.id === itemId);
+                    if (kitchenItem) {
+                        kitchenItem.qty += delta;
+                        if (kitchenItem.qty <= 0) {
+                            kitchenOrder.items = kitchenOrder.items.filter(i => i.id !== itemId);
+                        }
+                        // Obrisi celu narudzbinu ako nema stavki
+                        if (kitchenOrder.items.length === 0) {
+                            DB.kitchenOrders = DB.kitchenOrders.filter(ko => ko !== kitchenOrder);
+                        }
+                    }
+                }
+            }
+            if (typeof saveDebounced === 'function') saveDebounced();
+            else save();
+            render();
         }
     }
 }
@@ -354,13 +375,29 @@ function delTableItem(tableNum, itemId, createdBy) {
         });
     }
     
+    // Obriši iz PENDING kuhinjske narudžbine (kuvar još nije video)
+    if (item && shouldSendToKitchen(item)) {
+        const kitchenOrder = DB.kitchenOrders.find(ko =>
+            ko.status === 'pending' &&
+            ko.tableNum === tableNum &&
+            ko.waiterUsername === (createdBy || DB.currentUser.username)
+        );
+        if (kitchenOrder) {
+            kitchenOrder.items = kitchenOrder.items.filter(i => i.id !== itemId);
+            // Obrisi celu narudzbinu ako nema stavki
+            if (kitchenOrder.items.length === 0) {
+                DB.kitchenOrders = DB.kitchenOrders.filter(ko => ko !== kitchenOrder);
+            }
+        }
+    }
+
     // Briši stavku - backward compatible
     if (createdBy && createdBy !== '') {
         table.order = table.order.filter(i=>!(i.id===itemId && i.createdBy===createdBy));
     } else {
         table.order = table.order.filter(i=>!(i.id===itemId && !i.createdBy));
     }
-    
+
     save();
     render();
 }
