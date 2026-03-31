@@ -158,6 +158,7 @@ async function loadFromFirebase() {
             ];
             
             DB.workdayHistory = data.workdayHistory || [];
+            DB.kuvarBonus = data.kuvarBonus || {};
             DB.kitchenOrders = data.kitchenOrders || [];
             // Popravi kuhinjske narudžbine kojima nedostaje tableName/waiterName
             DB.kitchenOrders.forEach(ko => {
@@ -493,6 +494,7 @@ async function saveToFirebase() {
         invoices: DB.invoices || [],
         debts: DB.debts || [],
         houseOrders: DB.houseOrders || [],
+        kuvarBonus: DB.kuvarBonus || {},
         lastUpdated: saveTimestamp
     };
 

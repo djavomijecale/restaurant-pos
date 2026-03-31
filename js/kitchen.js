@@ -40,7 +40,10 @@ function renderKitchen(c) {
     // Bonus tracking za kuvara
     const kuvarUsername = isKuvar ? DB.currentUser.username : null;
     const kuvarBonusData = isKuvar && DB.kuvarBonus ? (DB.kuvarBonus[kuvarUsername] || {total: 0}) : {total: 0};
-    const completedDishesInShift = allOrders.filter(ko => ko.status === 'completed' || ko.status === 'ready')
+    // Broji samo completed/ready narudzbine iz TEKUCE smene (od loginTime)
+    const kuvarLoginTime = isKuvar ? localStorage.getItem('kuvarLoginTime') : null;
+    const completedDishesInShift = allOrders
+        .filter(ko => (ko.status === 'completed' || ko.status === 'ready') && (!kuvarLoginTime || (ko.orderedAt && ko.orderedAt >= kuvarLoginTime)))
         .reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
     const totalDishesForBonus = kuvarBonusData.total + completedDishesInShift;
     const bonusCount = Math.floor(totalDishesForBonus / 30);
@@ -515,9 +518,10 @@ function closeKuvarShift() {
         const newBonuses = Math.floor(newTotal / 30);
         const earnedBonuses = newBonuses - prevBonuses;
 
-        // Obrisi completed narudzbine (kuvar ih ne treba vise, admin ih vidi u istoriji narudzbina)
+        // Obrisi completed I ready narudzbine (kuvar ih ne treba vise, admin ih vidi u istoriji narudzbina)
+        // Ovo sprečava da se iste narudzbine prenose u sledecu smenu i ponovo broje
         DB.kitchenOrders = DB.kitchenOrders.filter(ko =>
-            ko.status !== 'completed'
+            ko.status !== 'completed' && ko.status !== 'ready'
         );
 
         // Sacuvaj u istoriju
