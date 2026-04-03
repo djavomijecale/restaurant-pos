@@ -139,7 +139,8 @@ async function loadFromFirebase() {
                 database.ref('tables').set(DB.tables);
             }
             
-            DB.orders = data.orders || [];
+            // ✅ MERGE umesto overwrite - čuva offline podatke sa ovog uređaja
+            DB.orders = mergeArraysById(DB.orders || [], data.orders || [], 'id');
             DB.removedItems = data.removedItems || [];
             
             DB.settings = data.settings || {
@@ -157,7 +158,7 @@ async function loadFromFirebase() {
                 {username:'kuvar1',password:'kuvar1',role:'kuvar'}
             ];
             
-            DB.workdayHistory = data.workdayHistory || [];
+            DB.workdayHistory = mergeWorkdayHistory(DB.workdayHistory || [], data.workdayHistory || []);
             DB.kuvarBonus = data.kuvarBonus || {};
             DB.kitchenOrders = data.kitchenOrders || [];
             // Popravi kuhinjske narudžbine kojima nedostaje tableName/waiterName
@@ -177,7 +178,7 @@ async function loadFromFirebase() {
             // Lager
             DB.inventory = data.inventory || [];
             DB.invoices = data.invoices || [];
-            DB.debts = data.debts || [];
+            DB.debts = mergeArraysById(DB.debts || [], data.debts || [], 'id');
             DB.houseOrders = data.houseOrders || [];
             // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
             DB.debts.forEach(debt => {
