@@ -729,7 +729,8 @@ function deleteOrder(orderId) {
             
             var removed = DB.orders.splice(idx, 1)[0];
             console.log('🗑️ Obrisana narudžbina #' + orderId + ': ' + removed.tot + ' din');
-            
+
+            DB._adminDeleteOverride = true;
             save();
             render();
             showAlert('✅ Narudžbina #' + orderId + ' obrisana (' + removed.tot.toFixed(0) + ' din)');

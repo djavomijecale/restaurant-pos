@@ -1130,7 +1130,8 @@ async function executeClearWorkday() {
                     });
                     stats.removed = before - DB.removedItems.length;
                 }
-                
+
+                DB._adminDeleteOverride = true;
                 save();
                 closeClearWorkdayModal();
                 render();
