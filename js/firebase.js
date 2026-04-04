@@ -439,11 +439,18 @@ async function saveToFirebase() {
 
     // ✅ ZAŠTITA: Pre save-a, učitaj kritične podatke sa servera i mergeuj
     // Ovo sprečava da stariji localStorage prepiše novije podatke
+    // ALI: Preskoči merge ako admin namerno briše podatke
+    const isAdminDelete = DB._adminDeleteOverride;
+    if (isAdminDelete) {
+        DB._adminDeleteOverride = false;
+        console.log('🛡️ Admin override - preskačem merge, direktan save');
+    }
+
     try {
         const criticalSnapshot = await database.ref('/').once('value');
         const serverData = criticalSnapshot.val();
 
-        if (serverData) {
+        if (serverData && !isAdminDelete) {
             // Merge orders - nikad ne brisemo narudzbine
             DB.orders = mergeArraysById(DB.orders || [], serverData.orders || [], 'id');
 
@@ -469,30 +476,24 @@ async function saveToFirebase() {
             console.log('🔀 Merge završen - orders:', DB.orders.length, 'debts:', DB.debts.length, 'history:', DB.workdayHistory.length);
 
             // 🛡️ FINALNA ZAŠTITA: Blokiraj save ako bi obrisao podatke
-            // Preskoci ako je admin namerno obrisao nesto (flag se postavlja u admin funkcijama)
-            if (!DB._adminDeleteOverride) {
-                const serverOrdersLen = Array.isArray(serverData.orders) ? serverData.orders.length : 0;
-                const serverDebtsLen = Array.isArray(serverData.debts) ? serverData.debts.length : 0;
-                const serverHistoryLen = Array.isArray(serverData.workdayHistory) ? serverData.workdayHistory.length : 0;
+            const serverOrdersLen = Array.isArray(serverData.orders) ? serverData.orders.length : 0;
+            const serverDebtsLen = Array.isArray(serverData.debts) ? serverData.debts.length : 0;
+            const serverHistoryLen = Array.isArray(serverData.workdayHistory) ? serverData.workdayHistory.length : 0;
 
-                if (DB.orders.length < serverOrdersLen) {
-                    console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.orders.length + ' narudžbina, server ima ' + serverOrdersLen + '. Save otkazan.');
-                    isSaving = false;
-                    return;
-                }
-                if (DB.debts.length < serverDebtsLen) {
-                    console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.debts.length + ' dugova, server ima ' + serverDebtsLen + '. Save otkazan.');
-                    isSaving = false;
-                    return;
-                }
-                if (DB.workdayHistory.length < serverHistoryLen) {
-                    console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.workdayHistory.length + ' sesija, server ima ' + serverHistoryLen + '. Save otkazan.');
-                    isSaving = false;
-                    return;
-                }
-            } else {
-                DB._adminDeleteOverride = false;
-                console.log('🛡️ Admin override - dozvoljeno brisanje');
+            if (DB.orders.length < serverOrdersLen) {
+                console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.orders.length + ' narudžbina, server ima ' + serverOrdersLen + '. Save otkazan.');
+                isSaving = false;
+                return;
+            }
+            if (DB.debts.length < serverDebtsLen) {
+                console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.debts.length + ' dugova, server ima ' + serverDebtsLen + '. Save otkazan.');
+                isSaving = false;
+                return;
+            }
+            if (DB.workdayHistory.length < serverHistoryLen) {
+                console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.workdayHistory.length + ' sesija, server ima ' + serverHistoryLen + '. Save otkazan.');
+                isSaving = false;
+                return;
             }
         }
     } catch (mergeErr) {
