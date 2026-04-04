@@ -82,8 +82,24 @@ function renderTableSelect(c) {
 }
 
 
+// Snapshot narudžbine kad se sto otvori - da znamo šta je novo
+var tableOpenSnapshot = {};
+
 function selectTable(num) {
     DB.selectedTable = num;
+    // Sačuvaj snapshot trenutnih stavki na stolu (pre nego što konobar počne da kuca)
+    const table = DB.tables.find(t => t.num === num);
+    if (table && table.order) {
+        // Ključ: itemId + createdBy, vrednost: qty u tom trenutku
+        const snap = {};
+        table.order.forEach(item => {
+            const key = item.id + '_' + (item.createdBy || '');
+            snap[key] = item.qty;
+        });
+        tableOpenSnapshot[num] = snap;
+    } else {
+        tableOpenSnapshot[num] = {};
+    }
     page = 'tables';
     render();
 }
@@ -396,20 +412,32 @@ function renderTableMenu(c) {
     h += '</div>';
     
     if(myOrder.length > 0) {
-        let orderListHtml = '';
+        // Prikaži samo NOVE stavke (dodate od kad je sto otvoren)
+        const snapshot = tableOpenSnapshot[DB.selectedTable] || {};
+        let newItems = [];
         myOrder.forEach(item => {
-            orderListHtml += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:13px">
-                <span style="opacity:0.95">${item.qty}x ${item.name}</span>
-                <span style="font-weight:bold">${(item.price * item.qty).toFixed(0)}</span>
-            </div>`;
+            const key = item.id + '_' + (item.createdBy || '');
+            const oldQty = snapshot[key] || 0;
+            const newQty = item.qty - oldQty;
+            if (newQty > 0) {
+                newItems.push({ name: item.name, qty: newQty, price: item.price });
+            }
         });
+
+        let orderListHtml = '';
+        if (newItems.length > 0) {
+            newItems.forEach(item => {
+                orderListHtml += `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:13px">
+                    <span style="opacity:0.95">${item.qty}x ${item.name}</span>
+                    <span style="font-weight:bold">${(item.price * item.qty).toFixed(0)}</span>
+                </div>`;
+            });
+        }
 
         h += `<div style="position:sticky;bottom:0;background:#E94560;padding:12px 24px;border-radius:12px 12px 0 0;box-shadow:0 -4px 20px rgba(233,69,96,0.5);margin:16px -16px 0 -16px;z-index:100">
             <div style="max-width:500px;margin:0 auto">
-                <div style="max-height:120px;overflow-y:auto;margin-bottom:8px;padding-right:4px">
-                    ${orderListHtml}
-                </div>
-                <div style="border-top:1px solid rgba(255,255,255,0.3);padding-top:8px;display:flex;justify-content:space-between;align-items:center">
+                ${orderListHtml ? `<div style="max-height:120px;overflow-y:auto;margin-bottom:8px;padding-right:4px">${orderListHtml}</div>` : ''}
+                <div style="${orderListHtml ? 'border-top:1px solid rgba(255,255,255,0.3);padding-top:8px;' : ''}display:flex;justify-content:space-between;align-items:center">
                     <div>
                         <div style="font-size:12px;opacity:0.9">${myOrder.length} stavki</div>
                         <div style="font-size:20px;font-weight:bold">${tot.toFixed(0)} din.</div>
