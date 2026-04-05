@@ -56,6 +56,16 @@ function getCashbookData(startDate, endDate) {
     let maraIncome = 0, maraExpense = 0;
     let otherIncome = 0, otherExpense = 0;
 
+    // Smanjenja keša koja sadrže "dule" ili "mara" u razlogu → dodaj na njihov račun
+    reductions.forEach(r => {
+        const reason = (r.reason || '').toLowerCase();
+        if (reason.includes('dule') || reason.includes('duле')) {
+            duleExpense += r.amount;
+        } else if (reason.includes('mara') || reason.includes('мара')) {
+            maraExpense += r.amount;
+        }
+    });
+
     manualEntries.forEach(e => {
         const person = (e.person || '').toLowerCase();
         if (e.type === 'income') {
