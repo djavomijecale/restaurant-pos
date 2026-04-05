@@ -83,6 +83,7 @@ const DB = {
     debts: [],  // Dugovanja
     houseOrders: [],  // Kuća - artikli koji se ne naplaćuju
     cashbook: [],  // Presek stanja - ručni prihodi/rashodi
+    deletedOrderIds: [],  // ID-ovi narudžbina koje je admin obrisao
     manuallyEditedCategories: JSON.parse(localStorage.getItem('manuallyEditedCategories') || '{}')  // Lokalno čuvanje ručnih izmena!
 };
 

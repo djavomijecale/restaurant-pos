@@ -730,6 +730,10 @@ function deleteOrder(orderId) {
             var removed = DB.orders.splice(idx, 1)[0];
             console.log('🗑️ Obrisana narudžbina #' + orderId + ': ' + removed.tot + ' din');
 
+            // Dodaj u listu obrisanih - sprečava merge da vrati ovu narudžbinu
+            if (!DB.deletedOrderIds) DB.deletedOrderIds = [];
+            DB.deletedOrderIds.push(String(orderId));
+
             DB._adminDeleteOverride = true;
             save();
             render();

@@ -181,6 +181,7 @@ async function loadFromFirebase() {
             DB.debts = mergeArraysById(DB.debts || [], data.debts || [], 'id');
             DB.houseOrders = data.houseOrders || [];
             DB.cashbook = data.cashbook || [];
+            DB.deletedOrderIds = data.deletedOrderIds || [];
             // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
             DB.debts.forEach(debt => {
                 if (!debt.payments) debt.payments = [];
@@ -452,8 +453,18 @@ async function saveToFirebase() {
         const serverData = criticalSnapshot.val();
 
         if (serverData && !isAdminDelete) {
-            // Merge orders - nikad ne brisemo narudzbine
-            DB.orders = mergeArraysById(DB.orders || [], serverData.orders || [], 'id');
+            // Učitaj listu obrisanih narudžbina sa servera (admin ih je obrisao)
+            const serverDeletedIds = serverData.deletedOrderIds || [];
+            const localDeletedIds = DB.deletedOrderIds || [];
+            // Spoji obe liste
+            DB.deletedOrderIds = [...new Set([...localDeletedIds, ...serverDeletedIds].map(String))];
+            const deletedIds = new Set(DB.deletedOrderIds);
+
+            // Merge orders - nikad ne brisemo narudzbine, ALI preskoči obrisane od admina
+            const serverOrders = (serverData.orders || []).filter(o => !deletedIds.has(String(o.id)));
+            DB.orders = mergeArraysById(DB.orders || [], serverOrders, 'id');
+            // Filtriraj i lokalne obrisane
+            DB.orders = DB.orders.filter(o => !deletedIds.has(String(o.id)));
 
             // Merge debts - nikad ne brisemo dugove
             DB.debts = mergeArraysById(DB.debts || [], serverData.debts || [], 'id');
@@ -525,6 +536,7 @@ async function saveToFirebase() {
         debts: DB.debts || [],
         houseOrders: DB.houseOrders || [],
         cashbook: DB.cashbook || [],
+        deletedOrderIds: DB.deletedOrderIds || [],
         kuvarBonus: DB.kuvarBonus || {},
         lastUpdated: saveTimestamp
     };
