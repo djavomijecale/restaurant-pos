@@ -179,11 +179,20 @@
                 <input type="number" id="cashReductionAmount" placeholder="Npr: 500" min="0" step="10"
                     style="font-size:20px;text-align:center;padding:12px">
             </div>
-            <div style="margin-bottom:24px">
+            <div style="margin-bottom:16px">
                 <label style="color:#FFD700;display:block;margin-bottom:8px;font-weight:bold">Razlog *</label>
-                <textarea id="cashReductionReason" placeholder="Npr: Dat kusur gostu, greška u kasiranju..."
-                    rows="3" style="width:100%;padding:12px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:14px;resize:vertical"></textarea>
-                <p style="color:#B0B0B0;font-size:12px;margin-top:8px">⚠️ Razlog je obavezan!</p>
+                <select id="cashReductionType" onchange="onCashReductionTypeChange()" style="width:100%;padding:12px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:15px;margin-bottom:8px">
+                    <option value="">-- Izaberi razlog --</option>
+                    <option value="nabavka">🛒 Nabavka</option>
+                    <option value="dule">👤 Uzeo Dule</option>
+                    <option value="mara">👤 Uzela Mara</option>
+                    <option value="ostalo">📝 Ostalo</option>
+                </select>
+            </div>
+            <div style="margin-bottom:24px" id="cashReductionReasonWrap">
+                <label style="color:#FFD700;display:block;margin-bottom:8px;font-weight:bold">Komentar *</label>
+                <textarea id="cashReductionReason" placeholder="Upiši šta je kupljeno, razlog..."
+                    rows="2" style="width:100%;padding:12px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:14px;resize:vertical"></textarea>
             </div>
             <div style="display:flex;gap:12px">
                 <button class="btn btn-secondary" onclick="closeCashReductionModal()">Odustani</button>

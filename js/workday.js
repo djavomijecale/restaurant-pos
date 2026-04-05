@@ -256,17 +256,40 @@ function confirmDeposit() {
 function openCashReductionModal() {
     const username = DB.currentUser.username;
     const myWorkday = DB.workdays && DB.workdays[username];
-    
+
     if (!myWorkday) {
         showAlert('Niste otvorili radni dan!');
         return;
     }
-    
+
     const modal = document.getElementById('cashReductionModal');
     document.getElementById('cashReductionAmount').value = '';
     document.getElementById('cashReductionReason').value = '';
+    document.getElementById('cashReductionType').value = '';
+    var wrap = document.getElementById('cashReductionReasonWrap');
+    if (wrap) wrap.style.display = 'none';
     modal.classList.add('show');
     document.getElementById('cashReductionAmount').focus();
+}
+
+function onCashReductionTypeChange() {
+    var type = document.getElementById('cashReductionType').value;
+    var wrap = document.getElementById('cashReductionReasonWrap');
+    var reasonInput = document.getElementById('cashReductionReason');
+    if (type === 'nabavka' || type === 'ostalo') {
+        wrap.style.display = 'block';
+        reasonInput.value = '';
+        reasonInput.focus();
+    } else if (type === 'dule') {
+        wrap.style.display = 'none';
+        reasonInput.value = 'Uzeo Dule';
+    } else if (type === 'mara') {
+        wrap.style.display = 'none';
+        reasonInput.value = 'Uzela Mara';
+    } else {
+        wrap.style.display = 'none';
+        reasonInput.value = '';
+    }
 }
 
 
@@ -277,22 +300,33 @@ function closeCashReductionModal() {
 
 function confirmCashReduction() {
     const amount = parseFloat(document.getElementById('cashReductionAmount').value) || 0;
-    const reason = document.getElementById('cashReductionReason').value.trim();
-    
+    const type = document.getElementById('cashReductionType').value;
+    var reason = document.getElementById('cashReductionReason').value.trim();
+
     // Validacija
     if (amount <= 0) {
         showAlert('Iznos mora biti veći od 0');
         return;
     }
-    
-    if (!reason) {
-        showAlert('Morate uneti razlog!');
+
+    if (!type) {
+        showAlert('Izaberite razlog!');
         return;
     }
-    
-    if (reason.length < 5) {
-        showAlert('Razlog mora imati najmanje 5 karaktera');
+
+    // Za nabavku/ostalo mora komentar
+    if ((type === 'nabavka' || type === 'ostalo') && !reason) {
+        showAlert('Morate uneti komentar!');
         return;
+    }
+
+    // Složi finalni razlog
+    if (type === 'nabavka') {
+        reason = 'Nabavka: ' + reason;
+    } else if (type === 'dule') {
+        reason = 'Uzeo Dule';
+    } else if (type === 'mara') {
+        reason = 'Uzela Mara';
     }
     
     const username = DB.currentUser.username;
