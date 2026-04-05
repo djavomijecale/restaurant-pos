@@ -427,11 +427,17 @@ async function closeWorkday() {
     let bonusAmount = 0;
     let bonusReason = '';
     
-    // PRVA SMENA: 20,000 din → 1,000 din bonus
-    if (isFirstShift && totalRevenue >= 20000) {
-        bonusEarned = true;
-        bonusAmount = 1000;
-        bonusReason = 'Prva smena - prihod ≥ 20,000 din.';
+    // PRVA SMENA: 40,000+ → 2,000 din bonus, 20,000+ → 1,000 din bonus
+    if (isFirstShift) {
+        if (totalRevenue >= 40000) {
+            bonusEarned = true;
+            bonusAmount = 2000;
+            bonusReason = 'Prva smena - prihod ≥ 40,000 din.';
+        } else if (totalRevenue >= 20000) {
+            bonusEarned = true;
+            bonusAmount = 1000;
+            bonusReason = 'Prva smena - prihod ≥ 20,000 din.';
+        }
     }
     
     // DRUGA SMENA (SVAKI DAN):
