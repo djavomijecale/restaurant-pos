@@ -180,6 +180,7 @@ async function loadFromFirebase() {
             DB.invoices = data.invoices || [];
             DB.debts = mergeArraysById(DB.debts || [], data.debts || [], 'id');
             DB.houseOrders = data.houseOrders || [];
+            DB.cashbook = data.cashbook || [];
             // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
             DB.debts.forEach(debt => {
                 if (!debt.payments) debt.payments = [];
@@ -523,6 +524,7 @@ async function saveToFirebase() {
         invoices: DB.invoices || [],
         debts: DB.debts || [],
         houseOrders: DB.houseOrders || [],
+        cashbook: DB.cashbook || [],
         kuvarBonus: DB.kuvarBonus || {},
         lastUpdated: saveTimestamp
     };

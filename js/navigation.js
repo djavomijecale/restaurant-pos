@@ -97,6 +97,7 @@ function render() {
     else if(page==='garden') renderGarden(c);
     else if(page==='inventory') renderInventory(c);
     else if(page==='debts') renderDebts(c);
+    else if(page==='cashbook') renderCashbook(c);
     else if(page==='house') renderHouse(c);
     else if(page==='houseReceipt') renderHouseReceipt(c);
     

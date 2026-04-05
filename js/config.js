@@ -82,6 +82,7 @@ const DB = {
     invoices: [],  // Istorija faktura
     debts: [],  // Dugovanja
     houseOrders: [],  // Kuća - artikli koji se ne naplaćuju
+    cashbook: [],  // Presek stanja - ručni prihodi/rashodi
     manuallyEditedCategories: JSON.parse(localStorage.getItem('manuallyEditedCategories') || '{}')  // Lokalno čuvanje ručnih izmena!
 };
 
