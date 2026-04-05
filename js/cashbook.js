@@ -19,6 +19,7 @@ function getCashbookData(startDate, endDate) {
     let totalSalary = 0;
     let totalBonus = 0;
     let reductions = [];
+    let staffData = {};
 
     sessions.forEach(s => {
         if (s.cashRevenue !== undefined) {
@@ -34,6 +35,13 @@ function getCashbookData(startDate, endDate) {
         totalReductions += s.totalCashReductions || 0;
         totalSalary += s.salary || 0;
         totalBonus += s.bonusAmount || 0;
+        // Per-person plate i bonusi
+        const u = s.user || 'nepoznat';
+        if (!staffData[u]) staffData[u] = { salary: 0, bonus: 0, shifts: 0, hours: 0 };
+        staffData[u].salary += s.salary || 0;
+        staffData[u].bonus += s.bonusAmount || 0;
+        staffData[u].shifts += 1;
+        staffData[u].hours += (s.duration || 0) / 60;
         if (s.cashReductions && s.cashReductions.length > 0) {
             s.cashReductions.forEach(r => {
                 reductions.push({
@@ -91,7 +99,7 @@ function getCashbookData(startDate, endDate) {
         manualEntries, manualIncome, manualExpense,
         duleIncome, duleExpense, duleNet: duleIncome - duleExpense,
         maraIncome, maraExpense, maraNet: maraIncome - maraExpense,
-        otherIncome, otherExpense,
+        otherIncome, otherExpense, staffData,
         sessions,
         cashAfterAll
     };
@@ -245,6 +253,42 @@ function renderCashbook(c) {
     h += '<div style="color:#888;font-size:11px">' + eachGets.toFixed(0) + ' (polovina) ' + (data.maraNet >= 0 ? '+ ' : '- ') + Math.abs(data.maraNet).toFixed(0) + ' (neto)</div>';
     h += '<div style="color:' + (maraFinal >= 0 ? '#4CAF50' : '#E94560') + ';font-size:20px;font-weight:bold">' + maraFinal.toFixed(0) + ' din</div></div>';
     h += '</div></div>';
+
+    // =============================================
+    // PLATE I BONUSI PO OSOBI
+    // =============================================
+    const staffEntries = Object.entries(data.staffData).sort((a, b) => (b[1].salary + b[1].bonus) - (a[1].salary + a[1].bonus));
+    if (staffEntries.length > 0) {
+        h += '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:16px">';
+        h += '<h3 style="color:#FF9800;margin-bottom:12px">👥 Plate i Bonusi po Osobi</h3>';
+        h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:4px;padding:6px 0;border-bottom:2px solid #2A2A4A;font-size:12px;color:#888">';
+        h += '<span>Ime</span><span style="text-align:right">Smene</span><span style="text-align:right">Sati</span><span style="text-align:right">Plata</span><span style="text-align:right">Bonus</span></div>';
+        staffEntries.forEach(function(entry) {
+            var name = entry[0];
+            var d = entry[1];
+            var total = d.salary + d.bonus;
+            h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:4px;padding:8px 0;border-bottom:1px solid #1A1A3E;font-size:13px">';
+            h += '<span style="color:#FFD700;font-weight:bold">' + name + '</span>';
+            h += '<span style="text-align:right;color:#B0B0B0">' + d.shifts + '</span>';
+            h += '<span style="text-align:right;color:#B0B0B0">' + d.hours.toFixed(1) + 'h</span>';
+            h += '<span style="text-align:right;color:#E94560;font-weight:bold">' + d.salary.toFixed(0) + '</span>';
+            h += '<span style="text-align:right;color:#9C27B0;font-weight:bold">' + d.bonus.toFixed(0) + '</span>';
+            h += '</div>';
+        });
+        // Totali
+        var totSal = staffEntries.reduce(function(s, e) { return s + e[1].salary; }, 0);
+        var totBon = staffEntries.reduce(function(s, e) { return s + e[1].bonus; }, 0);
+        var totShifts = staffEntries.reduce(function(s, e) { return s + e[1].shifts; }, 0);
+        var totHours = staffEntries.reduce(function(s, e) { return s + e[1].hours; }, 0);
+        h += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:4px;padding:8px 0;border-top:2px solid #FFD700;font-size:13px;font-weight:bold">';
+        h += '<span style="color:#FFD700">UKUPNO</span>';
+        h += '<span style="text-align:right;color:#FFD700">' + totShifts + '</span>';
+        h += '<span style="text-align:right;color:#FFD700">' + totHours.toFixed(1) + 'h</span>';
+        h += '<span style="text-align:right;color:#E94560">' + totSal.toFixed(0) + '</span>';
+        h += '<span style="text-align:right;color:#9C27B0">' + totBon.toFixed(0) + '</span>';
+        h += '</div>';
+        h += '</div>';
+    }
 
     // Smanjenja keša detalji
     if (data.reductions.length > 0) {
