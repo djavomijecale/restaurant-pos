@@ -420,8 +420,8 @@ async function closeWorkday() {
     // Prva smena: 8 AM - 4 PM (16h)
     const isFirstShift = startHour >= 8 && startHour < 14 && endHour >= 15 && endHour <= 17;
     
-    // Druga smena: 4 PM (16h) - 11 PM (23h)
-    const isSecondShift = startHour >= 14 && startHour < 20 && endHour >= 22 && endHour <= 23;
+    // Druga smena: počinje 14-20h, završava 22h-7h sledećeg dana
+    const isSecondShift = startHour >= 14 && startHour < 20 && (endHour >= 22 || endHour < 7);
     
     let bonusEarned = false;
     let bonusAmount = 0;
