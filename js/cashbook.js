@@ -3,12 +3,11 @@
 // ============================================
 
 function getCashbookData(startDate, endDate) {
-    if (!startDate || !endDate) return { totalCash: 0, totalCard: 0, totalReductions: 0, reductions: [], manualEntries: [], sessions: [] };
+    if (!startDate || !endDate) return { totalCash: 0, totalCard: 0, totalReductions: 0, reductions: [], manualEntries: [], sessions: [], totalSalary: 0, totalBonus: 0 };
 
     const startISO = startDate.toISOString();
     const endISO = endDate.toISOString();
 
-    // Sesije u ovom periodu
     const sessions = (DB.workdayHistory || []).filter(s =>
         s.logoutTime >= startISO && s.logoutTime <= endISO
     );
@@ -17,6 +16,8 @@ function getCashbookData(startDate, endDate) {
     let totalCard = 0;
     let totalWire = 0;
     let totalReductions = 0;
+    let totalSalary = 0;
+    let totalBonus = 0;
     let reductions = [];
 
     sessions.forEach(s => {
@@ -31,6 +32,8 @@ function getCashbookData(startDate, endDate) {
             totalCard += Math.max(0, (s.revenue || 0) - Math.max(0, (s.finalCash || 0) - dep + reductionsAmt));
         }
         totalReductions += s.totalCashReductions || 0;
+        totalSalary += s.salary || 0;
+        totalBonus += s.bonusAmount || 0;
         if (s.cashReductions && s.cashReductions.length > 0) {
             s.cashReductions.forEach(r => {
                 reductions.push({
@@ -43,33 +46,47 @@ function getCashbookData(startDate, endDate) {
         }
     });
 
-    // Ručni unosi za ovaj period
     const manualEntries = (DB.cashbook || []).filter(e =>
         e.date >= startISO && e.date <= endISO
     );
 
     let manualIncome = 0;
     let manualExpense = 0;
+    let duleIncome = 0, duleExpense = 0;
+    let maraIncome = 0, maraExpense = 0;
+    let otherIncome = 0, otherExpense = 0;
+
     manualEntries.forEach(e => {
-        if (e.type === 'income') manualIncome += e.amount;
-        else if (e.type === 'expense') manualExpense += e.amount;
+        const person = (e.person || '').toLowerCase();
+        if (e.type === 'income') {
+            manualIncome += e.amount;
+            if (person === 'dule') duleIncome += e.amount;
+            else if (person === 'mara') maraIncome += e.amount;
+            else otherIncome += e.amount;
+        } else if (e.type === 'expense') {
+            manualExpense += e.amount;
+            if (person === 'dule') duleExpense += e.amount;
+            else if (person === 'mara') maraExpense += e.amount;
+            else otherExpense += e.amount;
+        }
     });
 
+    const totalRevenue = totalCash + totalCard + totalWire;
+    const cashAfterAll = totalCash - totalReductions + manualIncome - manualExpense - totalSalary - totalBonus;
+
     return {
-        totalCash,
-        totalCard,
-        totalWire,
-        totalReductions,
-        reductions,
-        manualEntries,
-        manualIncome,
-        manualExpense,
+        totalCash, totalCard, totalWire, totalRevenue,
+        totalReductions, reductions,
+        totalSalary, totalBonus,
+        manualEntries, manualIncome, manualExpense,
+        duleIncome, duleExpense, duleNet: duleIncome - duleExpense,
+        maraIncome, maraExpense, maraNet: maraIncome - maraExpense,
+        otherIncome, otherExpense,
         sessions,
-        balance: totalCash - totalReductions + manualIncome - manualExpense
+        cashAfterAll
     };
 }
 
-// Podrazumevani datumi - poslednje 2 nedelje
 var cashbookStartDate = null;
 var cashbookEndDate = null;
 
@@ -90,9 +107,7 @@ function formatDateInput(d) {
 
 function renderCashbook(c) {
     initCashbookDates();
-
     const data = getCashbookData(cashbookStartDate, cashbookEndDate);
-    const fmtDate = (d) => d.toLocaleDateString('sr-RS', { day: 'numeric', month: 'short', year: 'numeric' });
 
     let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">';
     h += '<h2>💰 Presek Stanja</h2>';
@@ -111,8 +126,6 @@ function renderCashbook(c) {
     h += '<input type="date" id="cashbookTo" value="' + formatDateInput(cashbookEndDate) + '" onchange="updateCashbookDates()" style="padding:8px 12px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:14px">';
     h += '</div>';
     h += '</div>';
-
-    // Brzi izbor perioda
     h += '<div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap">';
     h += '<button class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" onclick="setCashbookQuick(7)">7 dana</button>';
     h += '<button class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" onclick="setCashbookQuick(14)">2 nedelje</button>';
@@ -122,23 +135,108 @@ function renderCashbook(c) {
     h += '</div>';
     h += '</div>';
 
-    // Glavni brojevi
-    h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px">';
-    h += '<div class="stat-card"><div class="stat-label">Otkucani Keš</div><div class="stat-value" style="color:#4CAF50">' + data.totalCash.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
-    h += '<div class="stat-card"><div class="stat-label">Kartice</div><div class="stat-value" style="color:#2196F3">' + data.totalCard.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
-    h += '<div class="stat-card"><div class="stat-label">Smanjenja Keša</div><div class="stat-value" style="color:#E94560">' + data.totalReductions.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
-    h += '<div class="stat-card"><div class="stat-label">Bilans Keša</div><div class="stat-value" style="color:#FFD700">' + data.balance.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
+    // =============================================
+    // KOLONA 1: UKUPAN PRESEK
+    // =============================================
+    h += '<div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:16px">';
+    h += '<h3 style="color:#FFD700;margin-bottom:16px">📊 Ukupan Presek</h3>';
+
+    h += '<div style="display:flex;flex-direction:column;gap:8px">';
+    // Keš
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+    h += '<span style="color:#B0B0B0">💵 Otkucani keš</span>';
+    h += '<span style="color:#4CAF50;font-weight:bold">+' + data.totalCash.toFixed(0) + ' din</span></div>';
+    // Ručni prihodi
+    if (data.manualIncome > 0) {
+        h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+        h += '<span style="color:#B0B0B0">💰 Ručno dodato</span>';
+        h += '<span style="color:#4CAF50;font-weight:bold">+' + data.manualIncome.toFixed(0) + ' din</span></div>';
+    }
+    // Kartice info
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+    h += '<span style="color:#B0B0B0">💳 Kartice (info)</span>';
+    h += '<span style="color:#2196F3;font-weight:bold">' + data.totalCard.toFixed(0) + ' din</span></div>';
+
+    h += '<div style="margin:8px 0;border-top:2px solid #2A2A4A"></div>';
+
+    // Oduzimanja
+    if (data.totalReductions > 0) {
+        h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+        h += '<span style="color:#B0B0B0">💸 Smanjenja keša</span>';
+        h += '<span style="color:#E94560;font-weight:bold">-' + data.totalReductions.toFixed(0) + ' din</span></div>';
+    }
+    if (data.manualExpense > 0) {
+        h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+        h += '<span style="color:#B0B0B0">💸 Ručno oduzeto</span>';
+        h += '<span style="color:#E94560;font-weight:bold">-' + data.manualExpense.toFixed(0) + ' din</span></div>';
+    }
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+    h += '<span style="color:#B0B0B0">👥 Plate</span>';
+    h += '<span style="color:#E94560;font-weight:bold">-' + data.totalSalary.toFixed(0) + ' din</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+    h += '<span style="color:#B0B0B0">🎁 Bonusi</span>';
+    h += '<span style="color:#E94560;font-weight:bold">-' + data.totalBonus.toFixed(0) + ' din</span></div>';
+
+    h += '<div style="margin:8px 0;border-top:2px solid #FFD700"></div>';
+
+    // Krajnji rezultat
+    h += '<div style="display:flex;justify-content:space-between;padding:8px 0">';
+    h += '<span style="color:#FFD700;font-weight:bold;font-size:16px">= Ostaje</span>';
+    const remaining = data.cashAfterAll;
+    h += '<span style="color:' + (remaining >= 0 ? '#FFD700' : '#E94560') + ';font-weight:bold;font-size:18px">' + remaining.toFixed(0) + ' din</span></div>';
+
+    h += '</div></div>';
+
+    // =============================================
+    // KOLONA 2: DULE & MARA
+    // =============================================
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+
+    // DULE
+    h += '<div style="background:#0F3460;padding:16px;border-radius:12px">';
+    h += '<h3 style="color:#2196F3;margin-bottom:12px;text-align:center">👤 Dule</h3>';
+    h += '<div style="display:flex;flex-direction:column;gap:6px">';
+    h += '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#B0B0B0">Dodao:</span><span style="color:#4CAF50;font-weight:bold">+' + data.duleIncome.toFixed(0) + '</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#B0B0B0">Uzeo:</span><span style="color:#E94560;font-weight:bold">-' + data.duleExpense.toFixed(0) + '</span></div>';
+    h += '<div style="border-top:1px solid #2A2A4A;padding-top:6px;display:flex;justify-content:space-between;font-size:14px"><span style="color:#FFD700;font-weight:bold">Neto:</span>';
+    h += '<span style="color:' + (data.duleNet >= 0 ? '#4CAF50' : '#E94560') + ';font-weight:bold">' + (data.duleNet >= 0 ? '+' : '') + data.duleNet.toFixed(0) + '</span></div>';
+    h += '</div></div>';
+
+    // MARA
+    h += '<div style="background:#0F3460;padding:16px;border-radius:12px">';
+    h += '<h3 style="color:#9C27B0;margin-bottom:12px;text-align:center">👤 Mara</h3>';
+    h += '<div style="display:flex;flex-direction:column;gap:6px">';
+    h += '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#B0B0B0">Dodala:</span><span style="color:#4CAF50;font-weight:bold">+' + data.maraIncome.toFixed(0) + '</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:#B0B0B0">Uzela:</span><span style="color:#E94560;font-weight:bold">-' + data.maraExpense.toFixed(0) + '</span></div>';
+    h += '<div style="border-top:1px solid #2A2A4A;padding-top:6px;display:flex;justify-content:space-between;font-size:14px"><span style="color:#FFD700;font-weight:bold">Neto:</span>';
+    h += '<span style="color:' + (data.maraNet >= 0 ? '#4CAF50' : '#E94560') + ';font-weight:bold">' + (data.maraNet >= 0 ? '+' : '') + data.maraNet.toFixed(0) + '</span></div>';
+    h += '</div></div>';
+
     h += '</div>';
 
-    // Ručni unosi summary
-    if (data.manualIncome > 0 || data.manualExpense > 0) {
-        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
-        h += '<div class="stat-card"><div class="stat-label">Ručni Prihodi</div><div class="stat-value" style="color:#4CAF50">+' + data.manualIncome.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
-        h += '<div class="stat-card"><div class="stat-label">Ručni Rashodi</div><div class="stat-value" style="color:#E94560">-' + data.manualExpense.toFixed(0) + '</div><div class="stat-label">din.</div></div>';
-        h += '</div>';
-    }
+    // PODELA - šta ostaje za podelu
+    const forSplit = remaining - data.duleNet - data.maraNet;
+    const eachGets = forSplit / 2;
+    h += '<div style="background:#1A1A3E;padding:16px;border-radius:12px;margin-bottom:16px;border:2px solid #FFD700">';
+    h += '<h3 style="color:#FFD700;margin-bottom:12px;text-align:center">💰 Podela</h3>';
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2A4A"><span style="color:#B0B0B0">Ostaje posle svega:</span><span style="color:#FFD700;font-weight:bold">' + remaining.toFixed(0) + ' din</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2A4A"><span style="color:#B0B0B0">Za podelu (50/50):</span><span style="color:#FFD700;font-weight:bold">' + forSplit.toFixed(0) + ' din</span></div>';
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">';
+    // Dule dobija
+    const duleFinal = eachGets + data.duleNet;
+    h += '<div style="text-align:center;background:#0F3460;padding:12px;border-radius:8px">';
+    h += '<div style="color:#2196F3;font-weight:bold;margin-bottom:4px">👤 Dule</div>';
+    h += '<div style="color:#888;font-size:11px">' + eachGets.toFixed(0) + ' (polovina) ' + (data.duleNet >= 0 ? '+ ' : '- ') + Math.abs(data.duleNet).toFixed(0) + ' (neto)</div>';
+    h += '<div style="color:' + (duleFinal >= 0 ? '#4CAF50' : '#E94560') + ';font-size:20px;font-weight:bold">' + duleFinal.toFixed(0) + ' din</div></div>';
+    // Mara dobija
+    const maraFinal = eachGets + data.maraNet;
+    h += '<div style="text-align:center;background:#0F3460;padding:12px;border-radius:8px">';
+    h += '<div style="color:#9C27B0;font-weight:bold;margin-bottom:4px">👤 Mara</div>';
+    h += '<div style="color:#888;font-size:11px">' + eachGets.toFixed(0) + ' (polovina) ' + (data.maraNet >= 0 ? '+ ' : '- ') + Math.abs(data.maraNet).toFixed(0) + ' (neto)</div>';
+    h += '<div style="color:' + (maraFinal >= 0 ? '#4CAF50' : '#E94560') + ';font-size:20px;font-weight:bold">' + maraFinal.toFixed(0) + ' din</div></div>';
+    h += '</div></div>';
 
-    // Detalji smanjenja keša
+    // Smanjenja keša detalji
     if (data.reductions.length > 0) {
         h += '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:16px">';
         h += '<h3 style="color:#E94560;margin-bottom:12px">💸 Smanjenja Keša</h3>';
@@ -149,13 +247,12 @@ function renderCashbook(c) {
             h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1A1A3E">';
             h += '<div><span style="color:#FFD700;font-size:13px">' + dateStr + '</span> <span style="color:#888;font-size:12px">(' + (r.user || '') + ')</span>';
             h += '<div style="color:#B0B0B0;font-size:12px">' + (r.reason || 'Bez opisa') + '</div></div>';
-            h += '<span style="color:#E94560;font-weight:bold">-' + r.amount.toFixed(0) + ' din</span>';
-            h += '</div>';
+            h += '<span style="color:#E94560;font-weight:bold">-' + r.amount.toFixed(0) + ' din</span></div>';
         });
         h += '</div>';
     }
 
-    // Ručni unosi - lista
+    // Ručni unosi lista
     const entries = data.manualEntries;
     if (entries.length > 0) {
         h += '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:16px">';
@@ -165,8 +262,9 @@ function renderCashbook(c) {
             const d = new Date(e.date);
             const dateStr = d.toLocaleDateString('sr-RS', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
             const isIncome = e.type === 'income';
+            const personLabel = e.person ? ' (' + e.person + ')' : '';
             h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #1A1A3E">';
-            h += '<div><span style="color:#FFD700;font-size:13px">' + dateStr + '</span>';
+            h += '<div><span style="color:#FFD700;font-size:13px">' + dateStr + '</span><span style="color:#888;font-size:12px">' + personLabel + '</span>';
             h += '<div style="color:#B0B0B0;font-size:12px">' + (e.description || 'Bez opisa') + '</div></div>';
             h += '<div style="display:flex;align-items:center;gap:8px">';
             h += '<span style="color:' + (isIncome ? '#4CAF50' : '#E94560') + ';font-weight:bold">' + (isIncome ? '+' : '-') + e.amount.toFixed(0) + ' din</span>';
@@ -176,10 +274,10 @@ function renderCashbook(c) {
         h += '</div>';
     }
 
-    // Rezime po smenama
+    // Smene
     if (data.sessions.length > 0) {
         h += '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:16px">';
-        h += '<h3 style="color:#2196F3;margin-bottom:12px">📋 Smene u periodu (' + data.sessions.length + ')</h3>';
+        h += '<h3 style="color:#2196F3;margin-bottom:12px">📋 Smene (' + data.sessions.length + ')</h3>';
         data.sessions.sort((a, b) => (b.logoutTime || '').localeCompare(a.logoutTime || ''));
         data.sessions.forEach(s => {
             const d = new Date(s.loginTime);
@@ -189,9 +287,11 @@ function renderCashbook(c) {
             const sCard = s.cardRevenue !== undefined ? (s.cardRevenue || 0) : 0;
             h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1A1A3E;font-size:13px">';
             h += '<div><span style="color:#FFD700">' + dateStr + '</span> <span style="color:#888">' + timeStr + '</span> <span style="color:#B0B0B0">' + (s.user || '') + '</span></div>';
-            h += '<div style="display:flex;gap:12px">';
+            h += '<div style="display:flex;gap:8px">';
             h += '<span style="color:#4CAF50">💵' + sCash.toFixed(0) + '</span>';
             h += '<span style="color:#2196F3">💳' + sCard.toFixed(0) + '</span>';
+            if ((s.salary || 0) > 0) h += '<span style="color:#FF9800">👤' + (s.salary || 0).toFixed(0) + '</span>';
+            if ((s.bonusAmount || 0) > 0) h += '<span style="color:#9C27B0">🎁' + (s.bonusAmount || 0).toFixed(0) + '</span>';
             if (s.totalCashReductions > 0) h += '<span style="color:#E94560">-' + s.totalCashReductions.toFixed(0) + '</span>';
             h += '</div></div>';
         });
@@ -204,32 +304,22 @@ function renderCashbook(c) {
 function updateCashbookDates() {
     const from = document.getElementById('cashbookFrom').value;
     const to = document.getElementById('cashbookTo').value;
-    if (from) {
-        cashbookStartDate = new Date(from);
-        cashbookStartDate.setHours(0, 0, 0, 0);
-    }
-    if (to) {
-        cashbookEndDate = new Date(to);
-        cashbookEndDate.setHours(23, 59, 59, 999);
-    }
+    if (from) { cashbookStartDate = new Date(from); cashbookStartDate.setHours(0, 0, 0, 0); }
+    if (to) { cashbookEndDate = new Date(to); cashbookEndDate.setHours(23, 59, 59, 999); }
     render();
 }
 
 function setCashbookQuick(days) {
     const now = new Date();
-    cashbookEndDate = new Date(now);
-    cashbookEndDate.setHours(23, 59, 59, 999);
-    cashbookStartDate = new Date(now);
-    cashbookStartDate.setDate(cashbookStartDate.getDate() - (days - 1));
-    cashbookStartDate.setHours(0, 0, 0, 0);
+    cashbookEndDate = new Date(now); cashbookEndDate.setHours(23, 59, 59, 999);
+    cashbookStartDate = new Date(now); cashbookStartDate.setDate(cashbookStartDate.getDate() - (days - 1)); cashbookStartDate.setHours(0, 0, 0, 0);
     render();
 }
 
 function setCashbookMonth() {
     const now = new Date();
     cashbookStartDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    cashbookEndDate = new Date(now);
-    cashbookEndDate.setHours(23, 59, 59, 999);
+    cashbookEndDate = new Date(now); cashbookEndDate.setHours(23, 59, 59, 999);
     render();
 }
 
@@ -242,20 +332,26 @@ function setCashbookPrevMonth() {
 
 function addCashbookEntry() {
     let h = '<div style="text-align:left">';
+    h += '<div style="margin-bottom:12px"><label style="color:#B0B0B0;font-size:13px">Osoba:</label><br>';
+    h += '<select id="cashbookPerson" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:15px;margin-top:4px">';
+    h += '<option value="Dule">Dule</option>';
+    h += '<option value="Mara">Mara</option>';
+    h += '</select></div>';
     h += '<div style="margin-bottom:12px"><label style="color:#B0B0B0;font-size:13px">Tip:</label><br>';
     h += '<select id="cashbookType" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:15px;margin-top:4px">';
-    h += '<option value="expense">💸 Rashod (potrošen novac)</option>';
-    h += '<option value="income">💰 Prihod (primljen novac)</option>';
+    h += '<option value="expense">💸 Uzeo/la novac</option>';
+    h += '<option value="income">💰 Dodao/la novac</option>';
     h += '</select></div>';
     h += '<div style="margin-bottom:12px"><label style="color:#B0B0B0;font-size:13px">Iznos (din):</label><br>';
     h += '<input type="number" id="cashbookAmount" placeholder="0" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:18px;margin-top:4px"></div>';
     h += '<div style="margin-bottom:12px"><label style="color:#B0B0B0;font-size:13px">Opis:</label><br>';
-    h += '<input type="text" id="cashbookDesc" placeholder="npr. Nabavka pića, Dule uzeo keš..." style="width:100%;padding:10px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:15px;margin-top:4px"></div>';
+    h += '<input type="text" id="cashbookDesc" placeholder="npr. Nabavka pića, uzeo keš..." style="width:100%;padding:10px;border-radius:8px;border:1px solid #2A2A4A;background:#16213E;color:#FFF;font-size:15px;margin-top:4px"></div>';
     h += '</div>';
 
     showConfirm('📝 Novi Unos', h, function(confirmed) {
         if (!confirmed) return;
 
+        const person = document.getElementById('cashbookPerson').value;
         const type = document.getElementById('cashbookType').value;
         const amount = parseFloat(document.getElementById('cashbookAmount').value) || 0;
         const desc = document.getElementById('cashbookDesc').value.trim();
@@ -269,6 +365,7 @@ function addCashbookEntry() {
         DB.cashbook.push({
             id: Date.now().toString(),
             type: type,
+            person: person,
             amount: amount,
             description: desc,
             date: new Date().toISOString(),
@@ -277,7 +374,7 @@ function addCashbookEntry() {
 
         save();
         render();
-        showAlert('✅ Unos dodat: ' + (type === 'income' ? '+' : '-') + amount.toFixed(0) + ' din');
+        showAlert('✅ ' + person + ' - ' + (type === 'income' ? 'dodao/la +' : 'uzeo/la -') + amount.toFixed(0) + ' din');
     });
 }
 
@@ -285,8 +382,8 @@ function deleteCashbookEntry(entryId) {
     const entry = (DB.cashbook || []).find(e => e.id === entryId);
     if (!entry) return;
 
-    showConfirm('🗑️ Obriši Unos', 'Da li ste sigurni da želite da obrišete ovaj unos?\n\n' +
-        (entry.type === 'income' ? 'Prihod' : 'Rashod') + ': ' + entry.amount.toFixed(0) + ' din\n' +
+    showConfirm('🗑️ Obriši Unos', 'Da li ste sigurni?\n\n' +
+        (entry.person || '') + ' - ' + (entry.type === 'income' ? 'Dodao/la' : 'Uzeo/la') + ': ' + entry.amount.toFixed(0) + ' din\n' +
         (entry.description || 'Bez opisa'), function(confirmed) {
         if (!confirmed) return;
 
