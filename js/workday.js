@@ -112,39 +112,44 @@ async function openWorkday() {
     const businessDayStart = getBusinessDayStart();
     
     // Pronađi depozit za nasleđivanje:
-    // 1. Ako neko TRENUTNO radi → preuzmi njegov depozit
-    // 2. Ako je neko ZATVORIO smenu danas → preuzmi finalCash
+    // PRIORITET: Poslednja ZATVORENA smena danas (ima tačan finalCash)
+    // FALLBACK: Ako nema zatvorene, uzmi od aktivne smene
     let inheritDeposit = null;
     let inheritFrom = '';
-    
-    // Provera 1: Aktivna smena KONOBARA (ne kuvara!)
-    const otherActive = Object.entries(DB.workdays || {})
-        .find(([user, wd]) => {
-            if (user === username) return false;
-            if (!wd || !wd.startTime) return false;
-            // Preskoči kuvare - oni nemaju veze sa depozitom
-            if (wd.role === 'kuvar') return false;
-            const userObj = (DB.users || []).find(u => u.username === user);
-            if (userObj && userObj.role === 'kuvar') return false;
-            return true;
-        });
-    
-    if (otherActive) {
-        inheritDeposit = otherActive[1].deposit || 0;
-        inheritFrom = otherActive[0];
-    }
-    
-    // Provera 2: Zatvorena smena u ovom radnom danu
-    if (inheritDeposit === null && DB.workdayHistory && DB.workdayHistory.length > 0) {
-        const sorted = [...DB.workdayHistory].sort((a, b) => 
+
+    // Provera 1: Zatvorena smena u ovom radnom danu (PRIORITET - ima tačan finalCash)
+    if (DB.workdayHistory && DB.workdayHistory.length > 0) {
+        const sorted = [...DB.workdayHistory].sort((a, b) =>
             new Date(b.logoutTime) - new Date(a.logoutTime)
         );
         for (const shift of sorted) {
             if (new Date(shift.logoutTime) >= businessDayStart) {
+                // Preskoči kuvare
+                const userObj = (DB.users || []).find(u => u.username === shift.user);
+                if (userObj && userObj.role === 'kuvar') continue;
                 inheritDeposit = Math.max(0, shift.finalCash || 0);
                 inheritFrom = shift.user;
                 break;
             }
+        }
+    }
+
+    // Provera 2: Aktivna smena KONOBARA (fallback ako niko nije zatvorio smenu danas)
+    if (inheritDeposit === null) {
+        const otherActive = Object.entries(DB.workdays || {})
+            .find(([user, wd]) => {
+                if (user === username) return false;
+                if (!wd || !wd.startTime) return false;
+                // Preskoči kuvare - oni nemaju veze sa depozitom
+                if (wd.role === 'kuvar') return false;
+                const userObj = (DB.users || []).find(u => u.username === user);
+                if (userObj && userObj.role === 'kuvar') return false;
+                return true;
+            });
+
+        if (otherActive) {
+            inheritDeposit = otherActive[1].deposit || 0;
+            inheritFrom = otherActive[0];
         }
     }
     
