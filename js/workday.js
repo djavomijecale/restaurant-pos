@@ -333,7 +333,18 @@ async function closeWorkday() {
         showAlert('❌ Greška: Nema aktivnog radnog dana!');
         return;
     }
-    
+
+    // ⛔ Provera: Da li konobar ima nenaplaćene stavke na stolovima?
+    const openTables = (DB.tables || []).filter(t => {
+        if (!t.order || !Array.isArray(t.order)) return false;
+        return t.order.some(item => item.createdBy === username);
+    });
+    if (openTables.length > 0) {
+        const tableNames = openTables.map(t => t.name || ('Sto ' + t.num)).join(', ');
+        showAlert('❌ Ne možeš zatvoriti smenu!\n\nImaš nenaplaćene narudžbine na:\n' + tableNames + '\n\nNaplati ili obriši stavke pa probaj ponovo.');
+        return;
+    }
+
     // Filtriraj samo narudžbine ovog konobara od početka njegovog dana
     const dayOrders = DB.orders.filter(o => 
         o.time >= myWorkday.startTime && 
