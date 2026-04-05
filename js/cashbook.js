@@ -55,9 +55,19 @@ function getCashbookData(period) {
     let reductions = [];
 
     sessions.forEach(s => {
-        totalCash += s.cashRevenue || 0;
-        totalCard += s.cardRevenue || 0;
-        totalWire += s.wireRevenue || 0;
+        // Za stare sesije koje nemaju cashRevenue/cardRevenue, koristi finalCash - deposit kao keš
+        if (s.cashRevenue !== undefined) {
+            totalCash += s.cashRevenue || 0;
+            totalCard += s.cardRevenue || 0;
+            totalWire += s.wireRevenue || 0;
+        } else {
+            // Fallback: izračunaj iz finalCash (deposit + cash + debtCash - reductions)
+            const reductionsAmt = s.totalCashReductions || 0;
+            const dep = s.deposit || 0;
+            totalCash += Math.max(0, (s.finalCash || 0) - dep + reductionsAmt);
+            // Kartice = ukupan prihod - keš
+            totalCard += Math.max(0, (s.revenue || 0) - Math.max(0, (s.finalCash || 0) - dep + reductionsAmt));
+        }
         totalReductions += s.totalCashReductions || 0;
         if (s.cashReductions && s.cashReductions.length > 0) {
             s.cashReductions.forEach(r => {
