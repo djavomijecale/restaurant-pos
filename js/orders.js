@@ -556,6 +556,12 @@ function renderPayment(c) {
             <h1 style="color:#FFD700;font-size:48px">${tot.toFixed(0)} din.</h1>
             ${isWaiter ? `<p style="color:#B0B0B0;font-size:13px;margin-top:8px">(${myOrder.length} ${myOrder.length === 1 ? 'stavka' : myOrder.length < 5 ? 'stavke' : 'stavki'})</p>` : ''}
         </div>
+        <div onclick="window.isFiscalReceipt=!window.isFiscalReceipt;render()" style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:16px;padding:14px;background:#16213E;border-radius:8px;cursor:pointer;border:2px solid ${window.isFiscalReceipt ? '#00BCD4' : '#2A2A4A'}">
+            <div style="width:24px;height:24px;border-radius:4px;border:2px solid ${window.isFiscalReceipt ? '#00BCD4' : '#555'};background:${window.isFiscalReceipt ? '#00BCD4' : 'transparent'};display:flex;align-items:center;justify-content:center">
+                ${window.isFiscalReceipt ? '<span style="color:#FFF;font-weight:bold;font-size:16px">✓</span>' : ''}
+            </div>
+            <span style="color:${window.isFiscalReceipt ? '#00BCD4' : '#888'};font-weight:bold;font-size:15px">🧾 Kucani račun (fiskalni)</span>
+        </div>
         <h3 style="text-align:center;margin:24px 0;color:#B0B0B0">Način plaćanja</h3>
         <div style="display:flex;gap:16px">
             <div class="payment-option ${payMethod==='Cash'?'selected':''}" onclick="payMethod='Cash';render()">
@@ -625,7 +631,8 @@ function confirmPay() {
         tot,
         method:payMethod,
         createdBy: DB.konobarName || DB.currentUser.username,
-        time:new Date().toISOString()
+        time:new Date().toISOString(),
+        isFiscal: !!window.isFiscalReceipt
     };
     
     DB.orders.push(newOrder);
@@ -697,6 +704,7 @@ function renderReceipt(c) {
         </div>
         <hr style="border:none;border-top:1px solid #2A2A4A;margin:12px 0">
         <div style="display:flex;justify-content:space-between"><span>Plaćanje:</span><span>${o.method==='Cash'?'💵':o.method==='Wire'?'🏦':'💳'} ${o.method==='Wire'?'Prenos':o.method}</span></div>
+        ${o.isFiscal ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#00BCD4"><span>🧾 Kucani račun:</span><span>✅ Da</span></div>' : ''}
         ${o.octoposSent ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#4CAF50"><span>🧾 Fiskalni račun:</span><span>✅ #' + (o.octoposId || '') + '</span></div>' : (o.octoposRequested ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#FF9800"><span>🧾 Fiskalni račun:</span><span>⏳ Šalje se...</span></div>' : (typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? '<div style="display:flex;justify-content:space-between;margin-top:8px;color:#888"><span>🧾 Fiskalni račun:</span><span>— Nije tražen</span></div>' : ''))}
     </div>
     ${o.fiscalReceipt ? '<button class="btn" style="max-width:400px;margin:16px auto 0;background:#00BCD4" onclick="showFiscalReceipt(' + o.id + ')">🧾 Prikaži Fiskalni Račun</button>' : ''}
@@ -716,6 +724,7 @@ function newOrder() {
     DB.selectedTable = null;
     payMethod = '';
     window.octoposSendThis = false;
+    window.isFiscalReceipt = false;
     window._lastPayMethodForOcto = null;
     page = 'tables';
     render();

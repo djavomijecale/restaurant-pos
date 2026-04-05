@@ -3,7 +3,7 @@
 // ============================================
 
 function getCashbookData(startDate, endDate) {
-    if (!startDate || !endDate) return { totalCash: 0, totalCard: 0, totalReductions: 0, reductions: [], manualEntries: [], sessions: [], totalSalary: 0, totalBonus: 0 };
+    if (!startDate || !endDate) return { totalCash: 0, totalCard: 0, totalReductions: 0, reductions: [], manualEntries: [], sessions: [], totalSalary: 0, totalBonus: 0, fiscalTotal: 0, fiscalCount: 0 };
 
     const startISO = startDate.toISOString();
     const endISO = endDate.toISOString();
@@ -89,6 +89,14 @@ function getCashbookData(startDate, endDate) {
         }
     });
 
+    // Fiskalni računi - iz narudžbina sa isFiscal flag
+    const fiscalOrders = (DB.orders || []).filter(o => {
+        if (!o || !o.time || !o.isFiscal) return false;
+        return o.time >= startISO && o.time <= endISO;
+    });
+    const fiscalTotal = fiscalOrders.reduce((s, o) => s + (o.tot || 0), 0);
+    const fiscalCount = fiscalOrders.length;
+
     const totalRevenue = totalCash + totalCard + totalWire;
     const cashAfterAll = totalCash - totalReductions + manualIncome - manualExpense - totalSalary - totalBonus;
 
@@ -101,7 +109,8 @@ function getCashbookData(startDate, endDate) {
         maraIncome, maraExpense, maraNet: maraIncome - maraExpense,
         otherIncome, otherExpense, staffData,
         sessions,
-        cashAfterAll
+        cashAfterAll,
+        fiscalTotal, fiscalCount
     };
 }
 
@@ -174,6 +183,11 @@ function renderCashbook(c) {
     h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
     h += '<span style="color:#B0B0B0">💳 Kartice (info)</span>';
     h += '<span style="color:#2196F3;font-weight:bold">' + data.totalCard.toFixed(0) + ' din</span></div>';
+
+    // Fiskalni računi
+    h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1A1A3E">';
+    h += '<span style="color:#B0B0B0">🧾 Kucani računi (' + data.fiscalCount + ')</span>';
+    h += '<span style="color:#00BCD4;font-weight:bold">' + data.fiscalTotal.toFixed(0) + ' din</span></div>';
 
     h += '<div style="margin:8px 0;border-top:2px solid #2A2A4A"></div>';
 

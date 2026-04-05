@@ -52,6 +52,8 @@ function renderHistory(c) {
     const totalOrders = filteredOrders.length;
     const cash = filteredOrders.filter(o=>o.method==='Cash').reduce((s,o)=>s+(o.tot||0),0);
     const card = filteredOrders.filter(o=>o.method==='Card').reduce((s,o)=>s+(o.tot||0),0);
+    const fiscalOrders = filteredOrders.filter(o=>o.isFiscal);
+    const fiscalTotal = fiscalOrders.reduce((s,o)=>s+(o.tot||0),0);
     const totalSessions = filteredSessions.length;
     
     // NOVA STATISTIKA - Plate i bonusi iz sesija
@@ -125,7 +127,7 @@ function renderHistory(c) {
     
     // Render based on view mode
     if (filter.viewMode === 'summary') {
-        h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours);
+        h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours, fiscalTotal, fiscalOrders.length);
     } else if (filter.viewMode === 'daily') {
         h += renderHistoryDaily(filteredOrders, filteredSessions, ordersByDate, isWaiter);
     } else if (filter.viewMode === 'orders') {
@@ -139,7 +141,7 @@ function renderHistory(c) {
 }
 
 
-function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours) {
+function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours, fiscalTotal, fiscalCount) {
     const avgOrder = orders.length > 0 ? (totalRevenue / orders.length) : 0;
     
     let h = `
@@ -205,6 +207,16 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
                     <div style="color:#B0B0B0;font-size:12px">Card (${totalRevenue>0?Math.round(card/totalRevenue*100):0}%)</div>
                 </div>
             </div>
+            ${fiscalCount > 0 ? `
+            <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center;margin-top:12px;border:1px solid #00BCD4">
+                <div style="display:flex;align-items:center;justify-content:center;gap:12px">
+                    <div style="font-size:28px">🧾</div>
+                    <div>
+                        <div style="color:#00BCD4;font-size:18px;font-weight:bold">${fiscalTotal.toFixed(0)} din.</div>
+                        <div style="color:#B0B0B0;font-size:12px">Otkucani fiskalni (${fiscalCount} računa)</div>
+                    </div>
+                </div>
+            </div>` : ''}
         </div>
         
         <!-- By User - SAMO ZA ADMINA -->`;
@@ -651,15 +663,15 @@ function exportHistoryToExcel() {
     const data = [];
     
     // Header
-    data.push(['Datum', 'Vreme', 'ID', 'Konobar', 'Stavke', 'Ukupno', 'Način plaćanja']);
-    
+    data.push(['Datum', 'Vreme', 'ID', 'Konobar', 'Stavke', 'Ukupno', 'Način plaćanja', 'Kucani račun']);
+
     // Rows
     orders.forEach(o => {
         const date = new Date(o.time);
         const dateStr = date.toLocaleDateString('sr-RS');
         const timeStr = date.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
         const items = o.items.map(it => `${it.name} x${it.qty}`).join(', ');
-        
+
         data.push([
             dateStr,
             timeStr,
@@ -667,10 +679,17 @@ function exportHistoryToExcel() {
             o.createdBy || 'Nepoznato',
             items,
             o.tot,
-            o.method
+            o.method,
+            o.isFiscal ? 'Da' : ''
         ]);
     });
-    
+
+    // Fiskalni ukupno red
+    const fiscalOrders = orders.filter(o => o.isFiscal);
+    const fiscalTotal = fiscalOrders.reduce((s, o) => s + (o.tot || 0), 0);
+    data.push([]);
+    data.push(['', '', '', '', 'Otkucani fiskalni računi:', fiscalTotal, '', fiscalOrders.length + ' računa']);
+
     // Create workbook
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(data);
@@ -683,7 +702,8 @@ function exportHistoryToExcel() {
         {wch: 15},  // Konobar
         {wch: 40},  // Stavke
         {wch: 10},  // Ukupno
-        {wch: 12}   // Način plaćanja
+        {wch: 12},  // Način plaćanja
+        {wch: 14}   // Kucani račun
     ];
     
     XLSX.utils.book_append_sheet(wb, ws, 'Izveštaj');
