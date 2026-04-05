@@ -140,7 +140,12 @@ async function loadFromFirebase() {
             }
             
             // ✅ MERGE umesto overwrite - čuva offline podatke sa ovog uređaja
-            DB.orders = mergeArraysById(DB.orders || [], data.orders || [], 'id');
+            // Ali filtriraj narudžbine koje je admin obrisao
+            DB.deletedOrderIds = data.deletedOrderIds || [];
+            const deletedIds = new Set((DB.deletedOrderIds).map(String));
+            const filteredServerOrders = (data.orders || []).filter(o => !deletedIds.has(String(o.id)));
+            DB.orders = mergeArraysById(DB.orders || [], filteredServerOrders, 'id');
+            DB.orders = DB.orders.filter(o => !deletedIds.has(String(o.id)));
             DB.removedItems = data.removedItems || [];
             
             DB.settings = data.settings || {
