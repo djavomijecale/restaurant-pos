@@ -54,7 +54,12 @@ function playWaiterCallSound() {
 
 function showConfirm(title, message, callback) {
     document.getElementById('confirmTitle').textContent = title;
-    document.getElementById('confirmMessage').textContent = message;
+    // Ako message sadrži HTML tagove, koristi innerHTML, inače textContent
+    if (message.includes('<')) {
+        document.getElementById('confirmMessage').innerHTML = message;
+    } else {
+        document.getElementById('confirmMessage').textContent = message;
+    }
     confirmCallback = callback;
     document.getElementById('confirmModal').classList.add('show');
 }
