@@ -717,6 +717,113 @@ function exportHistoryToExcel() {
 
 
 // ============================================
+// RETROAKTIVNO AŽURIRANJE workdayHistory PRI BRISANJU
+// Pronalazi zatvorenu smenu koja je sadržala obrisanu narudžbinu
+// i oduzima iznos iz revenue/cashRevenue/cardRevenue/finalCash
+// ============================================
+function adjustWorkdayHistoryForDeletedOrder(order) {
+    if (!order || !order.time || !DB.workdayHistory) return null;
+
+    var orderTime = new Date(order.time);
+    var orderCreatedBy = order.createdBy || '';
+
+    // Nađi zatvorenu smenu koja je obuhvatala ovu narudžbinu
+    // (order.time je između loginTime i logoutTime, user se podudara sa createdBy)
+    var targetIdx = -1;
+    for (var i = 0; i < DB.workdayHistory.length; i++) {
+        var s = DB.workdayHistory[i];
+        if (!s || !s.loginTime || !s.logoutTime) continue;
+        var login = new Date(s.loginTime);
+        var logout = new Date(s.logoutTime);
+        if (orderTime < login || orderTime > logout) continue;
+        // Match po useru - prihvati ako se poklapa sa s.user
+        if (s.user && orderCreatedBy && s.user !== orderCreatedBy) continue;
+        targetIdx = i;
+        break;
+    }
+
+    if (targetIdx === -1) {
+        console.log('ℹ️ Narudžbina #' + order.id + ' nije u zatvorenoj smeni (verovatno je iz aktivne smene)');
+        return null;
+    }
+
+    var shift = DB.workdayHistory[targetIdx];
+    var amt = order.tot || 0;
+    var method = order.method || '';
+
+    // Oduzmi od ukupnog prihoda
+    shift.revenue = Math.max(0, (shift.revenue || 0) - amt);
+    shift.totalRevenue = Math.max(0, (shift.totalRevenue || 0) - amt);
+    shift.totalPerformance = Math.max(0, (shift.totalPerformance || 0) - amt);
+    shift.orderCount = Math.max(0, (shift.orderCount || 0) - 1);
+
+    // Oduzmi od odgovarajuće kategorije plaćanja
+    if (method === 'Cash') {
+        shift.cashRevenue = Math.max(0, (shift.cashRevenue || 0) - amt);
+        shift.finalCash = Math.max(0, (shift.finalCash || 0) - amt);
+    } else if (method === 'Card') {
+        shift.cardRevenue = Math.max(0, (shift.cardRevenue || 0) - amt);
+    } else if (method === 'Wire') {
+        shift.wireRevenue = Math.max(0, (shift.wireRevenue || 0) - amt);
+    }
+
+    // Obriši narudžbinu iz shift.orders ako postoji
+    if (shift.orders && Array.isArray(shift.orders)) {
+        shift.orders = shift.orders.filter(function(o) { return String(o.id) !== String(order.id); });
+    }
+
+    console.log('📊 Ažurirana smena ' + shift.user + ' (' + new Date(shift.loginTime).toLocaleDateString('sr-RS') + '): -' + amt + ' din (' + method + ')');
+
+    return shift.user + ' (-' + amt.toFixed(0) + ' din ' + method + ')';
+}
+
+// Rekonstrukcija: za sve obrisane narudžbine (deletedOrderIds) nađi originale preko
+// bilo gde dostupnih podataka i ponovo ažuriraj workdayHistory.
+// Poziva se ručno od strane admina da popravi već postojeće nekorektne entry-je.
+function rebuildWorkdayHistoryFromDeletions() {
+    if (!DB.workdayHistory || !DB.deletedOrderIds) {
+        showAlert('Nema podataka za rekonstrukciju.');
+        return;
+    }
+
+    // Skupi sve narudžbine koje se pominju u shift.orders unutar workdayHistory
+    var allKnownOrders = {};
+    DB.workdayHistory.forEach(function(s) {
+        if (s && s.orders && Array.isArray(s.orders)) {
+            s.orders.forEach(function(o) {
+                if (o && o.id) allKnownOrders[String(o.id)] = o;
+            });
+        }
+    });
+
+    var deletedIds = DB.deletedOrderIds.map(String);
+    var adjusted = [];
+
+    deletedIds.forEach(function(id) {
+        var order = allKnownOrders[id];
+        if (!order) return;
+        // Proveri da li je već izbačena iz shift.orders (onda je već ažurirano)
+        var stillIn = DB.workdayHistory.some(function(s) {
+            return s && s.orders && s.orders.some(function(o) { return String(o.id) === id; });
+        });
+        if (!stillIn) return;
+        var r = adjustWorkdayHistoryForDeletedOrder(order);
+        if (r) adjusted.push('#' + id + ' → ' + r);
+    });
+
+    if (adjusted.length === 0) {
+        showAlert('✅ Nema zastarelih zapisa. Sve je već ažurirano.');
+        return;
+    }
+
+    DB._adminDeleteOverride = true;
+    save();
+    render();
+    showAlert('✅ Ažurirano ' + adjusted.length + ' zapisa:\n\n' + adjusted.join('\n'));
+}
+
+
+// ============================================
 // BRISANJE NARUDŽBINA (samo admin)
 // ============================================
 function deleteOrder(orderId) {
@@ -754,10 +861,18 @@ function deleteOrder(orderId) {
             if (!DB.deletedOrderIds) DB.deletedOrderIds = [];
             DB.deletedOrderIds.push(String(orderId));
 
+            // ✅ Retroaktivno ažuriraj workdayHistory - oduzmi obrisanu narudžbinu iz zatvorene smene
+            // (inače konobar koji otvara novu smenu nasledi stari finalCash koji sadrži ovu narudžbinu)
+            var historyAdjusted = adjustWorkdayHistoryForDeletedOrder(removed);
+
             DB._adminDeleteOverride = true;
             save();
             render();
-            showAlert('✅ Narudžbina #' + orderId + ' obrisana (' + removed.tot.toFixed(0) + ' din)');
+            var msg = '✅ Narudžbina #' + orderId + ' obrisana (' + removed.tot.toFixed(0) + ' din)';
+            if (historyAdjusted) {
+                msg += '\n\n📊 Ažurirana zatvorena smena: ' + historyAdjusted;
+            }
+            showAlert(msg);
         }
     );
 }

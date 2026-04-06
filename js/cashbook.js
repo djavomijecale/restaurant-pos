@@ -140,6 +140,7 @@ function renderCashbook(c) {
     h += '<h2>💰 Presek Stanja</h2>';
     h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
     h += '<button class="btn" style="width:auto;padding:8px 16px;background:#FF9800" onclick="findDuplicateShifts()">🔍 Proveri Duplikate</button>';
+    h += '<button class="btn" style="width:auto;padding:8px 16px;background:#9C27B0" onclick="rebuildWorkdayHistoryFromDeletions()">🔧 Ispravi Obrisane</button>';
     h += '<button class="btn" style="width:auto;padding:8px 16px;background:#4CAF50" onclick="addCashbookEntry()">+ Dodaj Unos</button>';
     h += '</div>';
     h += '</div>';
