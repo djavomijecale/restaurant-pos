@@ -781,45 +781,113 @@ function adjustWorkdayHistoryForDeletedOrder(order) {
 // bilo gde dostupnih podataka i ponovo ažuriraj workdayHistory.
 // Poziva se ručno od strane admina da popravi već postojeće nekorektne entry-je.
 function rebuildWorkdayHistoryFromDeletions() {
-    if (!DB.workdayHistory || !DB.deletedOrderIds) {
-        showAlert('Nema podataka za rekonstrukciju.');
+    if (!DB.workdayHistory || DB.workdayHistory.length === 0) {
+        showAlert('Nema zatvorenih smena u istoriji.');
         return;
     }
 
-    // Skupi sve narudžbine koje se pominju u shift.orders unutar workdayHistory
-    var allKnownOrders = {};
-    DB.workdayHistory.forEach(function(s) {
-        if (s && s.orders && Array.isArray(s.orders)) {
-            s.orders.forEach(function(o) {
-                if (o && o.id) allKnownOrders[String(o.id)] = o;
-            });
-        }
-    });
+    var deletedIds = new Set((DB.deletedOrderIds || []).map(String));
+    var allOrders = DB.orders || [];
+    var changes = [];
 
-    var deletedIds = DB.deletedOrderIds.map(String);
-    var adjusted = [];
+    // Prolazi kroz sve zatvorene smene i preračunaj totale iz DB.orders
+    // (pronađi narudžbine po user + time range, isključi obrisane)
+    // Stariji format nije sačuvao shift.orders pa koristimo live DB.orders
+    DB.workdayHistory.forEach(function(shift, idx) {
+        if (!shift || !shift.user || !shift.loginTime) return;
 
-    deletedIds.forEach(function(id) {
-        var order = allKnownOrders[id];
-        if (!order) return;
-        // Proveri da li je već izbačena iz shift.orders (onda je već ažurirano)
-        var stillIn = DB.workdayHistory.some(function(s) {
-            return s && s.orders && s.orders.some(function(o) { return String(o.id) === id; });
+        var startT = shift.loginTime;
+        var endT = shift.logoutTime || new Date().toISOString();
+
+        // Pronađi sve narudžbine ovog konobara u vremenskom rasponu smene
+        // koje NISU obrisane
+        var validOrders = allOrders.filter(function(o) {
+            if (!o || !o.time || !o.id) return false;
+            if (deletedIds.has(String(o.id))) return false;
+            if (o.createdBy !== shift.user) return false;
+            return o.time >= startT && o.time <= endT;
         });
-        if (!stillIn) return;
-        var r = adjustWorkdayHistoryForDeletedOrder(order);
-        if (r) adjusted.push('#' + id + ' → ' + r);
+
+        // Ako nema nijedne narudžbine u rasponu i nema ni stored revenue - preskoči
+        if (validOrders.length === 0 && (shift.revenue || 0) === 0) return;
+
+        // Preračunaj totale
+        var realOrders = validOrders.filter(function(o) { return !o.isDebtPayment; });
+        var newRevenue = realOrders.reduce(function(s, o) { return s + (o.tot || 0); }, 0);
+        var newCash = realOrders.filter(function(o) { return o.method === 'Cash'; }).reduce(function(s, o) { return s + (o.tot || 0); }, 0);
+        var newCard = realOrders.filter(function(o) { return o.method === 'Card'; }).reduce(function(s, o) { return s + (o.tot || 0); }, 0);
+        var newWire = realOrders.filter(function(o) { return o.method === 'Wire'; }).reduce(function(s, o) { return s + (o.tot || 0); }, 0);
+        var debtCash = validOrders.filter(function(o) { return o.isDebtPayment && o.method === 'Cash'; }).reduce(function(s, o) { return s + (o.tot || 0); }, 0);
+
+        var deposit = shift.deposit || 0;
+        var reductions = shift.totalCashReductions || 0;
+        var newFinalCash = Math.max(0, deposit + newCash + debtCash - reductions);
+
+        // Poredi sa trenutnim vrednostima
+        var oldRevenue = shift.revenue || 0;
+        var oldCash = shift.cashRevenue || 0;
+        var oldCard = shift.cardRevenue || 0;
+        var oldFinalCash = shift.finalCash || 0;
+
+        // ✅ SIGURNOST: Ispravljaj SAMO kada nova vrednost opada (tj. narudžbina je obrisana).
+        // Ne diramo smene gde novi total raste - to su stari zapisi sa nedostajućim poljima.
+        // Takođe zahtevamo da je stari revenue > 0 - inače je smena verovatno u starom formatu.
+        if (oldRevenue <= 0) return;
+        if (newRevenue >= oldRevenue) return;
+
+        var diffs = [];
+        if (newRevenue < oldRevenue - 0.01) diffs.push('revenue ' + oldRevenue + '→' + newRevenue);
+        if (newCash < oldCash - 0.01) diffs.push('cash ' + oldCash + '→' + newCash);
+        if (newCard < oldCard - 0.01) diffs.push('card ' + oldCard + '→' + newCard);
+        if (newFinalCash < oldFinalCash - 0.01) diffs.push('finalCash ' + oldFinalCash + '→' + newFinalCash);
+
+        if (diffs.length === 0) return;
+
+        var dateStr = new Date(shift.loginTime).toLocaleDateString('sr-RS');
+        changes.push({
+            idx: idx,
+            shift: shift,
+            label: shift.user + ' (' + dateStr + '): ' + diffs.join(', '),
+            newRevenue: newRevenue,
+            newCash: newCash,
+            newCard: newCard,
+            newWire: newWire,
+            newFinalCash: newFinalCash,
+            newOrderCount: realOrders.length,
+            validOrders: validOrders
+        });
     });
 
-    if (adjusted.length === 0) {
-        showAlert('✅ Nema zastarelih zapisa. Sve je već ažurirano.');
+    if (changes.length === 0) {
+        showAlert('✅ Sve zatvorene smene su već ispravne.');
         return;
     }
 
-    DB._adminDeleteOverride = true;
-    save();
-    render();
-    showAlert('✅ Ažurirano ' + adjusted.length + ' zapisa:\n\n' + adjusted.join('\n'));
+    var h = '<div style="text-align:left;max-height:400px;overflow-y:auto">';
+    h += '<p style="color:#E94560"><b>Pronađeno ' + changes.length + ' smena sa neispravnim totalima:</b></p>';
+    changes.forEach(function(c) {
+        h += '<div style="background:#16213E;padding:8px;border-radius:6px;margin:6px 0;font-size:12px;color:#FFD700">' + c.label + '</div>';
+    });
+    h += '<p style="color:#4CAF50;margin-top:12px">Potvrdi da ispraviš sve totale (na osnovu trenutnih narudžbina, isključujući obrisane).</p>';
+    h += '</div>';
+
+    showConfirm('🔧 Ispravi Totale Smena', h, function(confirmed) {
+        if (!confirmed) return;
+        changes.forEach(function(c) {
+            c.shift.revenue = c.newRevenue;
+            c.shift.totalRevenue = c.newRevenue;
+            c.shift.totalPerformance = c.newRevenue + (c.shift.deposit || 0);
+            c.shift.cashRevenue = c.newCash;
+            c.shift.cardRevenue = c.newCard;
+            c.shift.wireRevenue = c.newWire;
+            c.shift.finalCash = c.newFinalCash;
+            c.shift.orderCount = c.newOrderCount;
+        });
+        DB._adminDeleteOverride = true;
+        save();
+        render();
+        showAlert('✅ Ispravljeno ' + changes.length + ' smena.');
+    });
 }
 
 
