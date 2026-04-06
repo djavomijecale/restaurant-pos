@@ -360,9 +360,37 @@ function confirmCashReduction() {
 
 
 async function closeWorkday() {
+    // 🔒 ZAŠTITA OD DUPLOG KLIKA - sprečava 6× zatvaranje smene ako je program zaboravio da reaguje
+    if (window._closingShiftInProgress) {
+        console.warn('⚠️ closeWorkday već u toku - ignorišem dupli klik');
+        return;
+    }
+    window._closingShiftInProgress = true;
+
+    // Disable dugme odmah da se ne može više kliknuti
+    try {
+        var btn = document.getElementById('closeDayBtn');
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
+        document.querySelectorAll('button[onclick*="closeWorkday"]').forEach(function(b) {
+            b.disabled = true; b.style.opacity = '0.5'; b.style.pointerEvents = 'none';
+        });
+    } catch(e) {}
+
+    try {
+        await _doCloseWorkday();
+    } catch(e) {
+        console.error('❌ closeWorkday greška:', e);
+        showAlert('❌ Greška pri zatvaranju smene: ' + (e.message || e));
+    } finally {
+        // Oslobodi lock tek nakon 5 sekundi (za slučaj da render nije završio)
+        setTimeout(function() { window._closingShiftInProgress = false; }, 5000);
+    }
+}
+
+async function _doCloseWorkday() {
     const username = DB.currentUser.username;
     const myWorkday = DB.workdays ? DB.workdays[username] : null;
-    
+
     if (!myWorkday) {
         showAlert('❌ Greška: Nema aktivnog radnog dana!');
         return;
