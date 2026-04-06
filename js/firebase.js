@@ -673,7 +673,7 @@ let autoCloseTimer = null;
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
     autoRefreshTimer = setInterval(checkForUpdates, 10000);
-    
+
     // ⏰ Provera isteklih smena svaka 5 minuta
     if (autoCloseTimer) clearInterval(autoCloseTimer);
     autoCloseTimer = setInterval(() => {
@@ -681,10 +681,110 @@ function startAutoRefresh() {
             checkAndAutoCloseShifts();
         }
     }, 5 * 60 * 1000);
-    
+
     // ✅ REAL-TIME LISTENER za workday-ove
     // Svaki uređaj odmah vidi kad neko otvori/zatvori smenu
     startWorkdayListener();
+
+    // ⚡ REAL-TIME LISTENER za /lastUpdated - momentalno povlači sveže podatke
+    // (čim bilo koji uređaj nešto upiše, svi ostali odmah dobijaju)
+    startLastUpdatedListener();
+
+    // 🔄 Refresh on focus - kad korisnik vrati prozor u prvi plan, povuci sveže
+    startFocusRefresh();
+
+    // 🆕 Auto-reload na novu verziju aplikacije (preko version.json)
+    startVersionChecker();
+}
+
+// ============================================
+// REAL-TIME /lastUpdated LISTENER
+// ============================================
+let lastUpdatedListenerActive = false;
+function startLastUpdatedListener() {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
+    if (lastUpdatedListenerActive) return;
+    lastUpdatedListenerActive = true;
+
+    database.ref('/lastUpdated').on('value', (snapshot) => {
+        const serverLastUpdate = snapshot.val();
+        if (!serverLastUpdate || serverLastUpdate === lastUpdate) return;
+
+        // Ne učitavaj ako je save u toku - to bi prepisalo naše promene
+        if (isSaving || saveQueued || hasPendingChanges) {
+            console.log('⏳ Real-time listener: save u toku, preskačem');
+            return;
+        }
+
+        console.log('⚡ Real-time update detektovan, povlačim sveže podatke');
+        lastUpdate = serverLastUpdate;
+        loadFromFirebase().then(() => render()).catch(err => console.error('❌ Real-time load error:', err));
+    });
+
+    console.log('👂 Real-time /lastUpdated listener pokrenut');
+}
+
+// ============================================
+// REFRESH ON FOCUS
+// ============================================
+let focusRefreshSetup = false;
+function startFocusRefresh() {
+    if (focusRefreshSetup) return;
+    focusRefreshSetup = true;
+
+    const handler = function() {
+        if (document.visibilityState === 'visible') {
+            console.log('🔄 Tab vraćen u fokus, povlačim sveže podatke');
+            checkForUpdates();
+        }
+    };
+
+    window.addEventListener('focus', handler);
+    document.addEventListener('visibilitychange', handler);
+
+    console.log('🔄 Focus refresh aktivan');
+}
+
+// ============================================
+// AUTO-RELOAD NA NOVU VERZIJU
+// version.json u root-u sadrži {"v":"..."}
+// Pri svakom deploy-u promeni vrednost - svi uređaji se sami refreshuju
+// ============================================
+let _initialAppVersion = null;
+let _versionCheckTimer = null;
+let _versionReloadInProgress = false;
+
+async function fetchAppVersion() {
+    try {
+        const res = await fetch('version.json?_=' + Date.now(), { cache: 'no-store' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data && data.v ? String(data.v) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function startVersionChecker() {
+    if (_versionCheckTimer) return;
+
+    // Prvo učitavanje - zapamti trenutnu verziju
+    _initialAppVersion = await fetchAppVersion();
+    console.log('🆕 App verzija: ' + (_initialAppVersion || 'nepoznato'));
+
+    // Provera svakih 60 sekundi
+    _versionCheckTimer = setInterval(async function() {
+        if (_versionReloadInProgress) return;
+        const current = await fetchAppVersion();
+        if (current && _initialAppVersion && current !== _initialAppVersion) {
+            _versionReloadInProgress = true;
+            console.log('🔄 Nova verzija detektovana (' + current + '), reload za 3 sekunde...');
+            // Mali delay da se eventualne pending operacije završe
+            setTimeout(function() {
+                window.location.reload(true);
+            }, 3000);
+        }
+    }, 60000);
 }
 
 
