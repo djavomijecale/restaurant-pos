@@ -777,6 +777,72 @@ function adjustWorkdayHistoryForDeletedOrder(order) {
     return shift.user + ' (-' + amt.toFixed(0) + ' din ' + method + ')';
 }
 
+// Izračunava ključ poslovnog dana (dan počinje u 05:00 ujutro)
+function _businessDayKey(iso) {
+    var d = new Date(iso);
+    if (d.getHours() < 5) d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
+}
+
+// Walk kroz sve smene hronološki i propagira depozit iz prethodne zatvorene smene
+// istog poslovnog dana. Vraća niz promena za prikaz.
+function cascadeDepositInheritance() {
+    // Ograniči na SAMO trenutni poslovni dan - ne diraj staru istoriju
+    var todayKey = _businessDayKey(new Date().toISOString());
+
+    var sorted = (DB.workdayHistory || [])
+        .filter(function(s){ return s && s.logoutTime && s.loginTime; })
+        .filter(function(s){ return _businessDayKey(s.loginTime) === todayKey; })
+        .map(function(s){ return s; })
+        .sort(function(a,b){ return new Date(a.loginTime) - new Date(b.loginTime); });
+
+    var users = DB.users || [];
+    function isKuvar(username) {
+        var u = users.find(function(x){ return x.username === username; });
+        return u && u.role === 'kuvar';
+    }
+
+    var changes = [];
+    for (var i = 0; i < sorted.length; i++) {
+        var cur = sorted[i];
+        if (isKuvar(cur.user)) continue;
+        var curBDay = _businessDayKey(cur.loginTime);
+
+        // Nađi najkasniju zatvorenu smenu (ne-kuvar) PRE ove smene istog poslovnog dana
+        var prev = null;
+        for (var j = i - 1; j >= 0; j--) {
+            var p = sorted[j];
+            if (!p || !p.logoutTime) continue;
+            if (isKuvar(p.user)) continue;
+            if (new Date(p.logoutTime) > new Date(cur.loginTime)) continue;
+            if (_businessDayKey(p.logoutTime) !== curBDay) break;
+            prev = p;
+            break;
+        }
+        if (!prev) continue;
+
+        var expectedDeposit = Math.max(0, prev.finalCash || 0);
+        var curDeposit = cur.deposit || 0;
+        if (Math.abs(curDeposit - expectedDeposit) < 0.01) continue;
+
+        var diff = expectedDeposit - curDeposit;
+        var oldDeposit = curDeposit;
+        var oldFinalCash = cur.finalCash || 0;
+        cur.deposit = expectedDeposit;
+        cur.finalCash = Math.max(0, oldFinalCash + diff);
+        cur.totalPerformance = (cur.revenue || 0) + expectedDeposit;
+
+        changes.push({
+            user: cur.user,
+            date: new Date(cur.loginTime).toLocaleDateString('sr-RS'),
+            time: new Date(cur.loginTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}),
+            depositChange: oldDeposit + '→' + expectedDeposit,
+            finalCashChange: oldFinalCash + '→' + cur.finalCash
+        });
+    }
+    return changes;
+}
+
 // Rekonstrukcija: za sve obrisane narudžbine (deletedOrderIds) nađi originale preko
 // bilo gde dostupnih podataka i ponovo ažuriraj workdayHistory.
 // Poziva se ručno od strane admina da popravi već postojeće nekorektne entry-je.
@@ -858,17 +924,30 @@ function rebuildWorkdayHistoryFromDeletions() {
         });
     });
 
-    if (changes.length === 0) {
+    // Dry-run cascade: simuliraj da vidimo koliko depozita treba propagirati
+    // (radi nad trenutnim stanjem, pre bilo kakvih izmena)
+    var cascadePreview = _simulateCascade();
+
+    if (changes.length === 0 && cascadePreview.length === 0) {
         showAlert('✅ Sve zatvorene smene su već ispravne.');
         return;
     }
 
     var h = '<div style="text-align:left;max-height:400px;overflow-y:auto">';
-    h += '<p style="color:#E94560"><b>Pronađeno ' + changes.length + ' smena sa neispravnim totalima:</b></p>';
-    changes.forEach(function(c) {
-        h += '<div style="background:#16213E;padding:8px;border-radius:6px;margin:6px 0;font-size:12px;color:#FFD700">' + c.label + '</div>';
-    });
-    h += '<p style="color:#4CAF50;margin-top:12px">Potvrdi da ispraviš sve totale (na osnovu trenutnih narudžbina, isključujući obrisane).</p>';
+    if (changes.length > 0) {
+        h += '<p style="color:#E94560"><b>🗑️ Pronađeno ' + changes.length + ' smena sa obrisanim narudžbinama:</b></p>';
+        changes.forEach(function(c) {
+            h += '<div style="background:#16213E;padding:8px;border-radius:6px;margin:6px 0;font-size:12px;color:#FFD700">' + c.label + '</div>';
+        });
+    }
+    if (cascadePreview.length > 0) {
+        h += '<p style="color:#E94560;margin-top:12px"><b>🔗 Propagacija depozita (' + cascadePreview.length + '):</b></p>';
+        cascadePreview.forEach(function(c) {
+            h += '<div style="background:#16213E;padding:8px;border-radius:6px;margin:6px 0;font-size:12px;color:#FFD700">' +
+                c.user + ' (' + c.date + ' ' + c.time + '): depozit ' + c.depositChange + ', finalCash ' + c.finalCashChange + '</div>';
+        });
+    }
+    h += '<p style="color:#4CAF50;margin-top:12px">Potvrdi da ispraviš totale i kaskadno propagiraš depozite.</p>';
     h += '</div>';
 
     showConfirm('🔧 Ispravi Totale Smena', h, function(confirmed) {
@@ -883,11 +962,27 @@ function rebuildWorkdayHistoryFromDeletions() {
             c.shift.finalCash = c.newFinalCash;
             c.shift.orderCount = c.newOrderCount;
         });
+        // Kaskadno propagiraj depozite nakon korekcije totala
+        var cascadeApplied = cascadeDepositInheritance();
         DB._adminDeleteOverride = true;
         save();
         render();
-        showAlert('✅ Ispravljeno ' + changes.length + ' smena.');
+        showAlert('✅ Ispravljeno ' + changes.length + ' smena sa obrisanim narudžbinama.\n🔗 Propagirano depozita: ' + cascadeApplied.length);
     });
+}
+
+// Simulira kaskadu bez modifikovanja DB - za prikaz u dry-run
+function _simulateCascade() {
+    var snap = JSON.parse(JSON.stringify(DB.workdayHistory || []));
+    var originalHistory = DB.workdayHistory;
+    DB.workdayHistory = snap;
+    var result;
+    try {
+        result = cascadeDepositInheritance();
+    } finally {
+        DB.workdayHistory = originalHistory;
+    }
+    return result;
 }
 
 
