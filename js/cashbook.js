@@ -138,7 +138,10 @@ function renderCashbook(c) {
 
     let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">';
     h += '<h2>💰 Presek Stanja</h2>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    h += '<button class="btn" style="width:auto;padding:8px 16px;background:#FF9800" onclick="findDuplicateShifts()">🔍 Proveri Duplikate</button>';
     h += '<button class="btn" style="width:auto;padding:8px 16px;background:#4CAF50" onclick="addCashbookEntry()">+ Dodaj Unos</button>';
+    h += '</div>';
     h += '</div>';
 
     // Date range selector
@@ -461,4 +464,101 @@ function deleteCashbookEntry(entryId) {
         render();
         showAlert('✅ Unos obrisan');
     });
+}
+
+// ============================================
+// PROVERA DUPLIKATA - sprečava 6× zatvorenu smenu
+// ============================================
+function findDuplicateShifts() {
+    const history = DB.workdayHistory || [];
+    if (history.length === 0) {
+        showAlert('Nema sesija u istoriji.');
+        return;
+    }
+
+    // Grupiši po user + loginTime (zaokruženo na minut da uhvati i blizu duplikate)
+    const groups = {};
+    history.forEach(function(s, idx) {
+        if (!s || !s.user || !s.loginTime) return;
+        // Ključ: user + loginTime zaokružen na minut
+        const t = new Date(s.loginTime);
+        t.setSeconds(0, 0);
+        const key = s.user + '|' + t.toISOString();
+        if (!groups[key]) groups[key] = [];
+        groups[key].push({ idx: idx, session: s });
+    });
+
+    // Filtriraj samo grupe sa više od jednog unosa
+    const duplicateGroups = Object.entries(groups).filter(function(g) { return g[1].length > 1; });
+
+    if (duplicateGroups.length === 0) {
+        showAlert('✅ Nema duplikata u istoriji smena.');
+        return;
+    }
+
+    let h = '<div style="text-align:left;max-height:400px;overflow-y:auto">';
+    h += '<p style="color:#E94560;margin-bottom:12px"><b>Pronađeno ' + duplicateGroups.length + ' grupa duplikata:</b></p>';
+
+    let totalToRemove = 0;
+    duplicateGroups.forEach(function(g) {
+        const sessions = g[1];
+        const first = sessions[0].session;
+        const dateStr = new Date(first.loginTime).toLocaleString('sr-RS', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        h += '<div style="background:#16213E;padding:10px;border-radius:6px;margin-bottom:8px;font-size:13px">';
+        h += '<div style="color:#FFD700;font-weight:bold">' + first.user + ' - ' + dateStr + '</div>';
+        h += '<div style="color:#B0B0B0">Broj duplikata: <b style="color:#E94560">' + sessions.length + '</b> (zadržaće se 1, obrisaće se ' + (sessions.length - 1) + ')</div>';
+        // Prikaži iznose
+        sessions.forEach(function(s, i) {
+            const sObj = s.session;
+            h += '<div style="color:#888;font-size:11px;margin-left:8px">';
+            h += (i === 0 ? '✅ ZADRŽI' : '🗑️ OBRIŠI') + ': plata ' + (sObj.salary || 0) + ', smanjenja ' + (sObj.totalCashReductions || 0) + ', kraj ' + new Date(sObj.logoutTime).toLocaleTimeString('sr-RS');
+            h += '</div>';
+        });
+        h += '</div>';
+        totalToRemove += sessions.length - 1;
+    });
+
+    h += '<p style="color:#FFD700;margin-top:12px"><b>Ukupno za brisanje: ' + totalToRemove + ' duplikata</b></p>';
+    h += '</div>';
+
+    showConfirm('🔍 Pronađeni Duplikati', h, function(confirmed) {
+        if (!confirmed) return;
+        removeDuplicateShifts();
+    });
+}
+
+function removeDuplicateShifts() {
+    const history = DB.workdayHistory || [];
+    const groups = {};
+    history.forEach(function(s, idx) {
+        if (!s || !s.user || !s.loginTime) return;
+        const t = new Date(s.loginTime);
+        t.setSeconds(0, 0);
+        const key = s.user + '|' + t.toISOString();
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(idx);
+    });
+
+    // Indeksi za brisanje (sve osim prvog u svakoj grupi duplikata)
+    const indicesToRemove = new Set();
+    Object.values(groups).forEach(function(idxs) {
+        if (idxs.length > 1) {
+            // Zadrži prvi (najraniji), obriši ostale
+            for (let i = 1; i < idxs.length; i++) {
+                indicesToRemove.add(idxs[i]);
+            }
+        }
+    });
+
+    if (indicesToRemove.size === 0) {
+        showAlert('Nema šta da se obriše.');
+        return;
+    }
+
+    // Filtriraj
+    DB.workdayHistory = history.filter(function(_, idx) { return !indicesToRemove.has(idx); });
+    DB._adminDeleteOverride = true;
+    save();
+    render();
+    showAlert('✅ Obrisano ' + indicesToRemove.size + ' duplikata. Ostalo ' + DB.workdayHistory.length + ' sesija.');
 }
