@@ -357,20 +357,50 @@ function renderHistorySessions(sessions) {
             try {
             const loginDate = new Date(s.loginTime);
             const logoutDate = s.logoutTime ? new Date(s.logoutTime) : null;
-            
+
             const dateStr = loginDate.toLocaleDateString('sr-RS', {day: 'numeric', month: 'short', year: 'numeric'});
             const loginTime = loginDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
             const logoutTime = logoutDate ? logoutDate.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'}) : '—';
-            
+
             const duration = s.duration || 0;
             const hours = Math.floor(duration / 60);
             const mins = duration % 60;
             const durationStr = hours > 0 ? `${hours}h ${mins}min` : `${mins}min`;
-            
+
+            // KUVAR: posebno renderovanje (nema novčane statistike, ima jela/narudžbine)
+            if (s.role === 'kuvar') {
+                const dishes = s.dishesCompleted || 0;
+                const ordersProcessed = s.ordersProcessed || 0;
+                const totalOrders = s.totalOrders || 0;
+                h += `
+                    <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;border-left:3px solid #FF9800">
+                        <div style="display:flex;justify-content:space-between;align-items:start">
+                            <div style="flex:1">
+                                <div style="color:#FFD700;font-weight:bold">🍳 ${s.user || 'Nepoznato'} <span style="background:#FF9800;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">KUVAR</span></div>
+                                <div style="color:#B0B0B0;font-size:11px">${dateStr}</div>
+                                <div style="color:#FFF;font-size:12px;margin-top:4px">
+                                    🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
+                                </div>
+                                <div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap">
+                                    <span style="color:#4CAF50;font-size:12px;font-weight:bold">🍽️ ${dishes} jela</span>
+                                    <span style="color:#2196F3;font-size:12px;font-weight:bold">✅ ${ordersProcessed} završeno</span>
+                                    <span style="color:#888;font-size:12px">📋 ${totalOrders} narudž.</span>
+                                </div>
+                            </div>
+                            <div style="text-align:right">
+                                <div style="color:#FF9800;font-size:18px;font-weight:bold">${dishes}</div>
+                                <div style="color:#B0B0B0;font-size:11px">jela</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
             // Izračunaj keš/kartice iz narudžbina za ovu sesiju
-            const sessionOrders = DB.orders.filter(o => 
-                o.createdBy === s.user && 
-                o.time >= s.loginTime && 
+            const sessionOrders = DB.orders.filter(o =>
+                o.createdBy === s.user &&
+                o.time >= s.loginTime &&
                 (!s.logoutTime || o.time <= s.logoutTime)
             );
             const sessionCash = sessionOrders.filter(o => o.method === 'Cash').reduce((sum, o) => sum + o.tot, 0);
@@ -620,10 +650,16 @@ function renderHistoryDaily(allOrders, allSessions, ordersByDate, isWaiter) {
             var lt = new Date(s.loginTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
             var lo = s.logoutTime ? new Date(s.logoutTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}) : '—';
             var hrs = Math.floor((s.duration || 0) / 60), mins = (s.duration || 0) % 60;
-            h += '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:6px"><div style="display:flex;justify-content:space-between;align-items:center">';
-            h += '<div><div style="color:#FFD700;font-weight:bold">👨‍🍳 ' + (s.user || '?') + (s.autoClosed ? ' <span style="color:#FF9800;font-size:10px">⏰ AUTO</span>' : '') + '</div>';
+            var isKuvar = s.role === 'kuvar';
+            var icon = isKuvar ? '🍳' : '👨‍🍳';
+            var roleBadge = isKuvar ? ' <span style="background:#FF9800;color:#FFF;padding:2px 6px;border-radius:6px;font-size:9px">KUVAR</span>' : '';
+            var rightSide = isKuvar
+                ? '<div style="color:#FF9800;font-weight:bold">' + (s.dishesCompleted || 0) + ' jela</div>'
+                : '<div style="color:#4CAF50;font-weight:bold">' + (s.revenue || 0).toFixed(0) + ' din.</div>';
+            h += '<div style="background:#16213E;padding:10px;border-radius:8px;margin-bottom:6px' + (isKuvar ? ';border-left:3px solid #FF9800' : '') + '"><div style="display:flex;justify-content:space-between;align-items:center">';
+            h += '<div><div style="color:#FFD700;font-weight:bold">' + icon + ' ' + (s.user || '?') + roleBadge + (s.autoClosed ? ' <span style="color:#FF9800;font-size:10px">⏰ AUTO</span>' : '') + '</div>';
             h += '<div style="color:#888;font-size:12px">🔓 ' + lt + ' → 🔒 ' + lo + ' · ' + hrs + 'h ' + mins + 'min</div></div>';
-            h += '<div style="color:#4CAF50;font-weight:bold">' + (s.revenue || 0).toFixed(0) + ' din.</div></div></div>';
+            h += rightSide + '</div></div>';
         });
         h += '</div>';
     }
