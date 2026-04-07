@@ -537,6 +537,14 @@ function closeKuvarShift() {
             dishesCompleted: totalDishes
         });
 
+        // ✅ Ukloni iz DB.workdays da admin više ne vidi kuvara kao aktivnog
+        if (DB.workdays && DB.workdays[username]) {
+            delete DB.workdays[username];
+            if (typeof removeWorkday === 'function') {
+                try { removeWorkday(username); } catch(e) {}
+            }
+        }
+
         save();
 
         // Resetuj login vreme

@@ -156,15 +156,33 @@ async function loginWaiter() {
         if(user.role === 'kuvar') {
             // Pitaj kuvara da li zeli da otvori smenu
             const existingLogin = localStorage.getItem('kuvarLoginTime');
-            if (!existingLogin) {
+            const hasServerWorkday = DB.workdays && DB.workdays[user.username];
+            if (!existingLogin && !hasServerWorkday) {
                 showConfirm('🍳 Otvaranje Smene', 'Da li želiš da otvoriš smenu?', (confirmed) => {
                     if (confirmed) {
-                        localStorage.setItem('kuvarLoginTime', new Date().toISOString());
+                        const nowISO = new Date().toISOString();
+                        localStorage.setItem('kuvarLoginTime', nowISO);
+                        // ✅ Upiši smenu u DB.workdays da je admin vidi kao aktivnu na drugim uređajima
+                        if (!DB.workdays) DB.workdays = {};
+                        DB.workdays[user.username] = {
+                            user: user.username,
+                            startTime: nowISO,
+                            role: 'kuvar'
+                        };
+                        if (typeof saveWorkday === 'function') {
+                            saveWorkday(user.username, DB.workdays[user.username]);
+                        } else {
+                            save();
+                        }
                     }
                     page = 'kitchen';
                     render();
                 });
                 return;
+            }
+            // Sinhronizuj localStorage sa server workday-em ako postoji
+            if (hasServerWorkday && !existingLogin) {
+                localStorage.setItem('kuvarLoginTime', DB.workdays[user.username].startTime || new Date().toISOString());
             }
             page = 'kitchen';
         } else {
