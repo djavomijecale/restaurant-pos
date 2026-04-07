@@ -101,10 +101,24 @@ function renderUsers(c) {
         cooks.forEach(w => {
             // Proveri da li je kuvar trenutno aktivan
             const isActive = DB.workdays && DB.workdays[w.username];
-            
+            const activeShiftStart = isActive && DB.workdays[w.username].startTime ? DB.workdays[w.username].startTime : null;
+
             // Statistika kuvara - broj kuhinjskih narudžbina
             const cookOrders = DB.kitchenOrders.filter(ko => ko.status === 'completed');
             const groceryRequests = DB.groceryList.filter(g => g.needed && g.requestedBy && g.requestedBy.includes(w.username));
+
+            // Real-time brojač jela u tekućoj smeni (od otvaranja smene do sad)
+            let dishesThisShift = 0;
+            let ordersThisShift = 0;
+            if (activeShiftStart) {
+                const shiftKitchen = (DB.kitchenOrders || []).filter(ko =>
+                    (ko.status === 'completed' || ko.status === 'ready') &&
+                    ko.orderedAt && ko.orderedAt >= activeShiftStart
+                );
+                ordersThisShift = shiftKitchen.length;
+                dishesThisShift = shiftKitchen.reduce((sum, ko) =>
+                    sum + (ko.items || []).reduce((s, i) => s + (i.qty || 0), 0), 0);
+            }
             
             h += `<div class="card" style="cursor:default;${isActive ? 'border:2px solid #4CAF50' : ''}">
                 <div style="display:flex;justify-content:space-between;align-items:start">
@@ -126,6 +140,12 @@ function renderUsers(c) {
                         </div>
                         
                         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px">
+                            ${isActive ? `
+                            <div style="background:#0F3460;padding:8px;border-radius:6px;text-align:center;border:1px solid #FFD700">
+                                <div style="color:#FFD700;font-size:11px">🍽️ Jela u smeni</div>
+                                <div style="color:#FFD700;font-size:20px;font-weight:bold">${dishesThisShift}</div>
+                                <div style="color:#B0B0B0;font-size:10px">${ordersThisShift} porudžbina</div>
+                            </div>` : ''}
                             <div style="background:#16213E;padding:8px;border-radius:6px;text-align:center">
                                 <div style="color:#B0B0B0;font-size:11px">Jela Spremljenih</div>
                                 <div style="color:#4CAF50;font-size:18px;font-weight:bold">${cookOrders.length}</div>
