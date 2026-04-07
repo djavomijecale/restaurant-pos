@@ -154,15 +154,19 @@ async function loginWaiter() {
         
         // Redirect na osnovu uloge
         if(user.role === 'kuvar') {
-            // Pitaj kuvara da li zeli da otvori smenu
-            const existingLogin = localStorage.getItem('kuvarLoginTime');
-            const hasServerWorkday = DB.workdays && DB.workdays[user.username];
-            if (!existingLogin && !hasServerWorkday) {
+            // SERVER je istina o aktivnoj smeni. localStorage je samo cache.
+            const hasServerWorkday = DB.workdays && DB.workdays[user.username] && DB.workdays[user.username].startTime;
+            if (hasServerWorkday) {
+                // Sinhronizuj localStorage sa serverskim startTime (prepiše bilo kakav stari cache)
+                localStorage.setItem('kuvarLoginTime', DB.workdays[user.username].startTime);
+                page = 'kitchen';
+            } else {
+                // Nema aktivne smene na serveru → očisti stari cache i pitaj za otvaranje
+                localStorage.removeItem('kuvarLoginTime');
                 showConfirm('🍳 Otvaranje Smene', 'Da li želiš da otvoriš smenu?', (confirmed) => {
                     if (confirmed) {
                         const nowISO = new Date().toISOString();
                         localStorage.setItem('kuvarLoginTime', nowISO);
-                        // ✅ Upiši smenu u DB.workdays da je admin vidi kao aktivnu na drugim uređajima
                         if (!DB.workdays) DB.workdays = {};
                         DB.workdays[user.username] = {
                             user: user.username,
@@ -180,11 +184,6 @@ async function loginWaiter() {
                 });
                 return;
             }
-            // Sinhronizuj localStorage sa server workday-em ako postoji
-            if (hasServerWorkday && !existingLogin) {
-                localStorage.setItem('kuvarLoginTime', DB.workdays[user.username].startTime || new Date().toISOString());
-            }
-            page = 'kitchen';
         } else {
             // Konobar - proveri workday
             const myWorkday = DB.workdays && DB.workdays[user.username];
