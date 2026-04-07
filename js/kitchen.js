@@ -10,7 +10,26 @@ function renderKitchen(c) {
     const isKuvar = DB.currentUser && DB.currentUser.role === 'kuvar';
     // Kuvar koristi login vreme za filtriranje (čuva se u localStorage)
     const shiftStart = isKuvar ? localStorage.getItem('kuvarLoginTime') : null;
-    
+
+    // 🔁 SELF-HEAL: ako kuvar ima aktivnu smenu lokalno ali server /workdays
+    // ne sadrži njegov zapis (ili je startTime drugačiji), upiši ga sada da
+    // bi admin video zelenu lampicu na tabu Osoblje na drugom uređaju.
+    if (isKuvar && shiftStart) {
+        const kuvarUser = DB.currentUser.username;
+        const serverWd = DB.workdays && DB.workdays[kuvarUser];
+        const needsSync = !serverWd || !serverWd.startTime || serverWd.startTime !== shiftStart;
+        if (needsSync && typeof saveWorkday === 'function') {
+            if (!DB.workdays) DB.workdays = {};
+            DB.workdays[kuvarUser] = {
+                user: kuvarUser,
+                startTime: shiftStart,
+                role: 'kuvar'
+            };
+            saveWorkday(kuvarUser, DB.workdays[kuvarUser]);
+            console.log('🔁 Kuvar shift sinhronizovan sa serverom za:', kuvarUser);
+        }
+    }
+
     let allOrders = DB.kitchenOrders;
     if (isKuvar && shiftStart) {
         allOrders = DB.kitchenOrders.filter(ko => ko.orderedAt >= shiftStart);

@@ -640,6 +640,10 @@ function checkAndAutoCloseShifts() {
     
     const expiredShifts = Object.entries(DB.workdays).filter(([username, wd]) => {
         if (!wd || !wd.startTime) return false;
+        // ✋ Kuvari sami zatvaraju svoju smenu — ne diraj ih auto-close-om
+        if (wd.role === 'kuvar') return false;
+        const userObj = (DB.users || []).find(u => u.username === username);
+        if (userObj && userObj.role === 'kuvar') return false;
         const shiftStart = new Date(wd.startTime);
         // Smena je istekla ako je počela PRE današnjeg cutoff-a (7:00)
         return shiftStart < todayCutoff;
