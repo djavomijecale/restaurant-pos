@@ -632,31 +632,7 @@ async function checkForUpdates() {
             const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
             lastUpdate = serverLastUpdate;
             await loadFromFirebase();
-            
-            // Zvučno obaveštenje za kuvara kad stigne nova narudžbina
-            if (DB.currentUser && DB.currentUser.role === 'kuvar') {
-                const newPendingCount = DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length;
-                if (newPendingCount > oldPendingCount) {
-                    playKitchenSound();
-                }
-            }
-            
-            // Zvučno obaveštenje za konobara/admina kad stigne nova QR narudžbina
-            if (DB.currentUser && DB.currentUser.role !== 'kuvar') {
-                const newGuestPending = (DB.guestOrders || []).filter(o => o.status === 'pending').length;
-                if (newGuestPending > lastKnownGuestPendingCount && lastKnownGuestPendingCount >= 0) {
-                    playKitchenSound();
-                }
-                lastKnownGuestPendingCount = newGuestPending;
-                
-                // Poziv konobara
-                const newWaiterCalls = (DB.waiterCalls || []).filter(c => c.status === 'pending').length;
-                if (newWaiterCalls > lastKnownWaiterCallsCount && lastKnownWaiterCallsCount >= 0) {
-                    playWaiterCallSound();
-                }
-                lastKnownWaiterCallsCount = newWaiterCalls;
-            }
-            
+            checkAndPlayNotificationSounds(oldPendingCount);
             render();
         }
     } catch (error) {
@@ -666,6 +642,34 @@ async function checkForUpdates() {
     }
 }
 
+// Pomoćna funkcija - proverava da li treba pustiti zvučno obaveštenje
+// Pozivamo je iz checkForUpdates I iz real-time /lastUpdated listener-a
+function checkAndPlayNotificationSounds(oldPendingCount) {
+    // Zvučno obaveštenje za kuvara kad stigne nova narudžbina
+    if (DB.currentUser && DB.currentUser.role === 'kuvar') {
+        const newPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
+        if (newPendingCount > (oldPendingCount || 0)) {
+            playKitchenSound();
+        }
+        return;
+    }
+
+    // Zvučno obaveštenje za konobara/admina kad stigne nova QR narudžbina
+    if (DB.currentUser && DB.currentUser.role !== 'kuvar') {
+        const newGuestPending = (DB.guestOrders || []).filter(o => o.status === 'pending').length;
+        if (newGuestPending > lastKnownGuestPendingCount && lastKnownGuestPendingCount >= 0) {
+            playKitchenSound();
+        }
+        lastKnownGuestPendingCount = newGuestPending;
+
+        // Poziv konobara
+        const newWaiterCalls = (DB.waiterCalls || []).filter(c => c.status === 'pending').length;
+        if (newWaiterCalls > lastKnownWaiterCallsCount && lastKnownWaiterCallsCount >= 0) {
+            playWaiterCallSound();
+        }
+        lastKnownWaiterCallsCount = newWaiterCalls;
+    }
+}
 
 let autoRefreshTimer = null;
 let autoCloseTimer = null;
@@ -717,8 +721,13 @@ function startLastUpdatedListener() {
         }
 
         console.log('⚡ Real-time update detektovan, povlačim sveže podatke');
+        // Snimi staru pending count za kuvara PRE load-a
+        const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
         lastUpdate = serverLastUpdate;
-        loadFromFirebase().then(() => render()).catch(err => console.error('❌ Real-time load error:', err));
+        loadFromFirebase().then(() => {
+            checkAndPlayNotificationSounds(oldPendingCount);
+            render();
+        }).catch(err => console.error('❌ Real-time load error:', err));
     });
 
     console.log('👂 Real-time /lastUpdated listener pokrenut');
