@@ -506,6 +506,18 @@ function closeKuvarShift() {
         const completedCount = completedOrders.length;
         const totalDishes = completedOrders.reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
 
+        // Agregirana lista jela: ime → ukupna količina (za prikaz u istoriji)
+        const dishMap = {};
+        completedOrders.forEach(function(ko) {
+            (ko.items || []).forEach(function(it) {
+                var key = it.name || 'Nepoznato';
+                dishMap[key] = (dishMap[key] || 0) + (it.qty || 0);
+            });
+        });
+        const dishesList = Object.keys(dishMap).map(function(name) {
+            return { name: name, qty: dishMap[name] };
+        }).sort(function(a, b) { return b.qty - a.qty; });
+
         // Bonus tracking - dodaj jela u ukupan broj
         if (!DB.kuvarBonus) DB.kuvarBonus = {};
         if (!DB.kuvarBonus[username]) DB.kuvarBonus[username] = {total: 0};
@@ -534,7 +546,8 @@ function closeKuvarShift() {
             duration: duration,
             ordersProcessed: completedCount,
             totalOrders: shiftOrders.length,
-            dishesCompleted: totalDishes
+            dishesCompleted: totalDishes,
+            dishes: dishesList
         });
 
         // ✅ Ukloni iz DB.workdays da admin više ne vidi kuvara kao aktivnog

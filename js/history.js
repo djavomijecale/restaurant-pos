@@ -372,11 +372,15 @@ function renderHistorySessions(sessions) {
                 const dishes = s.dishesCompleted || 0;
                 const ordersProcessed = s.ordersProcessed || 0;
                 const totalOrders = s.totalOrders || 0;
+                const hasDishList = Array.isArray(s.dishes) && s.dishes.length > 0;
+                const clickHint = hasDishList ? '<span style="color:#FF9800;font-size:10px;margin-left:6px">▸ klikni za detalje</span>' : '';
+                const cursorStyle = hasDishList ? 'cursor:pointer;' : '';
+                const onclickAttr = hasDishList ? `onclick="showKuvarSessionDishes('${(s.loginTime||'').replace(/'/g,"\\'")}','${(s.user||'').replace(/'/g,"\\'")}')"` : '';
                 h += `
-                    <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;border-left:3px solid #FF9800">
+                    <div ${onclickAttr} style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;border-left:3px solid #FF9800;${cursorStyle}">
                         <div style="display:flex;justify-content:space-between;align-items:start">
                             <div style="flex:1">
-                                <div style="color:#FFD700;font-weight:bold">🍳 ${s.user || 'Nepoznato'} <span style="background:#FF9800;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">KUVAR</span></div>
+                                <div style="color:#FFD700;font-weight:bold">🍳 ${s.user || 'Nepoznato'} <span style="background:#FF9800;color:#FFF;padding:2px 8px;border-radius:8px;font-size:10px;margin-left:8px">KUVAR</span>${clickHint}</div>
                                 <div style="color:#B0B0B0;font-size:11px">${dateStr}</div>
                                 <div style="color:#FFF;font-size:12px;margin-top:4px">
                                     🔓 ${loginTime} → 🔒 ${logoutTime} · ${durationStr}
@@ -1019,6 +1023,41 @@ function _simulateCascade() {
         DB.workdayHistory = originalHistory;
     }
     return result;
+}
+
+// Prikazuje listu jela koje je kuvar spremio u datoj sesiji
+function showKuvarSessionDishes(loginTime, user) {
+    var session = (DB.workdayHistory || []).find(function(s) {
+        return s && s.role === 'kuvar' && s.user === user && s.loginTime === loginTime;
+    });
+    if (!session) { showAlert('Sesija nije pronađena.'); return; }
+    var dishes = Array.isArray(session.dishes) ? session.dishes : [];
+    var dateStr = new Date(loginTime).toLocaleDateString('sr-RS', {day:'numeric', month:'short', year:'numeric'});
+    var loginStr = new Date(loginTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+    var logoutStr = session.logoutTime ? new Date(session.logoutTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}) : '—';
+
+    var h = '<div style="text-align:left;max-height:500px;overflow-y:auto">';
+    h += '<div style="color:#B0B0B0;font-size:12px;margin-bottom:8px">' + dateStr + ' · 🔓 ' + loginStr + ' → 🔒 ' + logoutStr + '</div>';
+    h += '<div style="display:flex;gap:10px;margin-bottom:12px;font-size:12px;flex-wrap:wrap">';
+    h += '<span style="background:#16213E;padding:6px 10px;border-radius:6px;color:#4CAF50;font-weight:bold">🍽️ ' + (session.dishesCompleted || 0) + ' jela</span>';
+    h += '<span style="background:#16213E;padding:6px 10px;border-radius:6px;color:#2196F3;font-weight:bold">✅ ' + (session.ordersProcessed || 0) + ' obrađeno</span>';
+    h += '<span style="background:#16213E;padding:6px 10px;border-radius:6px;color:#888">📋 ' + (session.totalOrders || 0) + ' narudž.</span>';
+    h += '</div>';
+
+    if (dishes.length === 0) {
+        h += '<div style="text-align:center;color:#B0B0B0;padding:20px">Nema sačuvane liste jela za ovu sesiju.<br><span style="font-size:11px">(stariji format - lista jela se čuva tek za smene zatvorene od ove verzije)</span></div>';
+    } else {
+        h += '<div style="background:#0F3460;padding:10px;border-radius:8px">';
+        dishes.forEach(function(d) {
+            h += '<div style="display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #16213E">';
+            h += '<span style="color:#FFF">' + (d.name || '?') + '</span>';
+            h += '<span style="color:#FFD700;font-weight:bold">x' + (d.qty || 0) + '</span>';
+            h += '</div>';
+        });
+        h += '</div>';
+    }
+    h += '</div>';
+    showConfirm('🍳 ' + user + ' - Spremljena jela', h, function(){});
 }
 
 
