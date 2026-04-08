@@ -916,14 +916,24 @@ function renderReport(c) {
         let totalDeposit = 0;
         let totalCashReductions = 0;
         
-        // Zatvorene smene danas (iz istorije)
+        // Helper: kuvar smene NEMAJU depozit i ne smeju da utiču na keš/depozit izveštaja
+        const _isKuvarShift = (s) => {
+            if (!s) return false;
+            if (s.role === 'kuvar') return true;
+            const u = (DB.users || []).find(x => x.username === s.user);
+            return !!(u && u.role === 'kuvar');
+        };
+
+        // Zatvorene smene danas (iz istorije) - bez kuvara
         const closedTodayShifts = (DB.workdayHistory || []).filter(s =>
             s.loginTime && s.loginTime >= businessDay.start && s.loginTime < businessDay.end
+            && !_isKuvarShift(s)
         );
-        
-        // Aktivne smene danas
+
+        // Aktivne smene danas - bez kuvara
         const activeTodayShifts = Object.values(DB.workdays || {}).filter(wd =>
             wd.startTime && wd.startTime >= businessDay.start && wd.startTime < businessDay.end
+            && !_isKuvarShift(wd)
         );
         
         // Spoji sve i sortiraj po početku
