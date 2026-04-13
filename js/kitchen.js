@@ -561,8 +561,8 @@ function closeKuvarShift() {
         const hoursWorked = duration / 60;
         const salary = Math.floor(hoursWorked * hourlyRate);
 
-        // Bonus za kuvare: po jelu (svaka 30 jela = 1 bonus od 500 din)
-        const bonusAmount = earnedBonuses > 0 ? earnedBonuses * 500 : 0;
+        // Bonus za kuvare: po jelu (svaka 30 jela = 1 bonus od 1000 din)
+        const bonusAmount = earnedBonuses > 0 ? earnedBonuses * 1000 : 0;
 
         // Sacuvaj u istoriju
         if (!DB.workdayHistory) DB.workdayHistory = [];
