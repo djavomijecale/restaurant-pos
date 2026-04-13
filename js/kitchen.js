@@ -555,6 +555,15 @@ function closeKuvarShift() {
             ko.status !== 'completed' && ko.status !== 'ready'
         );
 
+        // Plata kuvara
+        const kuvarUser = DB.users.find(u => u.username === username);
+        const hourlyRate = kuvarUser && kuvarUser.hourlyRate ? kuvarUser.hourlyRate : 350;
+        const hoursWorked = duration / 60;
+        const salary = Math.floor(hoursWorked * hourlyRate);
+
+        // Bonus za kuvare: po jelu (svaka 30 jela = 1 bonus od 500 din)
+        const bonusAmount = earnedBonuses > 0 ? earnedBonuses * 500 : 0;
+
         // Sacuvaj u istoriju
         if (!DB.workdayHistory) DB.workdayHistory = [];
         DB.workdayHistory.push({
@@ -566,7 +575,10 @@ function closeKuvarShift() {
             ordersProcessed: completedCount,
             totalOrders: shiftOrders.length,
             dishesCompleted: totalDishes,
-            dishes: dishesList
+            dishes: dishesList,
+            salary: salary,
+            hourlyRate: hourlyRate,
+            bonusAmount: bonusAmount
         });
 
         // ✅ Ukloni iz DB.workdays da admin više ne vidi kuvara kao aktivnog
@@ -585,7 +597,7 @@ function closeKuvarShift() {
         // Prikazi rezime
         const hours = Math.floor(duration / 60);
         const mins = duration % 60;
-        let msg = `✅ Smena završena!\n\n⏱️ Trajanje: ${hours}h ${mins}min\n📋 Narudžbine: ${completedCount}\n🍽️ Jela: ${totalDishes}\n🏆 Ukupno jela: ${newTotal}`;
+        let msg = `✅ Smena završena!\n\n⏱️ Trajanje: ${hours}h ${mins}min\n📋 Narudžbine: ${completedCount}\n🍽️ Jela: ${totalDishes}\n💰 Plata: ${salary} din (${hourlyRate}/sat)\n🏆 Ukupno jela: ${newTotal}`;
         if (earnedBonuses > 0) {
             msg += `\n\n🎉 BONUS x${earnedBonuses}! (ukupno ${newBonuses} bonusa)`;
         } else {
