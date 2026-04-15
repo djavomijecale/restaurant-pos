@@ -13,11 +13,18 @@
 //  - narudžbina se vraća na sto nakon naplate (drugi uređaj prepiše cleared sto)
 //  - stavke nestaju pre naplate (load overwrita lokalne dodate stavke)
 // ============================================
+// Monotonički brojač - svaki markDirty/markDeleted dobija jedinstvenu verziju.
+// Ovo dozvoljava da znamo da li je marker postavljen PRE ili POSLE trenutnog
+// save-a. Ako klik stigne tokom save-a, verzija raste i sledeći save
+// prepoznaje da marker ne treba obrisati.
+let _dirtyVersion = 0;
+function _nextDirtyVersion() { _dirtyVersion += 1; return _dirtyVersion; }
+
 function markTableDirty(tableNum) {
     if (tableNum === null || tableNum === undefined) return;
     if (typeof DB === 'undefined' || !DB) return;
     if (!DB._dirtyTables) DB._dirtyTables = {};
-    DB._dirtyTables[String(tableNum)] = true;
+    DB._dirtyTables[String(tableNum)] = _nextDirtyVersion();
 }
 if (typeof window !== 'undefined') window.markTableDirty = markTableDirty;
 
@@ -30,14 +37,14 @@ function markDirty(collection, id) {
     if (typeof DB === 'undefined' || !DB) return;
     if (!DB._dirtyItems) DB._dirtyItems = {};
     if (!DB._dirtyItems[collection]) DB._dirtyItems[collection] = {};
-    DB._dirtyItems[collection][String(id)] = true;
+    DB._dirtyItems[collection][String(id)] = _nextDirtyVersion();
 }
 function markDeleted(collection, id) {
     if (!collection || id === null || id === undefined) return;
     if (typeof DB === 'undefined' || !DB) return;
     if (!DB._deletedItems) DB._deletedItems = {};
     if (!DB._deletedItems[collection]) DB._deletedItems[collection] = {};
-    DB._deletedItems[collection][String(id)] = true;
+    DB._deletedItems[collection][String(id)] = _nextDirtyVersion();
 }
 // Dirty-svesni merge: server kao baza, lokalni dirty items prepisuju server,
 // lokalno obrisani se uklanjaju, local-only (još nesnimljeni) dodaju na kraj.
@@ -539,6 +546,20 @@ async function saveToFirebase() {
     isSaving = true;
     hasPendingChanges = true;
 
+    // ✅ RACE FIX: Snapshot dirty/deleted markera na početku save-a. Na kraju
+    // ćemo obrisati SAMO one markere koji se nisu promenili tokom save-a.
+    // Ako klik stigne tokom save-a, marker dobija novu verziju i ostaje, pa
+    // queued re-invoke pravilno prepozna da je sto/item još dirty.
+    const _savingDirtyTables = Object.assign({}, DB._dirtyTables || {});
+    const _savingDirtyItems = {};
+    const _savingDeletedItems = {};
+    Object.keys(DB._dirtyItems || {}).forEach(col => {
+        _savingDirtyItems[col] = Object.assign({}, DB._dirtyItems[col]);
+    });
+    Object.keys(DB._deletedItems || {}).forEach(col => {
+        _savingDeletedItems[col] = Object.assign({}, DB._deletedItems[col]);
+    });
+
     if (!isFirebaseAuthReady) {
         console.warn('⚠️ Auth nije spreman - pokušavam save bez auth-a...');
     }
@@ -678,10 +699,30 @@ async function saveToFirebase() {
         // Tako checkForUpdates neće misliti da je neko drugi promenio podatke
         lastUpdate = saveTimestamp;
         hasPendingChanges = false;
-        // ✅ RACE FIX: Dirty-table markeri su sada na serveru, očisti ih
-        DB._dirtyTables = {};
-        DB._dirtyItems = {};
-        DB._deletedItems = {};
+        // ✅ RACE FIX: Očisti SAMO markere čije verzije nisu rasle tokom save-a.
+        // Ako je korisnik kliknuo tokom save-a, marker je dobio novu verziju
+        // (veći broj) i treba da ostane da ga queued re-invoke pokupi.
+        Object.keys(_savingDirtyTables).forEach(k => {
+            if (DB._dirtyTables && DB._dirtyTables[k] === _savingDirtyTables[k]) {
+                delete DB._dirtyTables[k];
+            }
+        });
+        Object.keys(_savingDirtyItems).forEach(col => {
+            if (!DB._dirtyItems || !DB._dirtyItems[col]) return;
+            Object.keys(_savingDirtyItems[col]).forEach(id => {
+                if (DB._dirtyItems[col][id] === _savingDirtyItems[col][id]) {
+                    delete DB._dirtyItems[col][id];
+                }
+            });
+        });
+        Object.keys(_savingDeletedItems).forEach(col => {
+            if (!DB._deletedItems || !DB._deletedItems[col]) return;
+            Object.keys(_savingDeletedItems[col]).forEach(id => {
+                if (DB._deletedItems[col][id] === _savingDeletedItems[col][id]) {
+                    delete DB._deletedItems[col][id];
+                }
+            });
+        });
         console.log('✅ Saved to Firebase, lastUpdate synced:', saveTimestamp);
     } catch (error) {
         console.error('❌ Error saving to Firebase:', error);
