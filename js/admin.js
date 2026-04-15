@@ -1117,10 +1117,15 @@ async function executeClearWorkday() {
                 // 4. Kuhinja
                 if (doKitchen) {
                     const before = DB.kitchenOrders.length;
+                    const _delKO = (DB.kitchenOrders || []).filter(ko => {
+                        const t = new Date(ko.timestamp || ko.time);
+                        return (t >= dayStart && t <= dayEnd);
+                    });
                     DB.kitchenOrders = (DB.kitchenOrders || []).filter(ko => {
                         const t = new Date(ko.timestamp || ko.time);
                         return !(t >= dayStart && t <= dayEnd);
                     });
+                    if (typeof markDeleted === 'function') _delKO.forEach(ko => markDeleted('kitchenOrders', ko.id));
                     stats.kitchen = before - DB.kitchenOrders.length;
                 }
                 

@@ -244,6 +244,7 @@ function confirmGuestOrder(orderId) {
     order.assignedTable = tableNum;
 
     if (typeof markTableDirty === 'function') markTableDirty(tableNum);
+    if (typeof markDirty === 'function') markDirty('guestOrders', order.id);
     save();
     renderGuestOrders(document.getElementById('content'));
     
@@ -260,6 +261,7 @@ function rejectGuestOrder(orderId) {
             order.status = 'rejected';
             order.rejectedBy = DB.currentUser.username;
             order.rejectedAt = new Date().toISOString();
+            if (typeof markDirty === 'function') markDirty('guestOrders', order.id);
             save();
             renderGuestOrders(document.getElementById('content'));
         }
@@ -272,6 +274,7 @@ function dismissWaiterCall(callId) {
         call.status = 'dismissed';
         call.dismissedBy = DB.currentUser ? DB.currentUser.username : 'unknown';
         call.dismissedAt = new Date().toISOString();
+        if (typeof markDirty === 'function') markDirty('waiterCalls', call.id);
     }
     save();
     render();
@@ -283,10 +286,13 @@ function dismissAllWaiterCalls() {
             c.status = 'dismissed';
             c.dismissedBy = DB.currentUser ? DB.currentUser.username : 'unknown';
             c.dismissedAt = new Date().toISOString();
+            if (typeof markDirty === 'function') markDirty('waiterCalls', c.id);
         }
     });
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const _oldCalls = (DB.waiterCalls || []).filter(c => !(c.createdAt > twoHoursAgo));
     DB.waiterCalls = (DB.waiterCalls || []).filter(c => c.createdAt > twoHoursAgo);
+    if (typeof markDeleted === 'function') _oldCalls.forEach(c => markDeleted('waiterCalls', c.id));
     save();
     render();
 }
@@ -294,7 +300,9 @@ function dismissAllWaiterCalls() {
 function clearOldGuestOrders() {
     showConfirm('🗑️ Obriši Stare', 'Obrisati sve potvrđene i odbijene narudžbine?', (confirmed) => {
         if (!confirmed) return;
+        const _toDel = DB.guestOrders.filter(o => o.status !== 'pending');
         DB.guestOrders = DB.guestOrders.filter(o => o.status === 'pending');
+        if (typeof markDeleted === 'function') _toDel.forEach(o => markDeleted('guestOrders', o.id));
         save();
         renderGuestOrders(document.getElementById('content'));
     });

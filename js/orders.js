@@ -51,6 +51,7 @@ function addToTable(itemId) {
                     });
                 }
                 kitchenOrder.orderedAt = new Date().toISOString();
+                if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
             }
         }
     } else {
@@ -82,6 +83,7 @@ function addToTable(itemId) {
                     qty: 1
                 });
                 kitchenOrder.orderedAt = new Date().toISOString();
+                if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
                 console.log('✅ Dodato u postojeću narudžbinu');
             } else {
                 // Kreiraj novu kuhinjsku narudžbinu
@@ -330,7 +332,10 @@ function changeTableQty(tableNum, itemId, delta, createdBy) {
                         }
                         // Obrisi celu narudzbinu ako nema stavki
                         if (kitchenOrder.items.length === 0) {
+                            if (typeof markDeleted === 'function') markDeleted('kitchenOrders', kitchenOrder.id);
                             DB.kitchenOrders = DB.kitchenOrders.filter(ko => ko !== kitchenOrder);
+                        } else {
+                            if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
                         }
                     }
                 }
@@ -393,7 +398,10 @@ function delTableItem(tableNum, itemId, createdBy) {
             kitchenOrder.items = kitchenOrder.items.filter(i => i.id !== itemId);
             // Obrisi celu narudzbinu ako nema stavki
             if (kitchenOrder.items.length === 0) {
+                if (typeof markDeleted === 'function') markDeleted('kitchenOrders', kitchenOrder.id);
                 DB.kitchenOrders = DB.kitchenOrders.filter(ko => ko !== kitchenOrder);
+            } else {
+                if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
             }
         }
     }

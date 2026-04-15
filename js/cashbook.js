@@ -460,6 +460,7 @@ function deleteCashbookEntry(entryId) {
         if (!confirmed) return;
 
         DB.cashbook = DB.cashbook.filter(e => e.id !== entryId);
+        if (typeof markDeleted === 'function') markDeleted('cashbook', entryId);
         DB._adminDeleteOverride = true;
         save();
         render();

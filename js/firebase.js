@@ -21,6 +21,56 @@ function markTableDirty(tableNum) {
 }
 if (typeof window !== 'undefined') window.markTableDirty = markTableDirty;
 
+// Generička verzija za ostale kolekcije (kitchenOrders, guestOrders, waiterCalls,
+// inventory, cashbook...). Ako je item lokalno izmenjen -> ne sme server
+// verzija da ga prepiše pri save/load. Ako je lokalno obrisan -> ne sme da se
+// vrati sa servera. Ovo rešava iste cross-device race bugove kao i za stolove.
+function markDirty(collection, id) {
+    if (!collection || id === null || id === undefined) return;
+    if (typeof DB === 'undefined' || !DB) return;
+    if (!DB._dirtyItems) DB._dirtyItems = {};
+    if (!DB._dirtyItems[collection]) DB._dirtyItems[collection] = {};
+    DB._dirtyItems[collection][String(id)] = true;
+}
+function markDeleted(collection, id) {
+    if (!collection || id === null || id === undefined) return;
+    if (typeof DB === 'undefined' || !DB) return;
+    if (!DB._deletedItems) DB._deletedItems = {};
+    if (!DB._deletedItems[collection]) DB._deletedItems[collection] = {};
+    DB._deletedItems[collection][String(id)] = true;
+}
+// Dirty-svesni merge: server kao baza, lokalni dirty items prepisuju server,
+// lokalno obrisani se uklanjaju, local-only (još nesnimljeni) dodaju na kraj.
+function mergeDirtyCollection(local, server, collection, idField) {
+    local = Array.isArray(local) ? local : [];
+    server = Array.isArray(server) ? server : [];
+    const dirty = (DB._dirtyItems && DB._dirtyItems[collection]) || {};
+    const deleted = (DB._deletedItems && DB._deletedItems[collection]) || {};
+    const byId = {};
+    server.forEach(item => {
+        if (!item || item[idField] === undefined || item[idField] === null) return;
+        const k = String(item[idField]);
+        if (deleted[k]) return;
+        byId[k] = item;
+    });
+    local.forEach(item => {
+        if (!item || item[idField] === undefined || item[idField] === null) return;
+        const k = String(item[idField]);
+        if (deleted[k]) return;
+        if (dirty[k]) {
+            byId[k] = item;
+        } else if (!(k in byId)) {
+            byId[k] = item;
+        }
+    });
+    return Object.values(byId);
+}
+if (typeof window !== 'undefined') {
+    window.markDirty = markDirty;
+    window.markDeleted = markDeleted;
+    window.mergeDirtyCollection = mergeDirtyCollection;
+}
+
 
 // ============================================
 // FIREBASE SDK FUNCTIONS (AUTHENTICATED)
@@ -209,7 +259,9 @@ async function loadFromFirebase() {
             
             DB.workdayHistory = mergeWorkdayHistory(DB.workdayHistory || [], data.workdayHistory || []);
             DB.kuvarBonus = data.kuvarBonus || {};
-            DB.kitchenOrders = data.kitchenOrders || [];
+            // ✅ RACE FIX: Dirty-svesni merge umesto wholesale overwrite.
+            // Štiti lokalne promene statusa/qty/etc. koje još nisu sačuvane.
+            DB.kitchenOrders = mergeDirtyCollection(DB.kitchenOrders || [], data.kitchenOrders || [], 'kitchenOrders', 'id');
             // Popravi kuhinjske narudžbine kojima nedostaje tableName/waiterName
             DB.kitchenOrders.forEach(ko => {
                 if (!ko.tableName && ko.tableNum) {
@@ -224,12 +276,12 @@ async function loadFromFirebase() {
                 }
             });
             
-            // Lager
-            DB.inventory = data.inventory || [];
-            DB.invoices = data.invoices || [];
+            // Lager — dirty-svesni merge (admin izmene vs auto-deduct na naplati)
+            DB.inventory = mergeDirtyCollection(DB.inventory || [], data.inventory || [], 'inventory', 'id');
+            DB.invoices = mergeDirtyCollection(DB.invoices || [], data.invoices || [], 'invoices', 'id');
             DB.debts = mergeArraysById(DB.debts || [], data.debts || [], 'id');
             DB.houseOrders = data.houseOrders || [];
-            DB.cashbook = data.cashbook || [];
+            DB.cashbook = mergeDirtyCollection(DB.cashbook || [], data.cashbook || [], 'cashbook', 'id');
             DB.deletedOrderIds = data.deletedOrderIds || [];
             // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
             DB.debts.forEach(debt => {
@@ -315,9 +367,11 @@ async function loadFromFirebase() {
             // Učitaj blacklist obrisanih stavki
             DB.deletedGroceryItems = data.deletedGroceryItems || [];
             
-            // Učitaj QR narudžbine gostiju
-            DB.guestOrders = data.guestOrders || [];
-            if (!Array.isArray(DB.guestOrders)) DB.guestOrders = Object.values(DB.guestOrders);
+            // Učitaj QR narudžbine gostiju (dirty-svesni merge - konobar potvrda
+            // sa jednog uređaja ne sme biti prepisana sa drugog)
+            let _serverGuestOrders = data.guestOrders || [];
+            if (!Array.isArray(_serverGuestOrders)) _serverGuestOrders = Object.values(_serverGuestOrders);
+            DB.guestOrders = mergeDirtyCollection(DB.guestOrders || [], _serverGuestOrders, 'guestOrders', 'id');
             // Osiguraj da svaka narudžbina ima items kao niz i očisti korumpirane
             let hadCorrupted = false;
             DB.guestOrders = DB.guestOrders.filter(o => {
@@ -341,9 +395,10 @@ async function loadFromFirebase() {
                 database.ref('guestOrders').set(DB.guestOrders);
             }
             
-            // Učitaj pozive konobara
-            DB.waiterCalls = data.waiterCalls || [];
-            if (!Array.isArray(DB.waiterCalls)) DB.waiterCalls = Object.values(DB.waiterCalls);
+            // Učitaj pozive konobara (dirty-svesni merge)
+            let _serverWaiterCalls = data.waiterCalls || [];
+            if (!Array.isArray(_serverWaiterCalls)) _serverWaiterCalls = Object.values(_serverWaiterCalls);
+            DB.waiterCalls = mergeDirtyCollection(DB.waiterCalls || [], _serverWaiterCalls, 'waiterCalls', 'id');
             
             DB.shoppingList = data.shoppingList || [
                 {id: 1, name: 'Piletina (kg)', needed: false, category: 'Meso'},
@@ -524,6 +579,16 @@ async function saveToFirebase() {
             // Merge houseOrders
             DB.houseOrders = mergeArraysById(DB.houseOrders || [], serverData.houseOrders || [], 'id');
 
+            // ✅ RACE FIX: Dirty-svesni merge za mutable kolekcije.
+            // Bez ovoga bi stale uređaj prepisao status promene sa drugog uređaja
+            // (npr. kuvar pomerio pending→preparing, konobarov save vratio pending).
+            DB.kitchenOrders = mergeDirtyCollection(DB.kitchenOrders || [], serverData.kitchenOrders || [], 'kitchenOrders', 'id');
+            DB.guestOrders   = mergeDirtyCollection(DB.guestOrders || [],   serverData.guestOrders || [],   'guestOrders',   'id');
+            DB.waiterCalls   = mergeDirtyCollection(DB.waiterCalls || [],   serverData.waiterCalls || [],   'waiterCalls',   'id');
+            DB.inventory     = mergeDirtyCollection(DB.inventory || [],     serverData.inventory || [],     'inventory',     'id');
+            DB.cashbook      = mergeDirtyCollection(DB.cashbook || [],      serverData.cashbook || [],      'cashbook',      'id');
+            DB.invoices      = mergeDirtyCollection(DB.invoices || [],      serverData.invoices || [],      'invoices',      'id');
+
             // ✅ RACE FIX: Merge tables - za NE-dirty stolove uzmi server verziju
             // (drugi uređaj je možda pisao). Za dirty stolove čuvaj lokalne promene.
             // Tako cross-device saves ne overwriteuju jedni druge na različitim stolovima.
@@ -615,6 +680,8 @@ async function saveToFirebase() {
         hasPendingChanges = false;
         // ✅ RACE FIX: Dirty-table markeri su sada na serveru, očisti ih
         DB._dirtyTables = {};
+        DB._dirtyItems = {};
+        DB._deletedItems = {};
         console.log('✅ Saved to Firebase, lastUpdate synced:', saveTimestamp);
     } catch (error) {
         console.error('❌ Error saving to Firebase:', error);

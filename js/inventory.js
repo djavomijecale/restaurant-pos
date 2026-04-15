@@ -961,17 +961,18 @@ function showEditInventoryItem(itemId) {
 function saveEditInventoryItem(itemId) {
     const item = DB.inventory.find(i => i.id === itemId);
     if (!item) return;
-    
+
     item.name = document.getElementById('editInvName')?.value?.trim() || item.name;
     item.stock = parseFloat(document.getElementById('editInvStock')?.value) || 0;
     item.unit = document.getElementById('editInvUnit')?.value || 'kom';
     item.minStock = parseFloat(document.getElementById('editInvMin')?.value) || 0;
     item.costPrice = parseFloat(document.getElementById('editInvCost')?.value) || 0;
     item.category = document.getElementById('editInvCat')?.value || 'Ostalo';
-    
+
     const modal = document.getElementById('editInvModalDynamic');
     if (modal) modal.remove();
-    
+
+    if (typeof markDirty === 'function') markDirty('inventory', item.id);
     save();
     render();
     showAlert('✅ Stavka ažurirana!');
@@ -981,6 +982,7 @@ function deleteInventoryItem(itemId) {
     showConfirm('🗑️ Obriši Stavku', 'Da li ste sigurni da želite da obrišete ovu stavku iz lagera?', (confirmed) => {
         if (!confirmed) return;
         DB.inventory = DB.inventory.filter(i => i.id !== itemId);
+        if (typeof markDeleted === 'function') markDeleted('inventory', itemId);
         const modal = document.getElementById('editInvModalDynamic');
         if (modal) modal.remove();
         save();
@@ -1028,7 +1030,7 @@ function deductInventoryOnPayment(paidItems) {
     
     paidItems.forEach(item => {
         const qty = parseInt(item.qty) || 1;
-        
+
         // NOVI FORMAT: menu.recipe = [{inventoryId, qty}, ...]
         const menuItem = DB.menu.find(m => m.id == item.id);
         if (menuItem && menuItem.recipe && menuItem.recipe.length > 0) {
@@ -1037,17 +1039,19 @@ function deductInventoryOnPayment(paidItems) {
                 if (invItem) {
                     const deductAmount = (parseFloat(ing.qty) || 1) * qty;
                     invItem.stock = Math.max(0, (parseFloat(invItem.stock) || 0) - deductAmount);
+                    if (typeof markDirty === 'function') markDirty('inventory', invItem.id);
                     deducted.push({ name: invItem.name, amount: deductAmount, remaining: invItem.stock });
                 }
             });
             return;
         }
-        
+
         // STARI FORMAT (backward compat): inventory.menuItemId
         const invItem = DB.inventory.find(i => i.menuItemId == item.id);
         if (invItem) {
             const deductAmount = (parseFloat(invItem.deductQty) || 1) * qty;
             invItem.stock = Math.max(0, (parseFloat(invItem.stock) || 0) - deductAmount);
+            if (typeof markDirty === 'function') markDirty('inventory', invItem.id);
             deducted.push({ name: invItem.name, amount: deductAmount, remaining: invItem.stock });
         }
     });

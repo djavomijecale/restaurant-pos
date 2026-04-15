@@ -49,10 +49,16 @@ function renderKitchen(c) {
     // Očisti completed narudžbine starije od 24h
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const beforeClean = DB.kitchenOrders.length;
-    DB.kitchenOrders = DB.kitchenOrders.filter(ko => 
+    const _staleKO = DB.kitchenOrders.filter(ko =>
+        ko.status === 'completed' && ko.completedAt && ko.completedAt <= oneDayAgo
+    );
+    DB.kitchenOrders = DB.kitchenOrders.filter(ko =>
         ko.status !== 'completed' || !ko.completedAt || ko.completedAt > oneDayAgo
     );
     if (DB.kitchenOrders.length < beforeClean) {
+        if (typeof markDeleted === 'function') {
+            _staleKO.forEach(ko => markDeleted('kitchenOrders', ko.id));
+        }
         save();
     }
     
@@ -235,6 +241,7 @@ function startPreparing(orderId) {
     const order = DB.kitchenOrders.find(ko => ko.id == orderId);
     if(order) {
         order.status = 'preparing';
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', order.id);
         save();
         render();
     }
@@ -246,6 +253,7 @@ function markAsReady(orderId) {
     if(order) {
         order.status = 'ready';
         order.readyAt = new Date().toISOString();
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', order.id);
         save();
         render();
         showAlert('✅ Narudžbina spremna! Konobar će dobiti obaveštenje.');
@@ -258,6 +266,7 @@ function revertToPreparing(orderId) {
     if(order) {
         order.status = 'preparing';
         order.readyAt = null;
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', order.id);
         save();
         render();
     }
@@ -269,6 +278,7 @@ function markOrderCompleted(orderId) {
     if(order) {
         order.status = 'completed';
         order.completedAt = new Date().toISOString();
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', order.id);
         save();
         render();
     }
@@ -551,9 +561,15 @@ function closeKuvarShift() {
 
         // Obrisi completed I ready narudzbine (kuvar ih ne treba vise, admin ih vidi u istoriji narudzbina)
         // Ovo sprečava da se iste narudzbine prenose u sledecu smenu i ponovo broje
+        const _toDeleteKO = DB.kitchenOrders.filter(ko =>
+            ko.status === 'completed' || ko.status === 'ready'
+        );
         DB.kitchenOrders = DB.kitchenOrders.filter(ko =>
             ko.status !== 'completed' && ko.status !== 'ready'
         );
+        if (typeof markDeleted === 'function') {
+            _toDeleteKO.forEach(ko => markDeleted('kitchenOrders', ko.id));
+        }
 
         // Plata kuvara
         const kuvarUser = DB.users.find(u => u.username === username);
