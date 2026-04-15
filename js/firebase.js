@@ -4,6 +4,25 @@
 
 
 // ============================================
+// DIRTY-TABLE TRACKING
+// Svaka lokalna promena stola postavlja "dirty" flag. Pri učitavanju podataka
+// sa servera NE prepisujemo stolove koji su lokalno izmenjeni (jer promene još
+// nisu sačuvane). Pri save-u za NE-dirty stolove uzimamo verziju sa servera
+// (jer je neki drugi uređaj možda u međuvremenu pisao), tako da ne overwriteujemo
+// tuđe izmene. Rešava race-condition probleme:
+//  - narudžbina se vraća na sto nakon naplate (drugi uređaj prepiše cleared sto)
+//  - stavke nestaju pre naplate (load overwrita lokalne dodate stavke)
+// ============================================
+function markTableDirty(tableNum) {
+    if (tableNum === null || tableNum === undefined) return;
+    if (typeof DB === 'undefined' || !DB) return;
+    if (!DB._dirtyTables) DB._dirtyTables = {};
+    DB._dirtyTables[String(tableNum)] = true;
+}
+if (typeof window !== 'undefined') window.markTableDirty = markTableDirty;
+
+
+// ============================================
 // FIREBASE SDK FUNCTIONS (AUTHENTICATED)
 // ============================================
 
@@ -43,6 +62,20 @@ async function loadFromFirebase() {
         console.log('📦 Received data:', data);
         
         if (data && typeof data === 'object') {
+            // ✅ RACE FIX: Snapshot lokalno-dirty stolova PRE overwrite-a.
+            // Ako je korisnik upravo dodao/obrisao/naplatio stavke ali save još nije
+            // završen (ili je listener odložen), učitavanje sa servera ne sme
+            // prepisati te promene.
+            const _dirtyTableNums = DB._dirtyTables ? Object.keys(DB._dirtyTables) : [];
+            const _localDirtyTablesSnap = {};
+            if (_dirtyTableNums.length > 0 && Array.isArray(DB.tables)) {
+                _dirtyTableNums.forEach(n => {
+                    const lt = DB.tables.find(t => t && String(t.num) === String(n));
+                    if (lt) _localDirtyTablesSnap[String(n)] = lt;
+                });
+                console.log('🛡️ Load: čuvam dirty stolove', _dirtyTableNums);
+            }
+
             // Load data or use defaults
             DB.menu = data.menu || [
                 {id:1,name:'Ćevapi',desc:'Domaće ćevapčići',price:650,cat:'Hrana'},
@@ -138,7 +171,18 @@ async function loadFromFirebase() {
                 console.log('🧹 Očišćene korumpirane stavke sa stolova');
                 database.ref('tables').set(DB.tables);
             }
-            
+
+            // ✅ RACE FIX: Vrati lokalno-dirty stolove iz snapshot-a (ne dozvoli
+            // serveru da prepiše pending promene).
+            if (Object.keys(_localDirtyTablesSnap).length > 0) {
+                DB.tables = DB.tables.map(t => {
+                    if (t && _localDirtyTablesSnap[String(t.num)]) {
+                        return _localDirtyTablesSnap[String(t.num)];
+                    }
+                    return t;
+                });
+            }
+
             // ✅ MERGE umesto overwrite - čuva offline podatke sa ovog uređaja
             // Ali filtriraj narudžbine koje je admin obrisao
             DB.deletedOrderIds = data.deletedOrderIds || [];
@@ -480,6 +524,23 @@ async function saveToFirebase() {
             // Merge houseOrders
             DB.houseOrders = mergeArraysById(DB.houseOrders || [], serverData.houseOrders || [], 'id');
 
+            // ✅ RACE FIX: Merge tables - za NE-dirty stolove uzmi server verziju
+            // (drugi uređaj je možda pisao). Za dirty stolove čuvaj lokalne promene.
+            // Tako cross-device saves ne overwriteuju jedni druge na različitim stolovima.
+            if (Array.isArray(serverData.tables) && Array.isArray(DB.tables)) {
+                const _dirty = DB._dirtyTables || {};
+                DB.tables = DB.tables.map(localT => {
+                    if (!localT) return localT;
+                    if (_dirty[String(localT.num)]) return localT; // dirty - zadrži lokalni
+                    const serverT = serverData.tables.find(st => st && String(st.num) === String(localT.num));
+                    if (!serverT) return localT;
+                    // Sanitize server table (order kao niz, ne objekat)
+                    if (!Array.isArray(serverT.order)) serverT.order = serverT.order ? Object.values(serverT.order) : [];
+                    if (!Array.isArray(serverT.discountedItems)) serverT.discountedItems = serverT.discountedItems ? Object.values(serverT.discountedItems) : [];
+                    return serverT;
+                });
+            }
+
             // Merge removedItems (nemaju uvek ID, koristi timestamp)
             if (serverData.removedItems && Array.isArray(serverData.removedItems)) {
                 const localTimes = new Set((DB.removedItems || []).map(r => r.removedAt));
@@ -552,6 +613,8 @@ async function saveToFirebase() {
         // Tako checkForUpdates neće misliti da je neko drugi promenio podatke
         lastUpdate = saveTimestamp;
         hasPendingChanges = false;
+        // ✅ RACE FIX: Dirty-table markeri su sada na serveru, očisti ih
+        DB._dirtyTables = {};
         console.log('✅ Saved to Firebase, lastUpdate synced:', saveTimestamp);
     } catch (error) {
         console.error('❌ Error saving to Firebase:', error);

@@ -242,7 +242,8 @@ function confirmGuestOrder(orderId) {
     order.confirmedBy = DB.currentUser.username;
     order.confirmedAt = new Date().toISOString();
     order.assignedTable = tableNum;
-    
+
+    if (typeof markTableDirty === 'function') markTableDirty(tableNum);
     save();
     renderGuestOrders(document.getElementById('content'));
     

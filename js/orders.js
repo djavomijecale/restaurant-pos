@@ -108,6 +108,10 @@ function addToTable(itemId) {
         }
     }
     
+    // ✅ RACE FIX: Obeleži sto kao izmenjen lokalno - sprečava da load sa
+    // drugog uređaja prepiše upravo dodate stavke pre nego što se snimi.
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
+
     // Koristi debounced save za brzo dodavanje stavki (klik-klik-klik)
     // Sprečava 10 brzih klikova = 10 Firebase upisa, umesto toga 1 upis
     if (typeof saveDebounced === 'function') {
@@ -266,7 +270,8 @@ function toggleDiscountItem(tableNum, itemId) {
     } else {
         table.discountedItems.push(itemId);
     }
-    
+
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
     render();
 }
@@ -276,6 +281,7 @@ function setTableDiscountPercent(tableNum, val) {
     const table = DB.tables.find(t=>t.num===tableNum);
     const percent = parseFloat(val) || 0;
     table.discountPercent = Math.max(0, Math.min(100, percent)); // Ograniči na 0-100%
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
     render();
 }
@@ -329,6 +335,7 @@ function changeTableQty(tableNum, itemId, delta, createdBy) {
                     }
                 }
             }
+            if (typeof markTableDirty === 'function') markTableDirty(tableNum);
             if (typeof saveDebounced === 'function') saveDebounced();
             else save();
             render();
@@ -398,6 +405,7 @@ function delTableItem(tableNum, itemId, createdBy) {
         table.order = table.order.filter(i=>!(i.id===itemId && !i.createdBy));
     }
 
+    if (typeof markTableDirty === 'function') markTableDirty(tableNum);
     save();
     render();
 }
@@ -406,6 +414,7 @@ function delTableItem(tableNum, itemId, createdBy) {
 function setTableDiscount(tableNum, val) {
     const table = DB.tables.find(t=>t.num===tableNum);
     table.discount = parseFloat(val) || 0;
+    if (typeof markTableDirty === 'function') markTableDirty(tableNum);
     save();
     render();
 }
@@ -462,9 +471,10 @@ function clearTable(tableNum) {
                 table.discountPercent = 0;
                 table.discountedItems = [];
             }
-            
+
+            if (typeof markTableDirty === 'function') markTableDirty(tableNum);
             save();
-            
+
             // Vrati se na stranicu stolova
             DB.selectedTable = null;
             page = 'tables';
@@ -674,9 +684,12 @@ function confirmPay() {
         table.discountPercent = 0;
         table.discountedItems = [];
     }
-    
+
+    // ✅ RACE FIX: Obeleži sto kao dirty da drugi uređaji ne vrate staru
+    // narudžbinu (pre sync-a) i tako naplatu dupliciraju.
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
-    
+
     page='receipt';
     render();
 }

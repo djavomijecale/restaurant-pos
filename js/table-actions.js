@@ -50,12 +50,16 @@ function confirmTransferTable() {
     
     destTable.order = [...destTable.order, ...itemsToMove];
     srcTable.order = itemsToKeep;
-    
+
     if (srcTable.order.length === 0) {
         srcTable.discountPercent = 0;
         srcTable.discountedItems = [];
     }
-    
+
+    if (typeof markTableDirty === 'function') {
+        markTableDirty(srcTable.num);
+        markTableDirty(destTable.num);
+    }
     save();
     document.getElementById('transferTableModal').classList.remove('show');
     
@@ -235,14 +239,15 @@ function confirmSplitPay(tableNum) {
     }
     
     table.order = table.order.filter(i => !splitBillItems.includes(i.id));
-    
+
     if (table.order.length === 0) {
         table.discountPercent = 0;
         table.discountedItems = [];
     }
-    
+
     splitBillItems = [];
     splitPayMethod = '';
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
     
     const remaining = table.order.length;

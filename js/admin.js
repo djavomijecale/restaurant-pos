@@ -1110,6 +1110,7 @@ async function executeClearWorkday() {
                         table.discount = 0;
                         table.discountPercent = 0;
                         table.discountedItems = [];
+                        if (typeof markTableDirty === 'function') markTableDirty(table.num);
                     });
                 }
                 
