@@ -286,8 +286,14 @@ async function loadFromFirebase() {
             // Lager — dirty-svesni merge (admin izmene vs auto-deduct na naplati)
             DB.inventory = mergeDirtyCollection(DB.inventory || [], data.inventory || [], 'inventory', 'id');
             DB.invoices = mergeDirtyCollection(DB.invoices || [], data.invoices || [], 'invoices', 'id');
-            DB.debts = mergeArraysById(DB.debts || [], data.debts || [], 'id');
-            DB.houseOrders = data.houseOrders || [];
+            // ✅ RACE FIX: debts koriste dirty-svesni merge. Parcijalna uplata
+            // menja debt.remaining ali ne menja time polje, pa mergeArraysById
+            // (po vremenu) nije mogao da razlikuje stari i nov state i mogao je
+            // da vrati naplaćeni iznos nazad.
+            DB.debts = mergeDirtyCollection(DB.debts || [], data.debts || [], 'debts', 'id');
+            // ✅ RACE FIX: houseOrders — bez merge-a su nove Kuća narudžbine
+            // nestajale sa load-a koji fire-uje pre save-a.
+            DB.houseOrders = mergeDirtyCollection(DB.houseOrders || [], data.houseOrders || [], 'houseOrders', 'id');
             DB.cashbook = mergeDirtyCollection(DB.cashbook || [], data.cashbook || [], 'cashbook', 'id');
             DB.deletedOrderIds = data.deletedOrderIds || [];
             // Popravi dugovanja kojima nedostaje payments niz (Firebase ne čuva prazne nizove)
@@ -296,7 +302,14 @@ async function loadFromFirebase() {
                 if (typeof debt.remaining !== 'number') debt.remaining = debt.originalTotal || 0;
                 if (typeof debt.originalTotal !== 'number') debt.originalTotal = debt.remaining || 0;
             });
-            DB.groceryList = data.groceryList || [
+            // ✅ RACE FIX: groceryList — bez merge-a su "needed" flagovi,
+            // novi artikli i brisanja mogli da se izgube kad drugi uređaj
+            // simultano piše.
+            const _serverGroceryList = data.groceryList || null;
+            if (_serverGroceryList) {
+                DB.groceryList = mergeDirtyCollection(DB.groceryList || [], _serverGroceryList, 'groceryList', 'id');
+            } else {
+                DB.groceryList = DB.groceryList && DB.groceryList.length > 0 ? DB.groceryList : [
                 // Default lista namirnica - HRANA (za kuvare)
                 {id:1, name:'Paradajz', category:'Povrće', type:'Hrana', needed:false},
                 {id:2, name:'Krastavac', category:'Povrće', type:'Hrana', needed:false},
@@ -370,7 +383,8 @@ async function loadFromFirebase() {
                 {id:62, name:'Jogurt', category:'Mlečni Napici', type:'Piće', needed:false},
                 {id:63, name:'Kisela Voda', category:'Voda', type:'Piće', needed:false}
             ];
-            
+            }
+
             // Učitaj blacklist obrisanih stavki
             DB.deletedGroceryItems = data.deletedGroceryItems || [];
             
@@ -616,14 +630,21 @@ async function saveToFirebase() {
             // Filtriraj i lokalne obrisane
             DB.orders = DB.orders.filter(o => !deletedIds.has(String(o.id)));
 
-            // Merge debts - nikad ne brisemo dugove
-            DB.debts = mergeArraysById(DB.debts || [], serverData.debts || [], 'id');
+            // ✅ RACE FIX: Merge debts sa dirty-aware logikom (naplate mijenjaju
+            // remaining bez dodira na time polje — mergeArraysById nije mogao
+            // razlikovati stari i nov state pa je naplata znala da se vrati).
+            DB.debts = mergeDirtyCollection(DB.debts || [], serverData.debts || [], 'debts', 'id');
 
             // Merge workdayHistory - koristi loginTime kao jedinstven kljuc (nema id polje)
             DB.workdayHistory = mergeWorkdayHistory(DB.workdayHistory || [], serverData.workdayHistory || []);
 
-            // Merge houseOrders
-            DB.houseOrders = mergeArraysById(DB.houseOrders || [], serverData.houseOrders || [], 'id');
+            // ✅ RACE FIX: Merge houseOrders dirty-aware (Kuća naplate bi inače
+            // bile prepisane praznim server state-om).
+            DB.houseOrders = mergeDirtyCollection(DB.houseOrders || [], serverData.houseOrders || [], 'houseOrders', 'id');
+            // groceryList dirty-aware merge (needed flagovi su česti cross-device)
+            if (Array.isArray(serverData.groceryList)) {
+                DB.groceryList = mergeDirtyCollection(DB.groceryList || [], serverData.groceryList, 'groceryList', 'id');
+            }
 
             // ✅ RACE FIX: Dirty-svesni merge za mutable kolekcije.
             // Bez ovoga bi stale uređaj prepisao status promene sa drugog uređaja

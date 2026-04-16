@@ -209,12 +209,12 @@ function toggleGroceryItem(itemId) {
     const item = DB.groceryList.find(i => i.id === itemId);
     if(item) {
         item.needed = !item.needed;
-        
+
         if(item.needed) {
             // Označeno kao potrebno
             item.requestedBy = DB.konobarName || DB.currentUser.username;
             item.requestedAt = new Date().toISOString();
-            
+
             // Ažuriraj badge za admina
             updateShoppingBadge();
         } else {
@@ -222,7 +222,9 @@ function toggleGroceryItem(itemId) {
             item.requestedBy = null;
             item.requestedAt = null;
         }
-        
+
+        // ✅ RACE FIX: needed flag je čest cross-device konflikt
+        if (typeof markDirty === 'function') markDirty('groceryList', item.id);
         save();
         render();
     }
@@ -235,7 +237,9 @@ function markAsOrdered(itemId) {
         item.needed = false;
         item.requestedBy = null;
         item.requestedAt = null;
-        
+
+        // ✅ RACE FIX
+        if (typeof markDirty === 'function') markDirty('groceryList', item.id);
         save();
         render();
         updateShoppingBadge();
@@ -249,9 +253,11 @@ function markAllAsOrdered() {
             item.needed = false;
             item.requestedBy = null;
             item.requestedAt = null;
+            // ✅ RACE FIX
+            if (typeof markDirty === 'function') markDirty('groceryList', item.id);
         }
     });
-    
+
     save();
     render();
     updateShoppingBadge();
@@ -275,8 +281,10 @@ function deleteGroceryItem(itemId) {
         }
         
         // Obriši stavku
+        // ✅ RACE FIX: označi kao obrisano da pre-save merge ne vrati iz servera
+        if (typeof markDeleted === 'function') markDeleted('groceryList', itemId);
         DB.groceryList = DB.groceryList.filter(i => i.id !== itemId);
-        
+
         save();
         render();
         updateShoppingBadge();
@@ -342,6 +350,8 @@ function saveKuvarGroceryItem() {
             exists.needed = true;
             exists.requestedBy = DB.konobarName || DB.currentUser.username;
             exists.requestedAt = new Date().toISOString();
+            // ✅ RACE FIX
+            if (typeof markDirty === 'function') markDirty('groceryList', exists.id);
             save();
             closeKuvarGroceryModal();
             render();
@@ -364,6 +374,8 @@ function saveKuvarGroceryItem() {
     };
     
     DB.groceryList.push(newItem);
+    // ✅ RACE FIX
+    if (typeof markDirty === 'function') markDirty('groceryList', newItem.id);
     save();
     closeKuvarGroceryModal();
     render();
@@ -399,6 +411,8 @@ function saveGroceryItem() {
     };
     
     DB.groceryList.push(newItem);
+    // ✅ RACE FIX
+    if (typeof markDirty === 'function') markDirty('groceryList', newItem.id);
     save();
     closeAddGroceryModal();
     render();
@@ -516,12 +530,14 @@ function saveGroceryEdit() {
     
     // Promeni kategoriju
     item.category = newCategory;
-    
+
     // KLJUČNO: Sačuvaj ručnu izmenu lokalno (da se ne prepiše sa Firebase)
     DB.manuallyEditedCategories[item.name.toLowerCase()] = newCategory;
     localStorage.setItem('manuallyEditedCategories', JSON.stringify(DB.manuallyEditedCategories));
     console.log('✏️ Ručno izmenjena kategorija:', item.name, '→', newCategory);
-    
+
+    // ✅ RACE FIX
+    if (typeof markDirty === 'function') markDirty('groceryList', item.id);
     // Sačuvaj
     save();
     

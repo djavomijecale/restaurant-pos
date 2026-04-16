@@ -365,7 +365,10 @@ function confirmDebtPayment() {
     };
     
     DB.debts.push(debt);
-    
+    // ✅ RACE FIX: obeleži nov dug kao dirty — inače pre-save merge može da
+    // prepiše (nije u server listi) ili cross-device load može da ga izgubi.
+    if (typeof markDirty === 'function') markDirty('debts', debt.id);
+
     // Oduzmi iz lagera (jer je roba izdata)
     if (typeof deductInventoryOnPayment === 'function') {
         deductInventoryOnPayment(myOrder);
@@ -504,7 +507,12 @@ function processDebtPayment(debtId, amount, method) {
     if (debt.remaining <= 0) {
         debt.clearedAt = new Date().toISOString();
     }
-    
+
+    // ✅ RACE FIX: označi dug kao dirty - naplata menja `remaining` bez
+    // promene `time`, pa pre-save merge mora znati da je lokalna verzija
+    // autoritativna.
+    if (typeof markDirty === 'function') markDirty('debts', debt.id);
+
     // Dodaj u dnevni pazar kao narudžbinu
     const orderItems = (debt.remaining <= 0 && debt.items && debt.items.length > 0) 
         ? debt.items 
@@ -597,6 +605,8 @@ function processAllDebtPayments(debtorName, method) {
         
         debt.remaining = 0;
         debt.clearedAt = new Date().toISOString();
+        // ✅ RACE FIX: svaki naplaćeni dug mora biti označen kao dirty
+        if (typeof markDirty === 'function') markDirty('debts', debt.id);
     });
     
     // Jedan zbirni unos u pazar
@@ -637,6 +647,8 @@ function deleteDebt(debtId) {
             debt.deleted = true;
             debt.deletedAt = new Date().toISOString();
             debt.deletedBy = DB.konobarName || (DB.currentUser ? DB.currentUser.username : 'admin');
+            // ✅ RACE FIX: soft-delete mora biti označen kao dirty
+            if (typeof markDirty === 'function') markDirty('debts', debt.id);
             save();
             render();
             showAlert('🗑️ Dug obrisan. Možete ga videti u tabu "Obrisana".');
@@ -656,6 +668,8 @@ function restoreDebt(debtId) {
             debt.deletedAt = null;
             debt.deletedBy = null;
             debt.remaining = debt.originalTotal || 0;
+            // ✅ RACE FIX: restore mora biti označen kao dirty
+            if (typeof markDirty === 'function') markDirty('debts', debt.id);
             save();
             debtsTab = 'active';
             render();

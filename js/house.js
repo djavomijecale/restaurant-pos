@@ -179,6 +179,10 @@ function confirmHouseOrder() {
     // Dodaj u houseOrders (NE u orders!)
     if (!DB.houseOrders) DB.houseOrders = [];
     DB.houseOrders.push(houseOrder);
+    // ✅ RACE FIX: obeleži nov houseOrder kao dirty da pre-save merge ne
+    // prepiše server verziju (inače bi drugi uređaj koji istovremeno piše
+    // mogao da obriše ovu Kuća naplatu).
+    if (typeof markDirty === 'function') markDirty('houseOrders', houseOrder.id);
 
     // Ukloni stavke sa stola (isto kao pri naplati)
     if (isWaiter) {
@@ -395,6 +399,9 @@ function renderHouse(c) {
 function deleteHouseOrder(orderId) {
     showConfirm('🗑️ Obriši', 'Da li si siguran da želiš da obrišeš ovu kuća narudžbinu?', (confirmed) => {
         if (confirmed) {
+            // ✅ RACE FIX: pre filtriranja označi ID kao obrisan da ga
+            // pre-save merge ne vrati iz servera.
+            if (typeof markDeleted === 'function') markDeleted('houseOrders', orderId);
             DB.houseOrders = DB.houseOrders.filter(o => o.id !== orderId);
             save();
             render();
@@ -409,6 +416,10 @@ function deleteHouseOrder(orderId) {
 function clearHouseOrders() {
     showConfirm('🗑️ Očisti sve', `Da li si siguran da želiš da obrišeš SVE kuća narudžbine?\n\n${DB.houseOrders.length} stavki ukupno`, (confirmed) => {
         if (confirmed) {
+            // ✅ RACE FIX: pojedinačno označi sve kao obrisane pre reset-a
+            if (typeof markDeleted === 'function') {
+                (DB.houseOrders || []).forEach(o => { if (o && o.id) markDeleted('houseOrders', o.id); });
+            }
             DB.houseOrders = [];
             save();
             render();

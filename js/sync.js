@@ -45,13 +45,15 @@ function syncDrinksToGrocery() {
             };
             
             DB.groceryList.push(newGroceryItem);
+            // ✅ RACE FIX
+            if (typeof markDirty === 'function') markDirty('groceryList', newGroceryItem.id);
             addedCount++;
         }
     });
-    
+
     if (skippedCount > 0) {
     }
-    
+
     if (addedCount > 0) {
         // Nemoj snimati odmah, to će se desiti posle
     } else {
@@ -162,13 +164,15 @@ function syncPizzaIngredientsToGrocery() {
             };
             
             DB.groceryList.push(newGroceryItem);
+            // ✅ RACE FIX
+            if (typeof markDirty === 'function') markDirty('groceryList', newGroceryItem.id);
             addedCount++;
         }
     });
-    
+
     if (skippedCount > 0) {
     }
-    
+
     if (addedCount > 0) {
     } else {
     }
@@ -354,9 +358,11 @@ function syncDrinksFromMenu() {
         };
         
         DB.groceryList.push(newItem);
+        // ✅ RACE FIX
+        if (typeof markDirty === 'function') markDirty('groceryList', newItem.id);
         addedCount++;
     });
-    
+
     // 4. Sačuvaj i prikaži rezultat
     if(addedCount > 0) {
         save();
@@ -430,9 +436,11 @@ function syncPizzaIngredientsFromMenu() {
         };
         
         DB.groceryList.push(newItem);
+        // ✅ RACE FIX
+        if (typeof markDirty === 'function') markDirty('groceryList', newItem.id);
         addedCount++;
     });
-    
+
     // 3. Sačuvaj i prikaži rezultat
     if(addedCount > 0) {
         save();
