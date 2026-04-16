@@ -313,7 +313,10 @@ function confirmTransferWaiter() {
             count++;
         }
     });
-    
+
+    // ✅ RACE FIX: bez markTableDirty pre-save merge uzima server verziju
+    // stola (sa starim vlasništvom) i gazi lokalnu izmenu createdBy-a
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
     document.getElementById('transferWaiterModal').classList.remove('show');
     showAlert(`✅ ${count} stavki predato konobaru ${newWaiter}`);
