@@ -467,10 +467,20 @@ async function loadFromFirebase() {
         
         // KLJUČNO: Primeni ručno izmenjene kategorije (da se ne prepisuju sa Firebase)
         applyManualCategoryEdits();
-        
+
         isLoading = false;
+
+        // ✅ RACE FIX: Ako je save čekao da load završi, pokreni ga sada.
+        // Bez ovoga bi se lokalne promene (Kuća, transfer, itd.) izgubile ako
+        // su napravljene tokom load-a.
+        if (saveQueued) {
+            saveQueued = false;
+            console.log('▶️ Load završen, pokreće se queued save');
+            saveToFirebase();
+        }
+
         return true;
-        
+
     } catch (error) {
         console.error('❌ Error loading from Firebase:', error);
         console.error('Error details:', {
@@ -478,6 +488,12 @@ async function loadFromFirebase() {
             stack: error.stack
         });
         isLoading = false;
+        // Ako je bio queued save, probaj da ga izvršiš i posle load greške
+        if (saveQueued) {
+            saveQueued = false;
+            console.log('▶️ Load pao ali queued save se izvršava');
+            saveToFirebase();
+        }
         throw error;
     }
 }
@@ -537,7 +553,16 @@ function mergeArraysById(local, server, idField) {
 }
 
 async function saveToFirebase() {
-    if (isLoading) return;
+    // ✅ RACE FIX: Ako je load u toku, NE bacaj save tiho - to bi značilo da
+    // lokalne promene (npr. "Kuća" na stolu) nikad ne stignu do servera, pa
+    // sledeći load povuče stari state i vrati stavke na sto. Umesto toga
+    // stavljamo save u red - loadFromFirebase će na kraju okinuti queued save.
+    if (isLoading) {
+        console.log('⏳ saveToFirebase: load u toku, queueujem save');
+        saveQueued = true;
+        hasPendingChanges = true;
+        return;
+    }
 
     if (isSaving) {
         saveQueued = true;
