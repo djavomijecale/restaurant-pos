@@ -236,8 +236,9 @@ function confirmGuestOrder(orderId) {
             guestName: order.guestName || 'Gost'
         };
         DB.kitchenOrders.push(kitchenOrder);
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
     }
-    
+
     order.status = 'confirmed';
     order.confirmedBy = DB.currentUser.username;
     order.confirmedAt = new Date().toISOString();

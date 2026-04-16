@@ -291,6 +291,7 @@ function saveTableName() {
     }
     const table = DB.tables.find(t => t.num === editingTableNum);
     table.name = newName;
+    if (typeof markTableDirty === 'function') markTableDirty(editingTableNum);
     save();
     closeTableNameModal();
     render();

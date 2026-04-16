@@ -380,7 +380,10 @@ function confirmDebtPayment() {
         table.discountPercent = 0;
         table.discountedItems = [];
     }
-    
+
+    // ✅ RACE FIX: bez markTableDirty pre-save merge vraća stavke koje su
+    // upravo prebačene u dug
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
     
     showAlert(`📝 Dug zapisan!\n\n👤 ${debtorName}\n💰 ${tot.toFixed(0)} din`);

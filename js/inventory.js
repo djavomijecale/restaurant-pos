@@ -577,21 +577,23 @@ function saveInvoice() {
             
             if (!DB.invoices) DB.invoices = [];
             DB.invoices.push(invoice);
-            
+            if (typeof markDirty === 'function') markDirty('invoices', invoice.id);
+
             // Update stock
             invoiceItems.forEach(invItem => {
-                const existing = DB.inventory.find(i => 
+                const existing = DB.inventory.find(i =>
                     i.name.toLowerCase() === invItem.name.toLowerCase()
                 );
-                
+
                 if (existing) {
                     // Add to existing stock
                     existing.stock = (parseFloat(existing.stock) || 0) + parseFloat(invItem.qty);
                     existing.costPrice = parseFloat(invItem.unitPrice) || existing.costPrice;
                     if (invItem.category) existing.category = invItem.category;
+                    if (typeof markDirty === 'function') markDirty('inventory', existing.id);
                 } else {
                     // Create new inventory item
-                    DB.inventory.push({
+                    const newItem = {
                         id: 'inv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                         name: invItem.name,
                         unit: invItem.unit || 'kom',
@@ -601,10 +603,12 @@ function saveInvoice() {
                         category: invItem.category || 'Ostalo',
                         menuItemId: null,
                         deductQty: 1
-                    });
+                    };
+                    DB.inventory.push(newItem);
+                    if (typeof markDirty === 'function') markDirty('inventory', newItem.id);
                 }
             });
-            
+
             invoiceItems = [];
             save();
             showAlert(`✅ Faktura sačuvana!\n\n${invoice.items.length} stavki dodato u lager\nUkupno: ${total.toFixed(0)} din`);
@@ -885,6 +889,7 @@ function deleteInvoice(invId) {
     showConfirm('🗑️ Obriši Fakturu', 'Da li ste sigurni? Stavke neće biti oduzete iz lagera.', (confirmed) => {
         if (!confirmed) return;
         DB.invoices = DB.invoices.filter(i => i.id !== invId);
+        if (typeof markDeleted === 'function') markDeleted('invoices', invId);
         save();
         render();
     });
@@ -1006,13 +1011,15 @@ function saveNewInventoryItem() {
         return;
     }
     
-    DB.inventory.push({
+    const newItem = {
         id: 'inv_' + Date.now(),
         name, unit, stock, minStock, costPrice, category,
         menuItemId: null,
         deductQty: 1
-    });
-    
+    };
+    DB.inventory.push(newItem);
+    if (typeof markDirty === 'function') markDirty('inventory', newItem.id);
+
     hideModal('addInventoryModal');
     save();
     render();
@@ -1534,17 +1541,19 @@ function confirmEfakturaImport(count, supplierName, invoiceNumber) {
             
             if (!DB.invoices) DB.invoices = [];
             DB.invoices.push(invoice);
-            
+            if (typeof markDirty === 'function') markDirty('invoices', invoice.id);
+
             // Update stock
             checkedItems.forEach(invItem => {
                 const existing = findInventoryMatch(invItem.name);
-                
+
                 if (existing) {
                     existing.stock = (parseFloat(existing.stock) || 0) + parseFloat(invItem.qty);
                     existing.costPrice = parseFloat(invItem.unitPrice) || existing.costPrice;
+                    if (typeof markDirty === 'function') markDirty('inventory', existing.id);
                     updatedCount++;
                 } else {
-                    DB.inventory.push({
+                    const newItem = {
                         id: 'inv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                         name: invItem.name,
                         unit: invItem.unit || 'kom',
@@ -1554,11 +1563,13 @@ function confirmEfakturaImport(count, supplierName, invoiceNumber) {
                         category: invItem.category || 'Ostalo',
                         menuItemId: null,
                         deductQty: 1
-                    });
+                    };
+                    DB.inventory.push(newItem);
+                    if (typeof markDirty === 'function') markDirty('inventory', newItem.id);
                     newCount++;
                 }
             });
-            
+
             invoiceItems = [];
             save();
             

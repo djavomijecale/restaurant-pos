@@ -434,7 +434,7 @@ function addCashbookEntry() {
         }
 
         if (!DB.cashbook) DB.cashbook = [];
-        DB.cashbook.push({
+        const entry = {
             id: Date.now().toString(),
             type: type,
             person: person,
@@ -442,7 +442,9 @@ function addCashbookEntry() {
             description: desc,
             date: new Date().toISOString(),
             createdBy: DB.currentUser ? DB.currentUser.username : 'admin'
-        });
+        };
+        DB.cashbook.push(entry);
+        if (typeof markDirty === 'function') markDirty('cashbook', entry.id);
 
         save();
         render();

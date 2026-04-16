@@ -414,15 +414,17 @@ function confirmEfakturaApiImport(count, supplierName, invoiceNumber) {
             
             if (!DB.invoices) DB.invoices = [];
             DB.invoices.push(invoice);
-            
+            if (typeof markDirty === 'function') markDirty('invoices', invoice.id);
+
             checkedItems.forEach(invItem => {
                 const existing = findInventoryMatch(invItem.name);
                 if (existing) {
                     existing.stock = (parseFloat(existing.stock) || 0) + parseFloat(invItem.qty);
                     existing.costPrice = parseFloat(invItem.unitPrice) || existing.costPrice;
+                    if (typeof markDirty === 'function') markDirty('inventory', existing.id);
                     updatedCount++;
                 } else {
-                    DB.inventory.push({
+                    const newItem = {
                         id: 'inv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
                         name: invItem.name,
                         unit: invItem.unit || 'kom',
@@ -432,11 +434,13 @@ function confirmEfakturaApiImport(count, supplierName, invoiceNumber) {
                         category: invItem.category || 'Ostalo',
                         menuItemId: null,
                         deductQty: 1
-                    });
+                    };
+                    DB.inventory.push(newItem);
+                    if (typeof markDirty === 'function') markDirty('inventory', newItem.id);
                     newCount++;
                 }
             });
-            
+
             save();
             showAlert(`✅ Uvezeno!\n${updatedCount} ažurirano\n${newCount} novih\nUkupno: ${total.toFixed(0)} din`);
             inventoryTab = 'stock';

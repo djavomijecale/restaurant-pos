@@ -1190,6 +1190,19 @@ function resetAllData() {
             if (!confirmed2) return;
             
             try {
+                // ✅ RACE FIX (defensive): pre direktnih Firebase set-ova,
+                // obeleži sve postojeće ID-eve u tracked kolekcijama kao
+                // obrisane, da paralelni save() sa drugog uređaja ne vrati
+                // obrisane stavke kroz merge.
+                if (typeof markDeleted === 'function') {
+                    (DB.kitchenOrders || []).forEach(o => markDeleted('kitchenOrders', o.id));
+                    (DB.guestOrders || []).forEach(o => markDeleted('guestOrders', o.id));
+                    (DB.waiterCalls || []).forEach(o => markDeleted('waiterCalls', o.id));
+                }
+                if (typeof markTableDirty === 'function') {
+                    (DB.tables || []).forEach(t => markTableDirty(t.num));
+                }
+
                 // Eksplicitno obriši svaki node u Firebase
                 await database.ref('orders').set(null);
                 await database.ref('removedItems').set(null);
@@ -1197,7 +1210,7 @@ function resetAllData() {
                 await database.ref('workdayHistory').set(null);
                 await database.ref('kitchenOrders').set(null);
                 await database.ref('guestOrders').set(null);
-                
+
                 // Očisti stolove (samo narudžbine, zadrži imena)
                 const cleanTables = DB.tables.map(table => ({
                     ...table,
@@ -1206,7 +1219,7 @@ function resetAllData() {
                     discountedItems: []
                 }));
                 await database.ref('tables').set(cleanTables);
-                
+
                 // Ažuriraj lokalni DB
                 DB.orders = [];
                 DB.removedItems = [];

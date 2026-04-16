@@ -105,6 +105,7 @@ function addToTable(itemId) {
                 };
                 
                 DB.kitchenOrders.push(newKitchenOrder);
+                if (typeof markDirty === 'function') markDirty('kitchenOrders', newKitchenOrder.id);
                 console.log('✅ Nova kuhinjska narudžbina kreirana');
             }
         }

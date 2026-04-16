@@ -190,6 +190,9 @@ function confirmHouseOrder() {
         table.discountedItems = [];
     }
 
+    // ✅ RACE FIX: bez markTableDirty pre-save merge vraća stavke koje su
+    // upravo prebačene u kuću
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
 
     // Zatvori modal

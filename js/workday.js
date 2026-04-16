@@ -572,6 +572,7 @@ async function _doCloseWorkday() {
     // ALI NE BRIŠEMO NARUDŽBINE - one ostaju u bazi zauvek!
     DB.tables.forEach(table => {
         if (table.order && table.order.length > 0) {
+            const lenBefore = table.order.length;
             // Filtriraj samo stavke drugih konobara (zadrži ih)
             table.order = table.order.filter(item => item.createdBy && item.createdBy !== username);
 
@@ -580,6 +581,13 @@ async function _doCloseWorkday() {
                 table.discount = 0;
                 table.discountPercent = 0;
                 table.discountedItems = [];
+            }
+
+            // ✅ RACE FIX: obeleži sto kao dirty samo ako se nešto stvarno
+            // izmenilo, da pre-save merge ne vrati očišćene stavke
+            if (table.order.length !== lenBefore &&
+                typeof markTableDirty === 'function') {
+                markTableDirty(table.num);
             }
         }
     });
@@ -772,11 +780,18 @@ async function autoCloseWorkday(username, myWorkday) {
     // Očisti stavke sa stolova
     DB.tables.forEach(table => {
         if (table.order && table.order.length > 0) {
+            const lenBefore = table.order.length;
             table.order = table.order.filter(item => item.createdBy && item.createdBy !== username);
             if (table.order.length === 0) {
                 table.discount = 0;
                 table.discountPercent = 0;
                 table.discountedItems = [];
+            }
+            // ✅ RACE FIX: auto-presek radi u pozadini paralelno sa radom —
+            // bez markTableDirty pre-save merge vraća već očišćene stavke
+            if (table.order.length !== lenBefore &&
+                typeof markTableDirty === 'function') {
+                markTableDirty(table.num);
             }
         }
     });
