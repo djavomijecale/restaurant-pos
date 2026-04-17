@@ -109,6 +109,16 @@ async function openWorkday() {
         console.warn('⚠️ Nije uspelo učitavanje svežih podataka:', e.message);
     }
 
+    // ✅ RACE FIX: Čekaj da se ISTEKLE smene auto-zatvore PRE izračunavanja
+    // depozita. Inače orphan smena (drugi konobar zaboravio da zatvori) daje
+    // pogrešan inheritDeposit iz svog starog .deposit polja umesto stvarnog
+    // keša u kasi (depozit + keš prodaje − smanjenja).
+    try {
+        await checkAndAutoCloseShifts();
+    } catch(e) {
+        console.warn('⚠️ checkAndAutoCloseShifts greška:', e.message);
+    }
+
     const businessDayStart = getBusinessDayStart();
     
     // Pronađi depozit za nasleđivanje:
@@ -148,8 +158,31 @@ async function openWorkday() {
             });
 
         if (otherActive) {
-            inheritDeposit = otherActive[1].deposit || 0;
-            inheritFrom = otherActive[0];
+            // ✅ BUG FIX (8070 vs 3920): Ne koristi .deposit polje aktivne smene
+            // - to je POČETNI depozit tog konobara, ne trenutni keš u kasi.
+            // Izračunaj stvarni keš isto kao i _doCloseWorkday:
+            //   finalCash = deposit + cashSales + debtCash - cashReductions
+            const otherUser = otherActive[0];
+            const otherWd = otherActive[1];
+            const otherStart = otherWd.startTime;
+            const otherOrders = (DB.orders || []).filter(o =>
+                o && o.createdBy === otherUser && o.time >= otherStart
+            );
+            const otherCash = otherOrders
+                .filter(o => !o.isDebtPayment && o.method === 'Cash')
+                .reduce((s, o) => s + (o.tot || 0), 0);
+            const otherDebtCash = otherOrders
+                .filter(o => o.isDebtPayment && o.method === 'Cash')
+                .reduce((s, o) => s + (o.tot || 0), 0);
+            const otherReductions = (otherWd.cashReductions || [])
+                .reduce((s, r) => s + (r.amount || 0), 0);
+            const otherDeposit = otherWd.deposit || 0;
+            inheritDeposit = Math.max(0, otherDeposit + otherCash + otherDebtCash - otherReductions);
+            inheritFrom = otherUser;
+            console.log('💰 Nasleđen depozit iz aktivne smene ' + otherUser + ': ' +
+                'deposit=' + otherDeposit + ' + cash=' + otherCash +
+                ' + debtCash=' + otherDebtCash + ' - reductions=' + otherReductions +
+                ' = ' + inheritDeposit);
         }
     }
     
@@ -634,18 +667,18 @@ function getBusinessDayStart() {
     return cutoff;
 }
 
-function checkAndAutoCloseShifts() {
+async function checkAndAutoCloseShifts() {
     if (!DB.workdays) return;
-    
+
     const now = new Date();
     const todayCutoff = new Date(now);
     todayCutoff.setHours(DAILY_CUTOFF_HOUR, 0, 0, 0);
-    
+
     // Ako je pre 7:00, cutoff je juče u 7:00
     if (now < todayCutoff) {
         todayCutoff.setDate(todayCutoff.getDate() - 1);
     }
-    
+
     const expiredShifts = Object.entries(DB.workdays).filter(([username, wd]) => {
         if (!wd || !wd.startTime) return false;
         // ✋ Kuvari sami zatvaraju svoju smenu — ne diraj ih auto-close-om
@@ -656,14 +689,19 @@ function checkAndAutoCloseShifts() {
         // Smena je istekla ako je počela PRE današnjeg cutoff-a (7:00)
         return shiftStart < todayCutoff;
     });
-    
+
     if (expiredShifts.length === 0) return;
-    
+
     console.log('⏰ Presek u 7:00 - zatvaranje ' + expiredShifts.length + ' smena od prethodnog dana');
-    
-    expiredShifts.forEach(([username, myWorkday]) => {
-        autoCloseWorkday(username, myWorkday);
-    });
+
+    // ✅ RACE FIX: Čekaj da se SVE auto-close operacije završe pre nego što
+    // caller (openWorkday) počne da računa depozit. Inače orphan workday sa
+    // pogrešnim .deposit-om može da propagira u novu smenu.
+    await Promise.all(expiredShifts.map(([username, myWorkday]) =>
+        Promise.resolve(autoCloseWorkday(username, myWorkday)).catch(err => {
+            console.error('⚠️ autoCloseWorkday greška za ' + username + ':', err);
+        })
+    ));
 }
 
 
