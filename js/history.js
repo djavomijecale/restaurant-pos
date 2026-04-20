@@ -20,7 +20,7 @@ function renderHistory(c) {
         window.historyFilter = {
             startDate: lastMonth.toISOString().split('T')[0],
             endDate: today.toISOString().split('T')[0],
-            viewMode: 'summary'  // summary, orders, sessions
+            viewMode: 'summary'  // summary, daily, orders, fiscal, sessions
         };
     }
     
@@ -109,22 +109,25 @@ function renderHistory(c) {
             </div>
             
             <!-- View Mode Tabs -->
-            <div style="display:flex;gap:8px;margin-bottom:20px;overflow-x:auto">
-                <button class="btn ${filter.viewMode==='summary'?'':'btn-secondary'}" 
-                    onclick="window.historyFilter.viewMode='summary';render()" 
+            <div style="display:flex;gap:8px;margin-bottom:20px;overflow-x:auto;flex-wrap:wrap">
+                <button class="btn ${filter.viewMode==='summary'?'':'btn-secondary'}"
+                    onclick="window.historyFilter.viewMode='summary';render()"
                     style="flex:1;min-width:100px">📊 Pregled</button>
-                ${!isWaiter ? `<button class="btn ${filter.viewMode==='daily'?'':'btn-secondary'}" 
-                    onclick="window.historyFilter.viewMode='daily';render()" 
+                ${!isWaiter ? `<button class="btn ${filter.viewMode==='daily'?'':'btn-secondary'}"
+                    onclick="window.historyFilter.viewMode='daily';render()"
                     style="flex:1;min-width:100px">📅 Dnevni</button>` : ''}
-                <button class="btn ${filter.viewMode==='orders'?'':'btn-secondary'}" 
+                <button class="btn ${filter.viewMode==='orders'?'':'btn-secondary'}"
                     onclick="window.historyFilter.viewMode='orders';render()"
                     style="flex:1;min-width:100px">📋 Narudžbine</button>
-                <button class="btn ${filter.viewMode==='sessions'?'':'btn-secondary'}" 
+                <button class="btn ${filter.viewMode==='fiscal'?'':'btn-secondary'}"
+                    onclick="window.historyFilter.viewMode='fiscal';render()"
+                    style="flex:1;min-width:140px">🧾 Otkucani fiskalni</button>
+                <button class="btn ${filter.viewMode==='sessions'?'':'btn-secondary'}"
                     onclick="window.historyFilter.viewMode='sessions';render()"
                     style="flex:1;min-width:100px">👥 Sesije</button>
             </div>
     `;
-    
+
     // Render based on view mode
     if (filter.viewMode === 'summary') {
         h += renderHistorySummary(filteredOrders, filteredSessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours, fiscalTotal, fiscalOrders.length);
@@ -132,6 +135,8 @@ function renderHistory(c) {
         h += renderHistoryDaily(filteredOrders, filteredSessions, ordersByDate, isWaiter);
     } else if (filter.viewMode === 'orders') {
         h += renderHistoryOrders(filteredOrders);
+    } else if (filter.viewMode === 'fiscal') {
+        h += renderHistoryFiscalOrders(fiscalOrders, fiscalTotal);
     } else if (filter.viewMode === 'sessions') {
         h += renderHistorySessions(filteredSessions);
     }
@@ -294,12 +299,12 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
 
 function renderHistoryOrders(orders) {
     const sortedOrders = [...orders].sort((a, b) => b.time.localeCompare(a.time));
-    
+
     let h = `
         <div style="background:#0F3460;padding:20px;border-radius:12px">
             <h3 style="color:#E94560;margin-bottom:16px">📋 Sve Narudžbine (${orders.length})</h3>
     `;
-    
+
     if (sortedOrders.length === 0) {
         h += `<div style="text-align:center;color:#B0B0B0;padding:40px">Nema narudžbina za izabrani period</div>`;
     } else {
@@ -311,14 +316,14 @@ function renderHistoryOrders(orders) {
                 hour: '2-digit',
                 minute: '2-digit'
             });
-            
+
             const isAdmin = DB.currentUser && DB.currentUser.role === 'admin';
-            
+
             h += `
                 <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
                     <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
                         <div>
-                            <div style="color:#FFD700;font-weight:bold">Narudžbina #${o.id}</div>
+                            <div style="color:#FFD700;font-weight:bold">Narudžbina #${o.id}${o.isFiscal ? ' <span style="background:#4CAF50;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold">🧾 Otkucan fiskalni</span>' : ''}</div>
                             <div style="color:#B0B0B0;font-size:11px">${formatted} · ${o.createdBy || 'Nepoznato'}</div>
                         </div>
                         <div style="display:flex;align-items:start;gap:8px">
@@ -336,7 +341,64 @@ function renderHistoryOrders(orders) {
             `;
         });
     }
-    
+
+    h += `</div>`;
+    return h;
+}
+
+
+function renderHistoryFiscalOrders(fiscalOrders, fiscalTotal) {
+    const sortedOrders = [...fiscalOrders].sort((a, b) => b.time.localeCompare(a.time));
+    const isAdmin = DB.currentUser && DB.currentUser.role === 'admin';
+
+    let h = `
+        <div style="background:#0F3460;padding:20px;border-radius:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+                <h3 style="color:#E94560;margin:0">🧾 Otkucani Fiskalni Računi (${fiscalOrders.length})</h3>
+                <div style="color:#4CAF50;font-size:18px;font-weight:bold">Ukupno: ${(fiscalTotal || 0).toFixed(0)} din.</div>
+            </div>
+    `;
+
+    if (sortedOrders.length === 0) {
+        h += `<div style="text-align:center;color:#B0B0B0;padding:40px">
+                <div style="font-size:48px;margin-bottom:12px">🧾</div>
+                <div>Nema otkucanih fiskalnih računa za izabrani period</div>
+            </div>`;
+    } else {
+        sortedOrders.forEach(o => {
+            const date = new Date(o.time);
+            const formatted = date.toLocaleString('sr-RS', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            const tableName = o.tableName || ('Sto ' + o.table);
+
+            h += `
+                <div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;border-left:4px solid #4CAF50">
+                    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+                        <div>
+                            <div style="color:#FFD700;font-weight:bold">${tableName} · Narudžbina #${o.id} <span style="background:#4CAF50;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold">🧾 Otkucan fiskalni</span></div>
+                            <div style="color:#B0B0B0;font-size:11px">${formatted} · ${o.createdBy || 'Nepoznato'}</div>
+                        </div>
+                        <div style="display:flex;align-items:start;gap:8px">
+                            <div style="text-align:right">
+                                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${o.tot.toFixed(0)} din.</div>
+                                <div style="color:#B0B0B0;font-size:11px">${o.method}</div>
+                            </div>
+                            ${isAdmin ? '<button onclick="deleteOrder(\'' + o.id + '\')" style="background:none;border:none;color:#E94560;font-size:18px;cursor:pointer;padding:4px" title="Obriši narudžbinu">🗑️</button>' : ''}
+                        </div>
+                    </div>
+                    <div style="color:#B0B0B0;font-size:12px">
+                        ${o.items.map(it => it.name + ' x' + it.qty).join(', ')}
+                    </div>
+                </div>
+            `;
+        });
+    }
+
     h += `</div>`;
     return h;
 }

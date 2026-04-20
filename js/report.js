@@ -823,17 +823,17 @@ function renderReport(c) {
             h += `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div style="flex:1">
-                        <div style="color:#FFD700;font-weight:bold">${tableName}</div>
+                        <div style="color:#FFD700;font-weight:bold">${tableName}${order.isFiscal ? ' <span style="background:#4CAF50;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold">🧾 Otkucan fiskalni</span>' : ''}</div>
                         <div style="color:#B0B0B0;font-size:12px">
-                            ${time} · 
-                            ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
+                            ${time} ·
+                            ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} ·
                             ${order.method}`;
-            
+
             // Prikaži konobarevo ime SAMO ako je admin
             if (!isWaiter && order.createdBy) {
                 h += ` · 👨‍🍳 ${order.createdBy}`;
             }
-            
+
             h += `</div>
                     </div>
                     <div style="display:flex;align-items:center;gap:12px">
@@ -1089,7 +1089,7 @@ function showAllTodayOrders() {
         h += '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:12px;cursor:pointer" onclick="toggleOrderDetails(' + order.id + ')">';
         h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
         h += '<div style="flex:1">';
-        h += '<div style="color:#FFD700;font-weight:bold;font-size:18px">' + tableName + '</div>';
+        h += '<div style="color:#FFD700;font-weight:bold;font-size:18px">' + tableName + (order.isFiscal ? ' <span style="background:#4CAF50;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold">🧾 Otkucan fiskalni</span>' : '') + '</div>';
         h += '<div style="color:#B0B0B0;font-size:12px">' + time + ' · ' + order.items.length + ' ' + (order.items.length === 1 ? 'artikal' : 'artikla') + ' · ' + order.method;
         
         if (!isWaiter && order.createdBy) {
@@ -1149,10 +1149,10 @@ function showAllOrders() {
         h += `<div style="background:#0F3460;padding:16px;border-radius:12px;margin-bottom:12px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <div style="flex:1">
-                    <div style="color:#FFD700;font-weight:bold;font-size:18px">${tableName}</div>
+                    <div style="color:#FFD700;font-weight:bold;font-size:18px">${tableName}${order.isFiscal ? ' <span style="background:#4CAF50;color:#fff;font-size:11px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold">🧾 Otkucan fiskalni</span>' : ''}</div>
                     <div style="color:#B0B0B0;font-size:12px">
-                        ${date} ${time} · 
-                        ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
+                        ${date} ${time} ·
+                        ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} ·
                         ${order.method}
                         ${order.createdBy ? ' · 👨‍🍳 ' + order.createdBy : ''}
                     </div>
@@ -1426,10 +1426,10 @@ function showWaiterOrders(waiterName) {
             h += `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px;cursor:pointer" onclick="toggleOrderDetails(${order.id})">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                     <div style="flex:1">
-                        <div style="color:#FFD700;font-weight:bold">${tableName}</div>
+                        <div style="color:#FFD700;font-weight:bold">${tableName}${order.isFiscal ? ' <span style="background:#4CAF50;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold">🧾 Otkucan fiskalni</span>' : ''}</div>
                         <div style="color:#B0B0B0;font-size:12px">
-                            ${date} ${time} · 
-                            ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} · 
+                            ${date} ${time} ·
+                            ${order.items.length} ${order.items.length === 1 ? 'artikal' : 'artikla'} ·
                             ${order.method}
                         </div>
                     </div>
