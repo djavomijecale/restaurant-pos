@@ -199,12 +199,24 @@ async function openWorkday() {
         const otherReductions = (otherWd.cashReductions || [])
             .reduce((s, r) => s + (r.amount || 0), 0);
         const otherDeposit = otherWd.deposit || 0;
-        inheritDeposit = Math.max(0, otherDeposit + otherCash + otherDebtCash - otherReductions);
-        inheritFrom = otherUser;
-        console.log('💰 Nasleđen depozit iz AKTIVNE smene ' + otherUser + ': ' +
-            'deposit=' + otherDeposit + ' + cash=' + otherCash +
-            ' + debtCash=' + otherDebtCash + ' - reductions=' + otherReductions +
-            ' = ' + inheritDeposit);
+        const otherLive = otherDeposit + otherCash + otherDebtCash - otherReductions;
+
+        // ✅ BUG FIX (Vukašin dobio 0): Preskoči aktivne smene koje izgledaju
+        // kao orphan / test sesija - otvorene sa deposit=0 i bez ikakve cash
+        // aktivnosti. Takve smene "prekinu" lanac keša pa bi novi konobar
+        // nasledio 0 umesto stvarnih sredstava iz prethodnih zatvorenih smena.
+        // Fall-through na Proveru 2 (zatvorene smene u istoriji).
+        if (otherDeposit === 0 && otherOrders.length === 0 && otherReductions === 0) {
+            console.log('⚠️ Aktivna smena ' + otherUser + ' deluje kao orphan ' +
+                '(deposit=0, 0 narudžbina, 0 smanjenja) - preskačem i gledam istoriju');
+        } else {
+            inheritDeposit = Math.max(0, otherLive);
+            inheritFrom = otherUser;
+            console.log('💰 Nasleđen depozit iz AKTIVNE smene ' + otherUser + ': ' +
+                'deposit=' + otherDeposit + ' + cash=' + otherCash +
+                ' + debtCash=' + otherDebtCash + ' - reductions=' + otherReductions +
+                ' = ' + inheritDeposit);
+        }
     }
 
     // Provera 2: Najskorija ZATVORENA smena konobara (iz cele istorije)
