@@ -713,9 +713,25 @@ async function saveToFirebase() {
     // VAŽNO: Generišemo timestamp PRE slanja i čuvamo ga lokalno
     const saveTimestamp = new Date().toISOString();
 
+    // ✅ CROSS-DEVICE RACE FIX: Ne pišemo CEO tables niz nego samo dirty stolove
+    // path-based update-om. Bez ovoga: Device 2 pročita server PRE nego što
+    // Device 1 upiše stavku, zatim Device 2 wholesale upiše tables (sa svojim
+    // ne-dirty stale state-om) i prepiše stavku koju je Device 1 baš upisao.
+    // Stefan je prijavio bug: "kad unese porudzbinu, nestane sa stola" - to je
+    // upravo ova klasa race-a.
+    const _dirtyTablePaths = {};
+    if (Array.isArray(DB.tables)) {
+        Object.keys(_savingDirtyTables).forEach(tableNum => {
+            const idx = DB.tables.findIndex(t => t && String(t.num) === String(tableNum));
+            if (idx >= 0) {
+                _dirtyTablePaths['tables/' + idx] = DB.tables[idx];
+            }
+        });
+    }
+
     const dataToSave = {
         menu: DB.menu,
-        tables: DB.tables,
+        // tables: DB.tables,  // ❌ UKLONJENO - cross-device race; vidi _dirtyTablePaths gore
         orders: DB.orders,
         removedItems: DB.removedItems,
         settings: DB.settings,
@@ -736,6 +752,8 @@ async function saveToFirebase() {
         cashbook: DB.cashbook || [],
         deletedOrderIds: DB.deletedOrderIds || [],
         kuvarBonus: DB.kuvarBonus || {},
+        // Dirty stolovi - path-based update, samo oni koji su zaista promenjeni
+        ..._dirtyTablePaths,
         lastUpdated: saveTimestamp
     };
 
