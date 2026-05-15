@@ -206,6 +206,27 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
     const topItems = Object.values(itemStats).sort(function(a, b) { return b.qty - a.qty; }).slice(0, 10);
     const maxTopQty = topItems.length > 0 ? topItems[0].qty : 0;
 
+    // Pretraga artikla - spoji trenutni meni sa istorijskim artiklima (za artikle
+    // koje je admin u međuvremenu obrisao iz menija, ali postoje u prošlim
+    // narudžbinama).
+    const _searchMenuMap = {};
+    (DB.menu || []).forEach(function(m) {
+        if (m && m.id != null) _searchMenuMap[String(m.id)] = { name: m.name || '?', cat: m.cat || '', deleted: false };
+    });
+    Object.entries(itemStats).forEach(function(entry) {
+        const key = entry[0], s = entry[1];
+        if (key.indexOf('name:') === 0) return; // skip ID-less items
+        if (!_searchMenuMap[key]) {
+            _searchMenuMap[key] = { name: s.name, cat: s.cat || '', deleted: true };
+        }
+    });
+    const _sortedSearchMenu = Object.entries(_searchMenuMap).sort(function(a, b) {
+        return (a[1].name || '').localeCompare(b[1].name || '', 'sr');
+    });
+    const _selectedSearchId = String(window.historySearchItemId || '');
+    const _selectedItem = _selectedSearchId ? _searchMenuMap[_selectedSearchId] : null;
+    const _selectedStats = _selectedSearchId ? itemStats[_selectedSearchId] : null;
+
     let h = `
         <!-- Summary Stats -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
@@ -371,6 +392,69 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
                 }).join('')}
             </div>
             `}
+        </div>
+
+        <!-- Pretraga Artikla -->
+        <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+            <h3 style="color:#E94560;margin-bottom:8px">🔍 Pretraga Artikla</h3>
+            <div style="color:#B0B0B0;font-size:12px;margin-bottom:16px">Odaberi artikal da vidiš koliko je prodato u izabranom periodu</div>
+            <select id="historyItemSelector" onchange="window.historySearchItemId=this.value;render()"
+                style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:14px;margin-bottom:12px">
+                <option value="">-- Izaberi artikal --</option>
+                ${_sortedSearchMenu.map(function(entry) {
+                    const id = entry[0], m = entry[1];
+                    const sel = id === _selectedSearchId ? 'selected' : '';
+                    const label = m.name + (m.cat ? ' (' + m.cat + ')' : '') + (m.deleted ? ' — [obrisano iz menija]' : '');
+                    return `<option value="${id}" ${sel}>${label}</option>`;
+                }).join('')}
+            </select>
+            ${_selectedSearchId && _selectedItem ? (function() {
+                if (!_selectedStats || _selectedStats.qty === 0) {
+                    return `<div style="background:#16213E;padding:16px;border-radius:8px;text-align:center">
+                        <div style="color:#FFD700;font-size:18px;font-weight:bold;margin-bottom:4px">${_selectedItem.name}</div>
+                        <div style="color:#B0B0B0;font-size:13px;margin-bottom:8px">${_selectedItem.cat || 'Bez kategorije'}${_selectedItem.deleted ? ' · [obrisano iz menija]' : ''}</div>
+                        <div style="color:#E94560;padding:12px">Nije prodato nijednom u izabranom periodu</div>
+                    </div>`;
+                }
+                const avgPrice = _selectedStats.qty > 0 ? (_selectedStats.rev / _selectedStats.qty) : 0;
+                const pctOfTotal = totalCategorizedRev > 0 ? (_selectedStats.rev / totalCategorizedRev * 100) : 0;
+                const isDrink = _isDrinkCat(_selectedItem.cat);
+                const accent = isDrink ? '#2196F3' : (_selectedItem.cat === 'Neodređeno' || !_selectedItem.cat ? '#888' : '#FF9800');
+                const icon = isDrink ? '🥤' : (_selectedItem.cat === 'Neodređeno' || !_selectedItem.cat ? '❓' : '🍕');
+                // Rank u top listi (sortirano po qty)
+                const allItemsSorted = Object.entries(itemStats).sort(function(a, b) { return b[1].qty - a[1].qty; });
+                const rank = allItemsSorted.findIndex(function(e) { return e[0] === _selectedSearchId; }) + 1;
+                return `<div style="background:#16213E;padding:16px;border-radius:8px">
+                    <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+                        <div style="display:flex;align-items:center;gap:10px;min-width:200px;flex:2">
+                            <span style="font-size:32px">${icon}</span>
+                            <div>
+                                <div style="color:#FFD700;font-size:20px;font-weight:bold">${_selectedItem.name}</div>
+                                <div style="color:${accent};font-size:13px">${_selectedItem.cat || 'Bez kategorije'}${_selectedItem.deleted ? ' · [obrisano iz menija]' : ''}</div>
+                                ${rank > 0 && rank <= allItemsSorted.length ? `<div style="color:#B0B0B0;font-size:11px;margin-top:2px">${rank === 1 ? '🥇 Najprodavanije!' : rank === 2 ? '🥈 2. mesto' : rank === 3 ? '🥉 3. mesto' : 'Pozicija: ' + rank + '. od ' + allItemsSorted.length + ' artikala'}</div>` : ''}
+                            </div>
+                        </div>
+                        <div style="text-align:right;min-width:140px;flex:1">
+                            <div style="color:#4CAF50;font-size:36px;font-weight:bold;line-height:1">${_selectedStats.qty}</div>
+                            <div style="color:#B0B0B0;font-size:12px;margin-top:4px">prodatih komada</div>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px">
+                        <div style="background:#0F3460;padding:10px;border-radius:6px;text-align:center">
+                            <div style="color:#FFD700;font-size:16px;font-weight:bold">${_selectedStats.rev.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:11px">Ukupan promet</div>
+                        </div>
+                        <div style="background:#0F3460;padding:10px;border-radius:6px;text-align:center">
+                            <div style="color:#FFD700;font-size:16px;font-weight:bold">${avgPrice.toFixed(0)} din.</div>
+                            <div style="color:#B0B0B0;font-size:11px">⌀ cena po komadu</div>
+                        </div>
+                        <div style="background:#0F3460;padding:10px;border-radius:6px;text-align:center">
+                            <div style="color:#FFD700;font-size:16px;font-weight:bold">${pctOfTotal.toFixed(2)}%</div>
+                            <div style="color:#B0B0B0;font-size:11px">Udeo prometa</div>
+                        </div>
+                    </div>
+                </div>`;
+            })() : ''}
         </div>
 
         <!-- By User - SAMO ZA ADMINA -->`;
