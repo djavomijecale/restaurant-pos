@@ -97,8 +97,9 @@ function renderHistory(c) {
                             style="width:100%;padding:8px;border-radius:6px;border:1px solid #2A2A4A;background:#16213E;color:#FFF">
                     </div>
                     <button class="btn" onclick="applyHistoryFilter()" style="height:36px">🔍 Primeni</button>
+                    <button class="btn btn-secondary" onclick="setHistoryRangeAllTime()" style="height:36px" title="Postavi opseg na sve od početka rada aplikacije">📆 Sve vreme</button>
                     `;
-    
+
     // Excel export SAMO ZA ADMINA
     if (!isWaiter) {
         h += `<button class="btn btn-secondary" onclick="exportHistoryToExcel()" style="height:36px">📊 Excel</button>`;
@@ -148,7 +149,52 @@ function renderHistory(c) {
 
 function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, totalRevenue, cash, card, isWaiter, totalSalary, totalBonus, totalWorkHours, fiscalTotal, fiscalCount) {
     const avgOrder = orders.length > 0 ? (totalRevenue / orders.length) : 0;
-    
+
+    // ====== HRANA vs PIĆE ======
+    // Stavke u narudžbini čuvaju kategoriju (item.cat). Sve što ima "pić"/"pic"
+    // u kategoriji se broji kao piće, ostalo (Hrana, Dezert, itd.) kao hrana.
+    // Diskonti se proporcionalno raspoređuju na stavke radi tačnijih cifara.
+    const _isDrinkCat = function(cat) {
+        if (!cat) return false;
+        const c = String(cat).toLowerCase();
+        return c.indexOf('pić') >= 0 || c.indexOf('pic') >= 0
+            || c.indexOf('drink') >= 0 || c.indexOf('napit') >= 0;
+    };
+    let foodRev = 0, drinkRev = 0, otherRev = 0;
+    let foodQty = 0, drinkQty = 0, otherQty = 0;
+    const catBreakdown = {}; // {cat: {rev, qty}}
+    orders.forEach(function(o) {
+        if (!o || !o.items || !Array.isArray(o.items)) return;
+        // Proporcionalno raspoređivanje popusta po stavkama
+        const sub = (o.sub != null ? o.sub : o.items.reduce((s, i) => s + (i.price || 0) * (i.qty || 0), 0)) || 0;
+        const disc = o.disc || 0;
+        const discFactor = sub > 0 ? Math.max(0, (sub - disc) / sub) : 1;
+        o.items.forEach(function(item) {
+            if (!item) return;
+            const q = Number(item.qty) || 0;
+            const grossRev = (Number(item.price) || 0) * q;
+            const netRev = grossRev * discFactor;
+            const cat = item.cat || 'Neodređeno';
+            if (!catBreakdown[cat]) catBreakdown[cat] = { rev: 0, qty: 0 };
+            catBreakdown[cat].rev += netRev;
+            catBreakdown[cat].qty += q;
+            if (_isDrinkCat(cat)) {
+                drinkRev += netRev;
+                drinkQty += q;
+            } else if (cat === 'Neodređeno') {
+                otherRev += netRev;
+                otherQty += q;
+            } else {
+                foodRev += netRev;
+                foodQty += q;
+            }
+        });
+    });
+    const totalCategorizedRev = foodRev + drinkRev + otherRev;
+    const foodPct = totalCategorizedRev > 0 ? (foodRev / totalCategorizedRev * 100) : 0;
+    const drinkPct = totalCategorizedRev > 0 ? (drinkRev / totalCategorizedRev * 100) : 0;
+    const otherPct = totalCategorizedRev > 0 ? (otherRev / totalCategorizedRev * 100) : 0;
+
     let h = `
         <!-- Summary Stats -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px">
@@ -223,7 +269,60 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
                 </div>
             </div>` : ''}
         </div>
-        
+
+        <!-- Hrana vs Piće -->
+        <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+            <h3 style="color:#E94560;margin-bottom:8px">🍽️ Hrana vs Piće</h3>
+            <div style="color:#B0B0B0;font-size:12px;margin-bottom:16px">Udeo prodaje po kategorijama za izabrani period (popusti proporcionalno raspoređeni)</div>
+            ${totalCategorizedRev === 0 ? `
+                <div style="text-align:center;color:#888;padding:20px">Nema podataka za izabrani period</div>
+            ` : `
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px">
+                <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center;border:2px solid #FF9800">
+                    <div style="font-size:32px">🍕</div>
+                    <div style="color:#FF9800;font-size:24px;font-weight:bold;margin:8px 0">${foodPct.toFixed(1)}%</div>
+                    <div style="color:#FFD700;font-size:16px;font-weight:bold">${foodRev.toFixed(0)} din.</div>
+                    <div style="color:#B0B0B0;font-size:11px;margin-top:4px">Hrana · ${foodQty} stavki</div>
+                </div>
+                <div style="background:#16213E;padding:16px;border-radius:8px;text-align:center;border:2px solid #2196F3">
+                    <div style="font-size:32px">🥤</div>
+                    <div style="color:#2196F3;font-size:24px;font-weight:bold;margin:8px 0">${drinkPct.toFixed(1)}%</div>
+                    <div style="color:#FFD700;font-size:16px;font-weight:bold">${drinkRev.toFixed(0)} din.</div>
+                    <div style="color:#B0B0B0;font-size:11px;margin-top:4px">Piće · ${drinkQty} stavki</div>
+                </div>
+                ${otherRev > 0 ? `<div style="background:#16213E;padding:16px;border-radius:8px;text-align:center;border:2px solid #888">
+                    <div style="font-size:32px">❓</div>
+                    <div style="color:#888;font-size:24px;font-weight:bold;margin:8px 0">${otherPct.toFixed(1)}%</div>
+                    <div style="color:#FFD700;font-size:16px;font-weight:bold">${otherRev.toFixed(0)} din.</div>
+                    <div style="color:#B0B0B0;font-size:11px;margin-top:4px">Neodređeno · ${otherQty} stavki</div>
+                </div>` : ''}
+            </div>
+            <!-- Progress bar -->
+            <div style="height:12px;background:#16213E;border-radius:6px;overflow:hidden;display:flex;margin-bottom:16px">
+                <div style="width:${foodPct}%;background:#FF9800" title="Hrana ${foodPct.toFixed(1)}%"></div>
+                <div style="width:${drinkPct}%;background:#2196F3" title="Piće ${drinkPct.toFixed(1)}%"></div>
+                ${otherPct > 0 ? `<div style="width:${otherPct}%;background:#888" title="Neodređeno ${otherPct.toFixed(1)}%"></div>` : ''}
+            </div>
+            <!-- Detaljni breakdown po kategorijama -->
+            <details style="background:#16213E;padding:12px;border-radius:8px">
+                <summary style="cursor:pointer;color:#B0B0B0;font-size:13px">📋 Detaljno po kategorijama</summary>
+                <div style="margin-top:12px">
+                    ${Object.entries(catBreakdown).sort((a, b) => b[1].rev - a[1].rev).map(([cat, data]) => {
+                        const pct = totalCategorizedRev > 0 ? (data.rev / totalCategorizedRev * 100) : 0;
+                        const isDrink = _isDrinkCat(cat);
+                        const color = isDrink ? '#2196F3' : (cat === 'Neodređeno' ? '#888' : '#FF9800');
+                        return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #2A2A4A">
+                            <span style="color:${color};font-weight:bold">${cat}</span>
+                            <span style="color:#B0B0B0;font-size:12px">${data.qty} stavki</span>
+                            <span style="color:#FFD700;font-weight:bold">${data.rev.toFixed(0)} din.</span>
+                            <span style="color:#B0B0B0;min-width:55px;text-align:right">${pct.toFixed(1)}%</span>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </details>
+            `}
+        </div>
+
         <!-- By User - SAMO ZA ADMINA -->`;
     
     if (!isWaiter) {
@@ -753,13 +852,28 @@ function renderHistoryDaily(allOrders, allSessions, ordersByDate, isWaiter) {
 function applyHistoryFilter() {
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
-    
+
     if (startDate && endDate) {
         window.historyFilter.startDate = startDate;
         window.historyFilter.endDate = endDate;
         render();
     }
 }
+
+// Postavi opseg na "sve vreme" - od najranije narudžbine/smene do danas.
+// Korisno za analize tipa "udeo hrane i pića od početka rada aplikacije".
+function setHistoryRangeAllTime() {
+    var allTimes = [];
+    (DB.orders || []).forEach(function(o) { if (o && o.time) allTimes.push(o.time); });
+    (DB.workdayHistory || []).forEach(function(s) { if (s && s.loginTime) allTimes.push(s.loginTime); });
+    var earliest = allTimes.length > 0 ? allTimes.reduce(function(a, b) { return a < b ? a : b; }) : null;
+    var startDate = earliest ? earliest.split('T')[0] : '2020-01-01';
+    var today = new Date().toISOString().split('T')[0];
+    window.historyFilter.startDate = startDate;
+    window.historyFilter.endDate = today;
+    render();
+}
+if (typeof window !== 'undefined') window.setHistoryRangeAllTime = setHistoryRangeAllTime;
 
 
 function exportHistoryToExcel() {
