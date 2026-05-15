@@ -739,11 +739,32 @@ function renderSettings(c) {
             <div class="card" style="margin-bottom:16px;border:2px solid #FF9800">
                 <h3 style="color:#FF9800;margin-bottom:12px">🍳 Kuhinjske Kategorije</h3>
                 <p style="color:#888;font-size:13px;margin-bottom:12px">Kategorije koje <strong>NE</strong> idu u kuhinju (razdvojene zarezom). Sve ostale kategorije se automatski šalju kuvaru.</p>
-                <input type="text" id="nonKitchenCats" value="${(DB.settings && DB.settings.nonKitchenCategories) || ''}" 
-                    placeholder="Piće, Voda, Sokovi, Kafa..." 
+                <input type="text" id="nonKitchenCats" value="${(DB.settings && DB.settings.nonKitchenCategories) || ''}"
+                    placeholder="Piće, Voda, Sokovi, Kafa..."
                     style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:13px;margin-bottom:8px">
                 <p style="color:#888;font-size:11px;margin-bottom:12px">💡 Ako ostavite prazno, automatski prepoznaje kategorije pića po imenu</p>
                 <button class="btn" style="background:#FF9800" onclick="DB.settings.nonKitchenCategories=document.getElementById('nonKitchenCats').value;save();showAlert('✅ Sačuvano!')">💾 Sačuvaj</button>
+            </div>
+
+            <div class="card" style="margin-bottom:16px;border:2px solid #00BCD4">
+                <h3 style="color:#00BCD4;margin-bottom:12px">📹 Kamere (Hikvision)</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:12px">
+                    URL adrese za pristup kamerama. Konobari otvaraju <strong>lokalnu</strong> (radi samo na restoranskoj WiFi). Admin otvara <strong>daljinski</strong> (radi odakle god).
+                </p>
+
+                <label style="color:#FFD700;display:block;margin-bottom:6px;font-weight:bold">🏠 Lokalna URL (za konobare) — NVR ili Hik-Connect lokalno</label>
+                <input type="text" id="camerasLocalUrl" value="${(DB.settings && DB.settings.camerasLocalUrl) || ''}"
+                    placeholder="http://192.168.1.100 ili http://192.168.0.64"
+                    style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:13px;margin-bottom:4px">
+                <p style="color:#888;font-size:11px;margin-bottom:12px">💡 IP adresa NVR-a u lokalnoj mreži. Konobari moraju biti povezani na WiFi restorana.</p>
+
+                <label style="color:#FFD700;display:block;margin-bottom:6px;font-weight:bold">🌍 Daljinska URL (za admina) — Hik-Connect cloud</label>
+                <input type="text" id="camerasRemoteUrl" value="${(DB.settings && DB.settings.camerasRemoteUrl) || 'https://www.hik-connect.com'}"
+                    placeholder="https://www.hik-connect.com"
+                    style="width:100%;padding:10px;background:#16213E;border:1px solid #2A2A4A;border-radius:8px;color:#FFF;font-size:13px;margin-bottom:4px">
+                <p style="color:#888;font-size:11px;margin-bottom:12px">💡 Hik-Connect web portal — admin se prijavi svojim nalogom, browser pamti login.</p>
+
+                <button class="btn" style="background:#00BCD4" onclick="saveCameraSettings()">💾 Sačuvaj Kamere</button>
             </div>
             
             ${typeof renderGeoSettings === 'function' ? renderGeoSettings() : ''}
@@ -840,6 +861,70 @@ function saveSettings() {
     DB.settings.ip = document.getElementById('sip').value;
     save();
     showAlert('✅ Sačuvano!');
+}
+
+function saveCameraSettings() {
+    if (!DB.settings) DB.settings = {};
+    DB.settings.camerasLocalUrl = (document.getElementById('camerasLocalUrl').value || '').trim();
+    DB.settings.camerasRemoteUrl = (document.getElementById('camerasRemoteUrl').value || '').trim();
+    save();
+    showAlert('✅ Postavke kamera sačuvane!');
+}
+
+// Otvara kamere u novom tabu - bira URL na osnovu role:
+// - konobar/kuvar → uvek lokalni (NVR IP), radi samo na WiFi restorana
+// - admin sa OBA URL-a → pita ga šta hoće (lokalno brže, cloud odasvud)
+// - admin sa jednim URL-om → otvori taj jedan
+function openCameras() {
+    const settings = DB.settings || {};
+    const role = DB.currentUser && DB.currentUser.role;
+    const isAdmin = role === 'admin';
+    const localUrl = (settings.camerasLocalUrl || '').trim();
+    const remoteUrl = (settings.camerasRemoteUrl || '').trim();
+
+    function open(url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    if (!isAdmin) {
+        // Konobar/kuvar - samo lokalno
+        if (!localUrl) {
+            showAlert('⚠️ Lokalna adresa kamera nije podešena.\n\nPitaj admina da podesi adresu NVR-a u Postavkama → 📹 Kamere.');
+            return;
+        }
+        open(localUrl);
+        return;
+    }
+
+    // Admin - bira put
+    if (!localUrl && !remoteUrl) {
+        showAlert('⚠️ Nije podešen URL za kamere.\n\nIdi u Postavke → 📹 Kamere i unesi makar jednu adresu.');
+        return;
+    }
+    if (localUrl && !remoteUrl) { open(localUrl); return; }
+    if (!localUrl && remoteUrl) { open(remoteUrl); return; }
+
+    // Oba postoje - prikaži choice modal
+    const modal = document.createElement('div');
+    modal.className = 'modal show';
+    modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+    modal.innerHTML =
+        '<div style="background:#0F3460;padding:24px;border-radius:12px;max-width:420px;width:100%;border:2px solid #00BCD4">' +
+            '<h2 style="color:#00BCD4;margin-bottom:16px;text-align:center">📹 Kamere</h2>' +
+            '<p style="color:#B0B0B0;font-size:13px;margin-bottom:20px;text-align:center">Kako želiš da pristupiš?</p>' +
+            '<button class="btn" style="width:100%;margin-bottom:10px;background:#4CAF50" onclick="this.parentElement.parentElement.remove();window.open(' + JSON.stringify(localUrl) + ',\'_blank\',\'noopener,noreferrer\')">' +
+                '🏠 Lokalno (WiFi restorana, brže)' +
+            '</button>' +
+            '<button class="btn" style="width:100%;margin-bottom:10px;background:#2196F3" onclick="this.parentElement.parentElement.remove();window.open(' + JSON.stringify(remoteUrl) + ',\'_blank\',\'noopener,noreferrer\')">' +
+                '🌍 Hik-Connect Cloud (odasvud)' +
+            '</button>' +
+            '<button class="btn btn-secondary" style="width:100%" onclick="this.parentElement.parentElement.remove()">Otkaži</button>' +
+        '</div>';
+    document.body.appendChild(modal);
+}
+if (typeof window !== 'undefined') {
+    window.saveCameraSettings = saveCameraSettings;
+    window.openCameras = openCameras;
 }
 
 function clearWorkday() {
