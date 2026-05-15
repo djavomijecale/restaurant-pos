@@ -591,9 +591,25 @@ function renderHistoryDaily(allOrders, allSessions, ordersByDate, isWaiter) {
     var debtCash = debtOrders.filter(function(o) { return o.method === 'Cash'; }).reduce(function(s, o) { return s + o.tot; }, 0);
     var debtCard = debtOrders.filter(function(o) { return o.method !== 'Cash'; }).reduce(function(s, o) { return s + o.tot; }, 0);
     
-    var sortedSessions = daySessions.slice().sort(function(a, b) { return a.loginTime.localeCompare(b.loginTime); });
+    // ✅ BUG FIX (od 12.5 depozit 0): kuvar smene nemaju deposit polje i ne
+    // smeju da uđu u "prva smena dana" rachunicu. Bez ovog filtera, kad
+    // kuvar otvori smenu pre konobara, kuvar ima loginTime ranije od konobara,
+    // sortedSessions[0] postaje kuvar, .deposit je undefined → prikaže 0 din
+    // i depozit konobara "nestane" iz dnevnog izveštaja. Isti fix je već u
+    // report.js (commit 4b47dee) za današnji izveštaj — ovaj propust pokriva
+    // istorijske dnevne izveštaje.
+    var _isKuvarShift = function(s) {
+        if (!s) return false;
+        if (s.role === 'kuvar') return true;
+        var u = (DB.users || []).find(function(x) { return x.username === s.user; });
+        return !!(u && u.role === 'kuvar');
+    };
+    var konobarSessions = daySessions.filter(function(s) { return !_isKuvarShift(s); });
+    var sortedSessions = konobarSessions.slice().sort(function(a, b) { return a.loginTime.localeCompare(b.loginTime); });
     var deposit = sortedSessions.length > 0 ? (sortedSessions[0].deposit || 0) : 0;
-    var totalReductions = daySessions.reduce(function(s, ses) { return s + (ses.totalCashReductions || 0); }, 0);
+    // Smanjenja keša: takođe samo od konobarskih smena (kuvari ne uzimaju
+    // iz keša konobara, a u praksi nemaju ovo polje)
+    var totalReductions = konobarSessions.reduce(function(s, ses) { return s + (ses.totalCashReductions || 0); }, 0);
     var cashInRegister = deposit + totalCash + debtCash - totalReductions;
     
     var totalSalary = daySessions.reduce(function(s, ses) { return s + (ses.salary || 0); }, 0);
