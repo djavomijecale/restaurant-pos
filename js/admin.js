@@ -904,7 +904,9 @@ function openCameras() {
     if (localUrl && !remoteUrl) { open(localUrl); return; }
     if (!localUrl && remoteUrl) { open(remoteUrl); return; }
 
-    // Oba postoje - prikaži choice modal
+    // Oba postoje - prikaži choice modal (koristimo addEventListener da
+    // izbegnemo escape probleme sa URL-om u inline onclick - URL može da
+    // sadrži navodnike koji bi razbili HTML parsing)
     const modal = document.createElement('div');
     modal.className = 'modal show';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -912,15 +914,23 @@ function openCameras() {
         '<div style="background:#0F3460;padding:24px;border-radius:12px;max-width:420px;width:100%;border:2px solid #00BCD4">' +
             '<h2 style="color:#00BCD4;margin-bottom:16px;text-align:center">📹 Kamere</h2>' +
             '<p style="color:#B0B0B0;font-size:13px;margin-bottom:20px;text-align:center">Kako želiš da pristupiš?</p>' +
-            '<button class="btn" style="width:100%;margin-bottom:10px;background:#4CAF50" onclick="this.parentElement.parentElement.remove();window.open(' + JSON.stringify(localUrl) + ',\'_blank\',\'noopener,noreferrer\')">' +
-                '🏠 Lokalno (WiFi restorana, brže)' +
-            '</button>' +
-            '<button class="btn" style="width:100%;margin-bottom:10px;background:#2196F3" onclick="this.parentElement.parentElement.remove();window.open(' + JSON.stringify(remoteUrl) + ',\'_blank\',\'noopener,noreferrer\')">' +
-                '🌍 Hik-Connect Cloud (odasvud)' +
-            '</button>' +
-            '<button class="btn btn-secondary" style="width:100%" onclick="this.parentElement.parentElement.remove()">Otkaži</button>' +
+            '<button class="btn camBtn" data-which="local" style="width:100%;margin-bottom:10px;background:#4CAF50">🏠 Lokalno (WiFi restorana, brže)</button>' +
+            '<button class="btn camBtn" data-which="remote" style="width:100%;margin-bottom:10px;background:#2196F3">🌍 Hik-Connect Cloud (odasvud)</button>' +
+            '<button class="btn btn-secondary camBtn" data-which="cancel" style="width:100%">Otkaži</button>' +
         '</div>';
     document.body.appendChild(modal);
+    modal.querySelectorAll('.camBtn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const which = btn.getAttribute('data-which');
+            modal.remove();
+            if (which === 'local') open(localUrl);
+            else if (which === 'remote') open(remoteUrl);
+        });
+    });
+    // Klik van modala = zatvori
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) modal.remove();
+    });
 }
 if (typeof window !== 'undefined') {
     window.saveCameraSettings = saveCameraSettings;
