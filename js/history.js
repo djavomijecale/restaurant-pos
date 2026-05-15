@@ -163,6 +163,7 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
     let foodRev = 0, drinkRev = 0, otherRev = 0;
     let foodQty = 0, drinkQty = 0, otherQty = 0;
     const catBreakdown = {}; // {cat: {rev, qty}}
+    const itemStats = {}; // {key: {name, cat, qty, rev}} - za top 10 najprodavanijih
     orders.forEach(function(o) {
         if (!o || !o.items || !Array.isArray(o.items)) return;
         // Proporcionalno raspoređivanje popusta po stavkama
@@ -188,12 +189,22 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
                 foodRev += netRev;
                 foodQty += q;
             }
+            // Agregat po artiklu (po ID-u, fallback na ime) - za top 10
+            const itemKey = item.id != null ? String(item.id) : ('name:' + (item.name || '?'));
+            if (!itemStats[itemKey]) {
+                itemStats[itemKey] = { name: item.name || '?', cat: cat, qty: 0, rev: 0 };
+            }
+            itemStats[itemKey].qty += q;
+            itemStats[itemKey].rev += netRev;
         });
     });
     const totalCategorizedRev = foodRev + drinkRev + otherRev;
     const foodPct = totalCategorizedRev > 0 ? (foodRev / totalCategorizedRev * 100) : 0;
     const drinkPct = totalCategorizedRev > 0 ? (drinkRev / totalCategorizedRev * 100) : 0;
     const otherPct = totalCategorizedRev > 0 ? (otherRev / totalCategorizedRev * 100) : 0;
+    // Top 10 najprodavanijih (po količini)
+    const topItems = Object.values(itemStats).sort(function(a, b) { return b.qty - a.qty; }).slice(0, 10);
+    const maxTopQty = topItems.length > 0 ? topItems[0].qty : 0;
 
     let h = `
         <!-- Summary Stats -->
@@ -320,6 +331,45 @@ function renderHistorySummary(orders, sessions, ordersByDate, ordersByUser, tota
                     }).join('')}
                 </div>
             </details>
+            `}
+        </div>
+
+        <!-- Top 10 Najprodavanijih Artikala -->
+        <div style="background:#0F3460;padding:20px;border-radius:12px;margin-bottom:20px">
+            <h3 style="color:#E94560;margin-bottom:8px">🏆 Top 10 Najprodavanijih Artikala</h3>
+            <div style="color:#B0B0B0;font-size:12px;margin-bottom:16px">Po količini prodatih komada za izabrani period</div>
+            ${topItems.length === 0 ? `
+                <div style="text-align:center;color:#888;padding:20px">Nema podataka za izabrani period</div>
+            ` : `
+            <div>
+                ${topItems.map(function(item, idx) {
+                    const isDrink = _isDrinkCat(item.cat);
+                    const accent = isDrink ? '#2196F3' : (item.cat === 'Neodređeno' ? '#888' : '#FF9800');
+                    const icon = isDrink ? '🥤' : (item.cat === 'Neodređeno' ? '❓' : '🍕');
+                    const badge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1) + '.';
+                    const barPct = maxTopQty > 0 ? (item.qty / maxTopQty * 100) : 0;
+                    const avgPrice = item.qty > 0 ? (item.rev / item.qty) : 0;
+                    return `<div style="background:#16213E;padding:12px;border-radius:8px;margin-bottom:8px">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+                            <div style="display:flex;align-items:center;gap:10px;min-width:180px;flex:2">
+                                <span style="font-size:20px;min-width:30px;text-align:center">${badge}</span>
+                                <span style="font-size:20px">${icon}</span>
+                                <div>
+                                    <div style="color:#FFD700;font-weight:bold">${item.name}</div>
+                                    <div style="color:${accent};font-size:11px">${item.cat}</div>
+                                </div>
+                            </div>
+                            <div style="text-align:right;min-width:140px;flex:1">
+                                <div style="color:#4CAF50;font-size:18px;font-weight:bold">${item.qty} kom.</div>
+                                <div style="color:#B0B0B0;font-size:11px">${item.rev.toFixed(0)} din. · ⌀ ${avgPrice.toFixed(0)} din.</div>
+                            </div>
+                        </div>
+                        <div style="height:6px;background:#0F3460;border-radius:3px;overflow:hidden;margin-top:8px">
+                            <div style="width:${barPct}%;height:100%;background:linear-gradient(90deg, ${accent}, #FFD700)"></div>
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>
             `}
         </div>
 
