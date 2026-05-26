@@ -766,6 +766,92 @@ function renderSettings(c) {
 
                 <button class="btn" style="background:#00BCD4" onclick="saveCameraSettings()">💾 Sačuvaj Kamere</button>
             </div>
+
+            <div class="card" style="margin-bottom:16px;border:2px solid #FFD700">
+                <h3 style="color:#FFD700;margin-bottom:12px">🎁 Bonusi - Konobari i Kuvari</h3>
+                <p style="color:#888;font-size:13px;margin-bottom:16px">
+                    Pragovi prihoda za bonuse konobara po smeni, i broj jela za bonus kuvara. Promene se primenjuju na <strong>buduće</strong> zatvaranje smena.
+                </p>
+
+                <h4 style="color:#4CAF50;margin:12px 0 8px 0">👨‍💼 Konobari — Prva smena (8h-14h)</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">Prag 1 (manji bonus) — prihod od</label>
+                        <input type="number" id="waiterBonusFirst1Threshold" min="0" step="1000"
+                            value="${(DB.settings && DB.settings.waiterBonusFirst1Threshold != null) ? DB.settings.waiterBonusFirst1Threshold : 20000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">→ Bonus iznos (din)</label>
+                        <input type="number" id="waiterBonusFirst1Amount" min="0" step="100"
+                            value="${(DB.settings && DB.settings.waiterBonusFirst1Amount != null) ? DB.settings.waiterBonusFirst1Amount : 1000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">Prag 2 (veći bonus) — prihod od</label>
+                        <input type="number" id="waiterBonusFirst2Threshold" min="0" step="1000"
+                            value="${(DB.settings && DB.settings.waiterBonusFirst2Threshold != null) ? DB.settings.waiterBonusFirst2Threshold : 40000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">→ Bonus iznos (din)</label>
+                        <input type="number" id="waiterBonusFirst2Amount" min="0" step="100"
+                            value="${(DB.settings && DB.settings.waiterBonusFirst2Amount != null) ? DB.settings.waiterBonusFirst2Amount : 2000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                </div>
+
+                <h4 style="color:#4CAF50;margin:12px 0 8px 0">👨‍💼 Konobari — Druga smena (14h-22h)</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">Prag 1 (manji bonus) — prihod od</label>
+                        <input type="number" id="waiterBonusSecond1Threshold" min="0" step="1000"
+                            value="${(DB.settings && DB.settings.waiterBonusSecond1Threshold != null) ? DB.settings.waiterBonusSecond1Threshold : 40000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">→ Bonus iznos (din)</label>
+                        <input type="number" id="waiterBonusSecond1Amount" min="0" step="100"
+                            value="${(DB.settings && DB.settings.waiterBonusSecond1Amount != null) ? DB.settings.waiterBonusSecond1Amount : 1000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">Prag 2 (veći bonus) — prihod od</label>
+                        <input type="number" id="waiterBonusSecond2Threshold" min="0" step="1000"
+                            value="${(DB.settings && DB.settings.waiterBonusSecond2Threshold != null) ? DB.settings.waiterBonusSecond2Threshold : 60000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">→ Bonus iznos (din)</label>
+                        <input type="number" id="waiterBonusSecond2Amount" min="0" step="100"
+                            value="${(DB.settings && DB.settings.waiterBonusSecond2Amount != null) ? DB.settings.waiterBonusSecond2Amount : 2000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                </div>
+
+                <h4 style="color:#FF9800;margin:12px 0 8px 0">👨‍🍳 Kuvari — po broju jela</h4>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">Broj jela za 1 bonus</label>
+                        <input type="number" id="kuvarBonusDishesPerBonus" min="1" step="1"
+                            value="${(DB.settings && DB.settings.kuvarBonusDishesPerBonus != null) ? DB.settings.kuvarBonusDishesPerBonus : 30}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                    <div>
+                        <label style="color:#B0B0B0;font-size:11px;display:block;margin-bottom:4px">→ Iznos bonusa (din)</label>
+                        <input type="number" id="kuvarBonusAmount" min="0" step="100"
+                            value="${(DB.settings && DB.settings.kuvarBonusAmount != null) ? DB.settings.kuvarBonusAmount : 1000}"
+                            style="width:100%;padding:8px;background:#16213E;border:1px solid #2A2A4A;border-radius:6px;color:#FFF">
+                    </div>
+                </div>
+
+                <button class="btn" style="background:#FFD700;color:#1A1A2E;font-weight:bold" onclick="saveBonusSettings()">💾 Sačuvaj Bonuse</button>
+                <button class="btn btn-secondary" style="margin-left:8px" onclick="resetBonusSettings()">↺ Vrati Default</button>
+            </div>
             
             ${typeof renderGeoSettings === 'function' ? renderGeoSettings() : ''}
             
@@ -869,6 +955,68 @@ function saveCameraSettings() {
     DB.settings.camerasRemoteUrl = (document.getElementById('camerasRemoteUrl').value || '').trim();
     save();
     showAlert('✅ Postavke kamera sačuvane!');
+}
+
+// Postavke za bonuse - konobari + kuvari. Pragovi i iznosi konfigurabilni.
+// Skladišti se u DB.settings.* i čita preko getBonusSettings() iz workday.js.
+function saveBonusSettings() {
+    if (!DB.settings) DB.settings = {};
+    function readNum(id, fallback) {
+        const v = parseFloat(document.getElementById(id).value);
+        return (isNaN(v) || v < 0) ? fallback : v;
+    }
+    const cfg = {
+        waiterBonusFirst1Threshold:  readNum('waiterBonusFirst1Threshold', 20000),
+        waiterBonusFirst1Amount:     readNum('waiterBonusFirst1Amount', 1000),
+        waiterBonusFirst2Threshold:  readNum('waiterBonusFirst2Threshold', 40000),
+        waiterBonusFirst2Amount:     readNum('waiterBonusFirst2Amount', 2000),
+        waiterBonusSecond1Threshold: readNum('waiterBonusSecond1Threshold', 40000),
+        waiterBonusSecond1Amount:    readNum('waiterBonusSecond1Amount', 1000),
+        waiterBonusSecond2Threshold: readNum('waiterBonusSecond2Threshold', 60000),
+        waiterBonusSecond2Amount:    readNum('waiterBonusSecond2Amount', 2000),
+        kuvarBonusDishesPerBonus:    readNum('kuvarBonusDishesPerBonus', 30),
+        kuvarBonusAmount:            readNum('kuvarBonusAmount', 1000)
+    };
+    // Validacija: prag 2 mora biti > prag 1 (inače veći bonus neće moći da se dostigne)
+    if (cfg.waiterBonusFirst2Threshold <= cfg.waiterBonusFirst1Threshold) {
+        showAlert('⚠️ Prva smena: Prag 2 mora biti VEĆI od Prag 1.');
+        return;
+    }
+    if (cfg.waiterBonusSecond2Threshold <= cfg.waiterBonusSecond1Threshold) {
+        showAlert('⚠️ Druga smena: Prag 2 mora biti VEĆI od Prag 1.');
+        return;
+    }
+    Object.assign(DB.settings, cfg);
+    save();
+    showAlert('✅ Postavke bonusa sačuvane!\n\nPrimenjuju se na buduće zatvaranje smena.');
+}
+
+function resetBonusSettings() {
+    showConfirm('Vrati Default Vrednosti?',
+        'Vraćam sve pragove i iznose bonusa na originalne vrednosti.<br><br>' +
+        '<b>Konobari prva smena:</b> 20,000→1000 / 40,000→2000<br>' +
+        '<b>Konobari druga smena:</b> 40,000→1000 / 60,000→2000<br>' +
+        '<b>Kuvari:</b> 30 jela → 1000 din',
+        function(confirmed) {
+            if (!confirmed) return;
+            if (!DB.settings) DB.settings = {};
+            const defaults = {
+                waiterBonusFirst1Threshold: 20000, waiterBonusFirst1Amount: 1000,
+                waiterBonusFirst2Threshold: 40000, waiterBonusFirst2Amount: 2000,
+                waiterBonusSecond1Threshold: 40000, waiterBonusSecond1Amount: 1000,
+                waiterBonusSecond2Threshold: 60000, waiterBonusSecond2Amount: 2000,
+                kuvarBonusDishesPerBonus: 30, kuvarBonusAmount: 1000
+            };
+            Object.assign(DB.settings, defaults);
+            save();
+            // Re-render postavki da se odmah vidi novo stanje
+            if (typeof render === 'function') render();
+            showAlert('✅ Vraćeno na default vrednosti.');
+        });
+}
+if (typeof window !== 'undefined') {
+    window.saveBonusSettings = saveBonusSettings;
+    window.resetBonusSettings = resetBonusSettings;
 }
 
 // Otvara kamere u novom tabu - bira URL na osnovu role:

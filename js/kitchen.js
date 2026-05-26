@@ -71,8 +71,11 @@ function renderKitchen(c) {
         .filter(ko => (ko.status === 'completed' || ko.status === 'ready') && (!kuvarLoginTime || (ko.orderedAt && ko.orderedAt >= kuvarLoginTime)))
         .reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
     const totalDishesForBonus = kuvarBonusData.total + completedDishesInShift;
-    const bonusCount = Math.floor(totalDishesForBonus / 30);
-    const dishesToNextBonus = 30 - (totalDishesForBonus % 30);
+    // Konfigurisano kroz Postavke → Bonusi (default 30 jela po bonusu)
+    const _bonusCfg = (typeof getBonusSettings === 'function') ? getBonusSettings() : { kuvarDishesPerBonus: 30, kuvarBonusAmount: 1000 };
+    const _dishesPerBonus = _bonusCfg.kuvarDishesPerBonus || 30;
+    const bonusCount = Math.floor(totalDishesForBonus / _dishesPerBonus);
+    const dishesToNextBonus = _dishesPerBonus - (totalDishesForBonus % _dishesPerBonus);
 
     let h = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
         <h2>🍳 Kuhinja</h2>
@@ -86,7 +89,7 @@ function renderKitchen(c) {
 
     // Bonus prikaz za kuvara
     if (isKuvar) {
-        const bonusProgress = ((totalDishesForBonus % 30) / 30 * 100).toFixed(0);
+        const bonusProgress = ((totalDishesForBonus % _dishesPerBonus) / _dishesPerBonus * 100).toFixed(0);
         h += `<div style="background:linear-gradient(135deg,#0F3460,#16213E);padding:16px;border-radius:12px;margin-bottom:16px;border:2px solid #FFD700">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <span style="color:#FFD700;font-weight:bold">🏆 Bonus: ${bonusCount}x</span>
@@ -554,9 +557,12 @@ function closeKuvarShift() {
         DB.kuvarBonus[username].total += totalDishes;
         const newTotal = DB.kuvarBonus[username].total;
 
-        // Proveri da li je dostignut novi bonus
-        const prevBonuses = Math.floor(prevTotal / 30);
-        const newBonuses = Math.floor(newTotal / 30);
+        // Proveri da li je dostignut novi bonus (prag konfigurabilan u Postavkama)
+        const _closeBonusCfg = (typeof getBonusSettings === 'function') ? getBonusSettings() : { kuvarDishesPerBonus: 30, kuvarBonusAmount: 1000 };
+        const _closeDishesPerBonus = _closeBonusCfg.kuvarDishesPerBonus || 30;
+        const _closeBonusAmount = _closeBonusCfg.kuvarBonusAmount || 1000;
+        const prevBonuses = Math.floor(prevTotal / _closeDishesPerBonus);
+        const newBonuses = Math.floor(newTotal / _closeDishesPerBonus);
         const earnedBonuses = newBonuses - prevBonuses;
 
         // Obrisi completed I ready narudzbine (kuvar ih ne treba vise, admin ih vidi u istoriji narudzbina)
@@ -577,8 +583,8 @@ function closeKuvarShift() {
         const hoursWorked = duration / 60;
         const salary = Math.floor(hoursWorked * hourlyRate);
 
-        // Bonus za kuvare: po jelu (svaka 30 jela = 1 bonus od 1000 din)
-        const bonusAmount = earnedBonuses > 0 ? earnedBonuses * 1000 : 0;
+        // Bonus za kuvare: konfigurabilan kroz Postavke → Bonusi
+        const bonusAmount = earnedBonuses > 0 ? earnedBonuses * _closeBonusAmount : 0;
 
         // Sacuvaj u istoriju
         if (!DB.workdayHistory) DB.workdayHistory = [];

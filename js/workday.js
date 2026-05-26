@@ -3,6 +3,35 @@
 // ============================================
 
 
+// ============================================
+// BONUS POSTAVKE (admin može da menja u Postavke → Bonusi)
+// Defaults se primenjuju ako admin nije podesio (backward-compatible).
+// ============================================
+function getBonusSettings() {
+    const s = (DB && DB.settings) || {};
+    function num(v, fallback) {
+        const n = parseFloat(v);
+        return isNaN(n) || n < 0 ? fallback : n;
+    }
+    return {
+        // Konobari - prva smena (8-14h)
+        firstShiftTier1Threshold: num(s.waiterBonusFirst1Threshold, 20000),
+        firstShiftTier1Amount:    num(s.waiterBonusFirst1Amount,    1000),
+        firstShiftTier2Threshold: num(s.waiterBonusFirst2Threshold, 40000),
+        firstShiftTier2Amount:    num(s.waiterBonusFirst2Amount,    2000),
+        // Konobari - druga smena (14-22h)
+        secondShiftTier1Threshold: num(s.waiterBonusSecond1Threshold, 40000),
+        secondShiftTier1Amount:    num(s.waiterBonusSecond1Amount,    1000),
+        secondShiftTier2Threshold: num(s.waiterBonusSecond2Threshold, 60000),
+        secondShiftTier2Amount:    num(s.waiterBonusSecond2Amount,    2000),
+        // Kuvari
+        kuvarDishesPerBonus: num(s.kuvarBonusDishesPerBonus, 30),
+        kuvarBonusAmount:    num(s.kuvarBonusAmount, 1000)
+    };
+}
+if (typeof window !== 'undefined') window.getBonusSettings = getBonusSettings;
+
+
 function renderWorkday(c) {
     const username = DB.currentUser.username;
     const myWorkday = DB.workdays ? DB.workdays[username] : null;
@@ -800,30 +829,33 @@ async function _doCloseWorkday() {
     let bonusEarned = false;
     let bonusAmount = 0;
     let bonusReason = '';
-    
-    // PRVA SMENA: 40,000+ → 2,000 din bonus, 20,000+ → 1,000 din bonus
+
+    // Bonusi se čitaju iz postavki (admin može da menja u Postavke → Bonusi)
+    const bonusCfg = getBonusSettings();
+
+    // PRVA SMENA: dve tier-a (manji prag → manji bonus, veći prag → veći bonus)
     if (isFirstShift) {
-        if (totalRevenue >= 40000) {
+        if (totalRevenue >= bonusCfg.firstShiftTier2Threshold) {
             bonusEarned = true;
-            bonusAmount = 2000;
-            bonusReason = 'Prva smena - prihod ≥ 40,000 din.';
-        } else if (totalRevenue >= 20000) {
+            bonusAmount = bonusCfg.firstShiftTier2Amount;
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier2Threshold.toLocaleString() + ' din.';
+        } else if (totalRevenue >= bonusCfg.firstShiftTier1Threshold) {
             bonusEarned = true;
-            bonusAmount = 1000;
-            bonusReason = 'Prva smena - prihod ≥ 20,000 din.';
+            bonusAmount = bonusCfg.firstShiftTier1Amount;
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier1Threshold.toLocaleString() + ' din.';
         }
     }
-    
+
     // DRUGA SMENA (SVAKI DAN):
     if (isSecondShift) {
-        if (totalRevenue >= 60000) {
+        if (totalRevenue >= bonusCfg.secondShiftTier2Threshold) {
             bonusEarned = true;
-            bonusAmount = 2000;
-            bonusReason = 'Druga smena - prihod ≥ 60,000 din.';
-        } else if (totalRevenue >= 40000) {
+            bonusAmount = bonusCfg.secondShiftTier2Amount;
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier2Threshold.toLocaleString() + ' din.';
+        } else if (totalRevenue >= bonusCfg.secondShiftTier1Threshold) {
             bonusEarned = true;
-            bonusAmount = 1000;
-            bonusReason = 'Druga smena - prihod ≥ 40,000 din.';
+            bonusAmount = bonusCfg.secondShiftTier1Amount;
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier1Threshold.toLocaleString() + ' din.';
         }
     }
     
@@ -1036,25 +1068,34 @@ async function autoCloseWorkday(username, myWorkday) {
     
     const isFirstShift = startHour >= 8 && startHour < 14;
     const isSecondShift = startHour >= 14 && startHour < 22;
-    
+
     let bonusEarned = false;
     let bonusAmount = 0;
     let bonusReason = '';
-    
-    if (isFirstShift && totalRevenue >= 20000) {
-        bonusEarned = true;
-        bonusAmount = 1000;
-        bonusReason = 'Prva smena - prihod ≥ 20,000 din.';
+
+    // Bonusi iz postavki (admin može da menja u Postavke → Bonusi)
+    const bonusCfg = getBonusSettings();
+
+    if (isFirstShift) {
+        if (totalRevenue >= bonusCfg.firstShiftTier2Threshold) {
+            bonusEarned = true;
+            bonusAmount = bonusCfg.firstShiftTier2Amount;
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier2Threshold.toLocaleString() + ' din.';
+        } else if (totalRevenue >= bonusCfg.firstShiftTier1Threshold) {
+            bonusEarned = true;
+            bonusAmount = bonusCfg.firstShiftTier1Amount;
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier1Threshold.toLocaleString() + ' din.';
+        }
     }
     if (isSecondShift) {
-        if (totalRevenue >= 60000) {
+        if (totalRevenue >= bonusCfg.secondShiftTier2Threshold) {
             bonusEarned = true;
-            bonusAmount = 2000;
-            bonusReason = 'Druga smena - prihod ≥ 60,000 din.';
-        } else if (totalRevenue >= 40000) {
+            bonusAmount = bonusCfg.secondShiftTier2Amount;
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier2Threshold.toLocaleString() + ' din.';
+        } else if (totalRevenue >= bonusCfg.secondShiftTier1Threshold) {
             bonusEarned = true;
-            bonusAmount = 1000;
-            bonusReason = 'Druga smena - prihod ≥ 40,000 din.';
+            bonusAmount = bonusCfg.secondShiftTier1Amount;
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier1Threshold.toLocaleString() + ' din.';
         }
     }
     
