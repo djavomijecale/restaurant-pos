@@ -103,6 +103,92 @@ function _isNoActivityShift(shift) {
     return orderCount === 0 && revenue === 0 && cashReductions === 0;
 }
 
+// Helper: stvarno stanje keša u kasi na kraju datog poslovnog dana.
+// Računa istovetno kao "Stanje Kase" na dnevnom izveštaju:
+//   = depozit NAJRANIJE smene tog poslovnog dana
+//   + sve keš prodaje tog dana (od svih konobara)
+//   + svi vraćeni dugovi u kešu tog dana
+//   − sva smanjenja keša (od svih konobara) tog dana
+//
+// Zašto ovo treba umesto shift.finalCash:
+// Kada VIŠE konobara radi u jednom danu i SVI dobiju isti početni depozit
+// (npr. Stefan i Nevena oba 16011), njihov individualni finalCash =
+// deposit + njihov_keš − njihova_smanjenja. To DUPLIRA depozit u svakoj
+// individualnoj smeni, ne odražava stvarnu kasu. Realna kasa = jedan
+// početni depozit + zbir keš efekata kroz CEO dan, što je ova funkcija.
+function _computeBusinessDayRegisterCash(referenceDateStr) {
+    if (!referenceDateStr) return null;
+    const refDate = new Date(referenceDateStr);
+    if (isNaN(refDate.getTime())) return null;
+    const cutoff = typeof DAILY_CUTOFF_HOUR !== 'undefined' ? DAILY_CUTOFF_HOUR : 7;
+
+    // Granice poslovnog dana koji obuhvata referenceDate
+    const bdStart = new Date(refDate);
+    bdStart.setHours(cutoff, 0, 0, 0);
+    if (refDate < bdStart) bdStart.setDate(bdStart.getDate() - 1);
+    const bdEnd = new Date(bdStart);
+    bdEnd.setDate(bdEnd.getDate() + 1);
+    const bdStartISO = bdStart.toISOString();
+    const bdEndISO = bdEnd.toISOString();
+
+    function isKuvarRow(s) {
+        if (!s) return false;
+        if (s.role === 'kuvar') return true;
+        const u = (DB.users || []).find(x => x.username === s.user);
+        return !!(u && u.role === 'kuvar');
+    }
+
+    // Zatvorene smene u tom poslovnom danu (ne-kuvarske)
+    const closedShifts = (DB.workdayHistory || []).filter(s =>
+        s && s.loginTime && s.loginTime >= bdStartISO && s.loginTime < bdEndISO && !isKuvarRow(s)
+    );
+
+    // Aktivne smene u tom poslovnom danu (ne-kuvarske)
+    const activeShifts = Object.entries(DB.workdays || {})
+        .filter(([user, wd]) => wd && wd.startTime && wd.startTime >= bdStartISO && wd.startTime < bdEndISO)
+        .map(([user, wd]) => Object.assign({ user, loginTime: wd.startTime }, wd))
+        .filter(s => !isKuvarRow(s));
+
+    const allShifts = [].concat(closedShifts, activeShifts);
+    if (allShifts.length === 0) return null;
+
+    // Najranija smena = početak lanca - njen depozit je starting cash
+    allShifts.sort((a, b) => (a.loginTime || '').localeCompare(b.loginTime || ''));
+    const firstShift = allShifts[0];
+    const firstDeposit = Number(firstShift.deposit) || 0;
+
+    // Sve narudžbine tog poslovnog dana (svi konobari)
+    const dayOrders = (DB.orders || []).filter(o =>
+        o && o.time && o.time >= bdStartISO && o.time < bdEndISO
+    );
+    const cashSales = dayOrders.filter(o => !o.isDebtPayment && o.method === 'Cash')
+        .reduce((s, o) => s + (o.tot || 0), 0);
+    const debtCash = dayOrders.filter(o => o.isDebtPayment && o.method === 'Cash')
+        .reduce((s, o) => s + (o.tot || 0), 0);
+
+    // Sva smanjenja keša svih smena tog dana
+    let totalReductions = 0;
+    closedShifts.forEach(s => {
+        totalReductions += Number(s.totalCashReductions) || 0;
+    });
+    activeShifts.forEach(s => {
+        (s.cashReductions || []).forEach(r => { totalReductions += Number(r.amount) || 0; });
+    });
+
+    const registerCash = firstDeposit + cashSales + debtCash - totalReductions;
+    return {
+        registerCash,
+        firstDeposit,
+        cashSales,
+        debtCash,
+        totalReductions,
+        firstShiftUser: firstShift.user,
+        shiftsCount: allShifts.length,
+        businessDayStart: bdStartISO,
+        businessDayEnd: bdEndISO
+    };
+}
+
 // Helper: najskorija ZATVORENA smena konobara sa validnim finalCash.
 // Preskače: kuvare, orphan prazne smene, smene bez validnog finalCash polja.
 // Vraća null ako ne postoji nijedna validna smena u istoriji.
@@ -289,17 +375,40 @@ async function openWorkday() {
         console.log('💰 Nasleđen depozit iz AKTIVNE smene ' + w.user + ': ' + inheritBreakdown);
     }
 
-    // Provera 2: Najskorija ZATVORENA smena konobara (iz cele istorije).
-    // Koristimo prethodno izračunatu lastValidClose - _findLastValidClosedShift
-    // preskače kuvare i passthrough smene (0 narudžbina/prometa/smanjenja).
+    // Provera 2: Najskorija ZATVORENA smena → izračunaj kraj njenog poslovnog
+    // dana po istoj formuli kao "Stanje Kase" na dnevnom izveštaju.
+    //
+    // BUG FIX (Anja preuzela 30886 umesto 26196):
+    // Ranije smo direktno koristili lastValidClose.finalCash. Problem: kad
+    // Stefan i Nevena oba rade isti dan sa istim depozitom 16011, njihovi
+    // pojedinačni finalCash duplo broje 16011 (Nevena.finalCash = 16011+kes-red,
+    // Stefan.finalCash = 16011+kes-red, ali stvarna kasa ima jedan depozit).
+    // Za multi-waiter dane to daje pogrešan iznos koji se onda propagira napred.
+    //
+    // Sada: računamo stanje kase za POSLOVNI DAN (svi konobari zajedno) =
+    // prvi depozit + svi keš + svi dug-keš − sva smanjenja. To je isti broj
+    // koji admin već vidi u dnevnom izveštaju, što olakšava reconciliation.
     if (inheritDeposit === null && lastValidClose) {
-        inheritDeposit = Math.max(0, lastValidClose.finalCash);
-        inheritFrom = lastValidClose.user;
-        inheritReason = 'zatvorena smena';
-        inheritBreakdown = 'finalCash = ' + inheritDeposit + ' (zatvoreno ' +
-            new Date(lastValidClose.logoutTime).toLocaleString('sr-RS') + ')';
-        console.log('💰 Nasleđen depozit iz ZATVORENE smene ' + lastValidClose.user +
-            ': ' + inheritBreakdown);
+        const bdCalc = _computeBusinessDayRegisterCash(lastValidClose.logoutTime);
+        if (bdCalc && typeof bdCalc.registerCash === 'number') {
+            inheritDeposit = Math.max(0, bdCalc.registerCash);
+            inheritFrom = lastValidClose.user;
+            inheritReason = 'poslovni dan ' + new Date(bdCalc.businessDayStart).toLocaleDateString('sr-RS') +
+                ' (kraj dana, ' + bdCalc.shiftsCount + ' smena)';
+            inheritBreakdown = 'depozit ' + bdCalc.firstDeposit + ' + keš ' + bdCalc.cashSales +
+                ' + dug-keš ' + bdCalc.debtCash + ' − smanjenja ' + bdCalc.totalReductions +
+                ' = ' + inheritDeposit + ' din (stanje kase ceo dan, ne pojedinačno po smeni)';
+            console.log('💰 Nasleđen depozit (POSLOVNI DAN ' + new Date(bdCalc.businessDayStart).toLocaleDateString('sr-RS') + '): ' + inheritBreakdown);
+        } else {
+            // Fallback ako računica ne uspe - koristi individualni finalCash
+            inheritDeposit = Math.max(0, lastValidClose.finalCash);
+            inheritFrom = lastValidClose.user;
+            inheritReason = 'individualna zatvorena smena (fallback)';
+            inheritBreakdown = 'finalCash = ' + inheritDeposit + ' (zatvoreno ' +
+                new Date(lastValidClose.logoutTime).toLocaleString('sr-RS') + ')';
+            console.log('💰 Nasleđen depozit iz ZATVORENE smene ' + lastValidClose.user +
+                ': ' + inheritBreakdown);
+        }
     }
 
     // ✅ NIJE PRVA SMENA → automatski preuzmi, bez pitanja
