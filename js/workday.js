@@ -163,88 +163,91 @@ async function openWorkday() {
     }
 
     // Pronađi depozit za nasleđivanje:
-    // PRIORITET: Aktivna smena drugog konobara (živi keš - najtačniji trenutak)
-    // FALLBACK 1: Najskorija zatvorena smena sa validnim finalCash (može i juče)
-    // FALLBACK 2: Ručni unos ako baš ne postoji istorija
+    // PRIORITET: Aktivna smena drugog konobara — ALI samo ako je novija od
+    //   poslednjeg validnog close-a (inače je close noviji, validniji podatak).
+    // FALLBACK 1: Najskorija zatvorena smena sa validnim finalCash (može i juče).
+    // FALLBACK 2: Ručni unos ako baš ne postoji istorija.
     let inheritDeposit = null;
     let inheritFrom = '';
+    let inheritReason = '';
+    let inheritBreakdown = null;
 
-    // Provera 1: Aktivna smena DRUGOG konobara (živi keš u kasi)
-    // - najskoriji tačan snimak jer smo tu računamo deposit + cash + debtCash - reductions
-    const otherActive = Object.entries(DB.workdays || {})
-        .find(([user, wd]) => {
-            if (user === username) return false;
-            if (!wd || !wd.startTime) return false;
-            // Preskoči kuvare - oni nemaju veze sa depozitom
-            if (wd.role === 'kuvar') return false;
-            const userObj = (DB.users || []).find(u => u.username === user);
-            if (userObj && userObj.role === 'kuvar') return false;
-            return true;
-        });
+    // Unapred nađi referencu za vreme: poslednji validan close.
+    // Ova vrednost se koristi u Proveri 1 da odlučimo da li je aktivna smena
+    // "novija" od istorije ili "starija" (ghost).
+    const lastValidClose = _findLastValidClosedShift();
+    const lastCloseLogoutDate = lastValidClose ? new Date(lastValidClose.logoutTime) : null;
 
-    if (otherActive) {
-        // ✅ BUG FIX (8070 vs 3920): Ne koristi .deposit polje aktivne smene
-        // - to je POČETNI depozit tog konobara, ne trenutni keš u kasi.
-        // Izračunaj stvarni keš isto kao i _doCloseWorkday:
-        //   finalCash = deposit + cashSales + debtCash - cashReductions
-        const otherUser = otherActive[0];
-        const otherWd = otherActive[1];
-        const otherStart = otherWd.startTime;
-        const otherOrders = (DB.orders || []).filter(o =>
-            o && o.createdBy === otherUser && o.time >= otherStart
+    // Provera 1: Aktivne smene DRUGIH konobara
+    // - Iteriramo SVE aktivne (ne samo prvu) i biramo najboljeg kandidata.
+    // - Pravila preskakanja:
+    //   (a) 0 narudžbina + 0 smanjenja → nema cash aktivnosti, preskačem
+    //   (b) aktivna.startTime < poslednji_close.logoutTime → close je noviji,
+    //       preskačem aktivnu (jer joj je depozit nasleđen pre close-a, dakle
+    //       stale; close ima sveže info o trenutnom kešu).
+    // - Među preostalim kandidatima biram onaj sa NAJSKORIJIM startTime
+    //   (najsvežiji rad).
+    const activeCandidates = [];
+    Object.entries(DB.workdays || {}).forEach(([user, wd]) => {
+        if (user === username) return;
+        if (!wd || !wd.startTime) return;
+        if (wd.role === 'kuvar') return;
+        const userObj = (DB.users || []).find(u => u.username === user);
+        if (userObj && userObj.role === 'kuvar') return;
+
+        const startTime = wd.startTime;
+        const orders = (DB.orders || []).filter(o =>
+            o && o.createdBy === user && o.time >= startTime
         );
-        const otherCash = otherOrders
-            .filter(o => !o.isDebtPayment && o.method === 'Cash')
+        const cashSales = orders.filter(o => !o.isDebtPayment && o.method === 'Cash')
             .reduce((s, o) => s + (o.tot || 0), 0);
-        const otherDebtCash = otherOrders
-            .filter(o => o.isDebtPayment && o.method === 'Cash')
+        const debtCash = orders.filter(o => o.isDebtPayment && o.method === 'Cash')
             .reduce((s, o) => s + (o.tot || 0), 0);
-        const otherReductions = (otherWd.cashReductions || [])
+        const reductions = (wd.cashReductions || [])
             .reduce((s, r) => s + (r.amount || 0), 0);
-        const otherDeposit = otherWd.deposit || 0;
-        const otherLive = otherDeposit + otherCash + otherDebtCash - otherReductions;
+        const deposit = wd.deposit || 0;
+        const live = deposit + cashSales + debtCash - reductions;
+        const startDate = new Date(startTime);
+        const hasNoActivity = orders.length === 0 && reductions === 0;
+        const closeIsNewer = lastCloseLogoutDate && lastCloseLogoutDate > startDate;
 
-        // ✅ BUG FIX (Anja 16011 svaki dan): Preskoči aktivne smene BEZ cash
-        // aktivnosti, bez obzira na vrednost depozita. Razlog:
-        //  - deposit=0 + 0 aktivnosti = orphan/test sesija (raniji slučaj Vukašin)
-        //  - deposit>0 + 0 aktivnosti = ili (a) ghost smena koju je konobar
-        //    otvorio pa zaboravio da zatvori i depozit je stale, ili (b) sveža
-        //    smena upravo otvorena (deposit nasleđen iz validnog close-a).
-        //    U slučaju (a) treba istoriji da verujemo; u slučaju (b) istorija
-        //    daje ISTI broj kao i deposit (jer je odatle nasleđen), pa fall-through
-        //    daje identičan rezultat. Posebno bitno: self-heal kada je deposit
-        //    bio pogrešno nasleđen (kao Anja 16011) — sada se prekida petlja.
-        if (otherOrders.length === 0 && otherReductions === 0) {
-            console.log('⚠️ Aktivna smena ' + otherUser + ' nema cash aktivnost ' +
-                '(deposit=' + otherDeposit + ', 0 narudžbina, 0 smanjenja) - ' +
-                'preskačem i gledam istoriju');
+        const reasons = [];
+        if (hasNoActivity) reasons.push('0 narudžbina + 0 smanjenja');
+        if (closeIsNewer) reasons.push('poslednji close (' + lastValidClose.user + ' @ ' + lastCloseLogoutDate.toLocaleString('sr-RS') + ') noviji od start-a smene (' + startDate.toLocaleString('sr-RS') + ')');
+
+        if (reasons.length > 0) {
+            console.log('⏭️ Aktivna ' + user + ' preskočena: ' + reasons.join('; '));
         } else {
-            inheritDeposit = Math.max(0, otherLive);
-            inheritFrom = otherUser;
-            console.log('💰 Nasleđen depozit iz AKTIVNE smene ' + otherUser + ': ' +
-                'deposit=' + otherDeposit + ' + cash=' + otherCash +
-                ' + debtCash=' + otherDebtCash + ' - reductions=' + otherReductions +
-                ' = ' + inheritDeposit);
+            activeCandidates.push({
+                user, wd, startDate, orders, cashSales, debtCash, reductions, deposit, live
+            });
         }
+    });
+
+    if (activeCandidates.length > 0) {
+        // Pick najskorija startTime (najsvežiji rad)
+        activeCandidates.sort((a, b) => b.startDate - a.startDate);
+        const w = activeCandidates[0];
+        inheritDeposit = Math.max(0, w.live);
+        inheritFrom = w.user;
+        inheritReason = 'aktivna smena';
+        inheritBreakdown = 'deposit ' + w.deposit + ' + keš ' + w.cashSales +
+            ' + dugovi-keš ' + w.debtCash + ' − smanjenja ' + w.reductions +
+            ' = ' + inheritDeposit;
+        console.log('💰 Nasleđen depozit iz AKTIVNE smene ' + w.user + ': ' + inheritBreakdown);
     }
 
-    // Provera 2: Najskorija ZATVORENA smena konobara (iz cele istorije)
-    // ✅ BUG FIX (jutros, Vukašin dobio 0): Ranija verzija je tražila samo
-    // smene zatvorene u današnjem radnom danu (posle 7:00 ujutru). Ako je
-    // Stefan zatvorio sinoć u 23:00 (prethodni radni dan), ta smena je
-    // "nevidljiva" - pa fallback uzme bilo koju kasniju entry (npr. orphan
-    // auto-close sa finalCash=0) što daje ponuđen depozit 0.
-    // Sada: ignoriše datum, traži najskorija validan close (ne-kuvar,
-    // ne-prazna smena, ima finalCash).
-    if (inheritDeposit === null) {
-        const lastShift = _findLastValidClosedShift();
-        if (lastShift) {
-            inheritDeposit = Math.max(0, lastShift.finalCash);
-            inheritFrom = lastShift.user;
-            const logoutDate = new Date(lastShift.logoutTime);
-            console.log('💰 Nasleđen depozit iz ZATVORENE smene ' + lastShift.user +
-                ' (' + logoutDate.toLocaleString('sr-RS') + '): finalCash=' + inheritDeposit);
-        }
+    // Provera 2: Najskorija ZATVORENA smena konobara (iz cele istorije).
+    // Koristimo prethodno izračunatu lastValidClose - _findLastValidClosedShift
+    // preskače kuvare i passthrough smene (0 narudžbina/prometa/smanjenja).
+    if (inheritDeposit === null && lastValidClose) {
+        inheritDeposit = Math.max(0, lastValidClose.finalCash);
+        inheritFrom = lastValidClose.user;
+        inheritReason = 'zatvorena smena';
+        inheritBreakdown = 'finalCash = ' + inheritDeposit + ' (zatvoreno ' +
+            new Date(lastValidClose.logoutTime).toLocaleString('sr-RS') + ')';
+        console.log('💰 Nasleđen depozit iz ZATVORENE smene ' + lastValidClose.user +
+            ': ' + inheritBreakdown);
     }
 
     // ✅ NIJE PRVA SMENA → automatski preuzmi, bez pitanja
@@ -257,6 +260,8 @@ async function openWorkday() {
             startOrders: DB.orders.length,
             deposit: inheritDeposit,
             inheritedFrom: inheritFrom,
+            inheritReason: inheritReason,
+            inheritBreakdown: inheritBreakdown,
             cashReductions: []
         };
 
@@ -265,7 +270,12 @@ async function openWorkday() {
         page = 'tables';
         render();
 
-        showAlert('✅ Smena otvorena!\n\n💰 Depozit: ' + inheritDeposit.toLocaleString() + ' din\n👤 Preuzeto od: ' + inheritFrom);
+        // Detaljan alert: vidi se odakle dolazi depozit i kako je izračunat,
+        // da admin/konobar može odmah da uoči ako je nešto pogrešno.
+        showAlert('✅ Smena otvorena!\n\n' +
+            '💰 Depozit: ' + inheritDeposit.toLocaleString() + ' din\n' +
+            '👤 Preuzeto od: ' + inheritFrom + ' (' + inheritReason + ')\n' +
+            '📊 ' + inheritBreakdown);
         return;
     }
 
