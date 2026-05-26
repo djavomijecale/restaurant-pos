@@ -162,6 +162,58 @@ async function openWorkday() {
         console.warn('⚠️ checkAndAutoCloseShifts greška:', e.message);
     }
 
+    // ====== DIAGNOSTIKA ======
+    // Dumpuj sve aktivne smene i poslednjih 10 close-ova u tabelu, sa svim
+    // poljima koja se računaju. Tako se odmah u Console-u vidi odakle dolazi
+    // svaki pogrešan iznos, bez naslepo pogađanja.
+    try {
+        console.group('🔍 openWorkday: diagnostika nasleđivanja depozita');
+        const activeRows = Object.entries(DB.workdays || {}).map(([user, wd]) => {
+            if (!wd) return null;
+            const orders = (DB.orders || []).filter(o =>
+                o && o.createdBy === user && o.time >= (wd.startTime || '')
+            );
+            const cash = orders.filter(o => !o.isDebtPayment && o.method === 'Cash')
+                .reduce((s, o) => s + (o.tot || 0), 0);
+            const debtCash = orders.filter(o => o.isDebtPayment && o.method === 'Cash')
+                .reduce((s, o) => s + (o.tot || 0), 0);
+            const reductions = (wd.cashReductions || []).reduce((s, r) => s + (r.amount || 0), 0);
+            const dep = wd.deposit || 0;
+            return {
+                user, role: wd.role || '?',
+                startTime: wd.startTime,
+                deposit: dep,
+                orders: orders.length,
+                cashSales: cash,
+                debtCash, reductions,
+                live: dep + cash + debtCash - reductions,
+                inheritedFrom: wd.inheritedFrom || ''
+            };
+        }).filter(Boolean);
+        console.log('📋 Aktivne smene (DB.workdays):');
+        console.table(activeRows);
+
+        const closedRows = [...(DB.workdayHistory || [])]
+            .sort((a, b) => (b.logoutTime || '').localeCompare(a.logoutTime || ''))
+            .slice(0, 10)
+            .map(s => ({
+                user: s.user,
+                logoutTime: s.logoutTime,
+                deposit: s.deposit || 0,
+                orderCount: s.orderCount || 0,
+                revenue: s.revenue || 0,
+                cashRevenue: s.cashRevenue || 0,
+                reductions: s.totalCashReductions || 0,
+                finalCash: s.finalCash,
+                autoClosed: !!s.autoClosed
+            }));
+        console.log('📋 Poslednjih 10 zatvorenih smena (workdayHistory):');
+        console.table(closedRows);
+        console.groupEnd();
+    } catch(e) {
+        console.warn('⚠️ Diagnostic dump nije uspeo:', e);
+    }
+
     // Pronađi depozit za nasleđivanje:
     // PRIORITET: Aktivna smena drugog konobara — ALI samo ako je novija od
     //   poslednjeg validnog close-a (inače je close noviji, validniji podatak).
@@ -270,12 +322,21 @@ async function openWorkday() {
         page = 'tables';
         render();
 
-        // Detaljan alert: vidi se odakle dolazi depozit i kako je izračunat,
-        // da admin/konobar može odmah da uoči ako je nešto pogrešno.
-        showAlert('✅ Smena otvorena!\n\n' +
-            '💰 Depozit: ' + inheritDeposit.toLocaleString() + ' din\n' +
-            '👤 Preuzeto od: ' + inheritFrom + ' (' + inheritReason + ')\n' +
-            '📊 ' + inheritBreakdown);
+        // Detaljan modal: prikazuje odakle dolazi depozit i kako je izračunat,
+        // sa opcijom "Promeni depozit" ako sistem pogreši. Ne čeka da admin
+        // ulazi u DevTools - escape hatch je odmah pri ruci.
+        showConfirm('✅ Smena Otvorena!',
+            '💰 Depozit: <b style="color:#FFD700">' + inheritDeposit.toLocaleString() + ' din</b><br>' +
+            '👤 Preuzeto od: <b>' + inheritFrom + '</b> (' + inheritReason + ')<br>' +
+            '📊 <span style="font-size:13px;color:#B0B0B0">' + inheritBreakdown + '</span><br><br>' +
+            '<span style="font-size:14px">Da li je iznos tačan?</span><br>' +
+            '<span style="font-size:12px;color:#888">Klikni "Ne" da uneseš tačan iznos ručno</span>',
+            function(confirmed) {
+                if (!confirmed) {
+                    promptEditDeposit();
+                }
+            }
+        );
         return;
     }
 
@@ -313,6 +374,47 @@ async function openWorkday() {
 function closeDepositModal() {
     document.getElementById('depositModal').classList.remove('show');
 }
+
+
+// Ručna izmena depozita trenutne otvorene smene. Koristi se kao escape hatch
+// kada auto-nasleđivanje povuče pogrešan iznos (npr. duplo brojanje preko
+// stalih aktivnih smena, ili konobar zna tačan keš iz fizičkog prebrojavanja).
+function promptEditDeposit() {
+    const username = DB.currentUser && DB.currentUser.username;
+    if (!username) return;
+    const myWd = DB.workdays && DB.workdays[username];
+    if (!myWd) {
+        showAlert('Nemaš otvorenu smenu.');
+        return;
+    }
+    const current = Number(myWd.deposit) || 0;
+    const input = window.prompt(
+        'Unesi tačan iznos depozita (din.):\n\n' +
+        'Trenutno: ' + current.toLocaleString() + ' din\n' +
+        '(Preuzeto od: ' + (myWd.inheritedFrom || '?') + ')',
+        String(current)
+    );
+    if (input === null) return; // odustao
+    const newVal = parseFloat(String(input).replace(',', '.'));
+    if (isNaN(newVal) || newVal < 0) {
+        showAlert('⚠️ Neispravan iznos. Probaj ponovo.');
+        return;
+    }
+    if (newVal === current) {
+        showAlert('ℹ️ Iznos je isti, nije promenjen.');
+        return;
+    }
+    const prev = current;
+    myWd.deposit = newVal;
+    myWd.inheritedFrom = (myWd.inheritedFrom || 'auto') + ' → ručno (' + (DB.currentUser.username) + ')';
+    myWd.inheritReason = 'ručna izmena';
+    myWd.inheritBreakdown = 'Ručno postavljen: ' + newVal.toLocaleString() + ' din (prethodno ' + prev.toLocaleString() + ')';
+    DB.workdays[username] = myWd;
+    if (typeof saveWorkday === 'function') saveWorkday(username, myWd);
+    else save();
+    showAlert('✅ Depozit promenjen na ' + newVal.toLocaleString() + ' din.');
+}
+if (typeof window !== 'undefined') window.promptEditDeposit = promptEditDeposit;
 
 
 function confirmDeposit() {
