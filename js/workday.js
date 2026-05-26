@@ -85,19 +85,22 @@ function renderWorkday(c) {
 }
 
 
-// Helper: smena koja nema NIKAKVU cash aktivnost (deposit=0, 0 narudžbina,
-// 0 prihoda, 0 smanjenja keša). Takve smene su obično orphan auto-close
-// artefakti (admin/test session koja je ostavljena otvorena pa zatvorena u
-// 7:00) i NE SMEJU da prekinu lanac nasleđivanja depozita.
+// Helper: smena koja nije obavila NIKAKVU pravu cash aktivnost (0 narudžbina,
+// 0 prihoda, 0 smanjenja keša). Takvoj smeni je finalCash samo depozit
+// propagiran kroz - NIJE pravi snimak keša u kasi, već iznos koji je
+// nasleđen pri otvaranju.
+//
+// PRIMER (bug "16011 din svaki dan"): Anja nasledi 16011, ne radi ništa,
+// njena auto-close ima deposit=16011, 0 narudžbina, finalCash=16011. Sledeća
+// smena ako uzme Anjinu auto-close → opet 16011, čak iako je Nevena posle
+// toga zatvorila smenu sa drugim iznosom. Ovde je passthrough smena uljez
+// i mora se preskočiti, bez obzira na vrednost depozita.
 function _isNoActivityShift(shift) {
     if (!shift) return true;
-    const deposit = Number(shift.deposit) || 0;
     const orderCount = Number(shift.orderCount) || 0;
     const revenue = Number(shift.revenue != null ? shift.revenue : shift.totalRevenue) || 0;
     const cashReductions = Number(shift.totalCashReductions) || 0;
-    const finalCash = Number(shift.finalCash) || 0;
-    return deposit === 0 && orderCount === 0 && revenue === 0 &&
-           cashReductions === 0 && finalCash === 0;
+    return orderCount === 0 && revenue === 0 && cashReductions === 0;
 }
 
 // Helper: najskorija ZATVORENA smena konobara sa validnim finalCash.
@@ -201,14 +204,20 @@ async function openWorkday() {
         const otherDeposit = otherWd.deposit || 0;
         const otherLive = otherDeposit + otherCash + otherDebtCash - otherReductions;
 
-        // ✅ BUG FIX (Vukašin dobio 0): Preskoči aktivne smene koje izgledaju
-        // kao orphan / test sesija - otvorene sa deposit=0 i bez ikakve cash
-        // aktivnosti. Takve smene "prekinu" lanac keša pa bi novi konobar
-        // nasledio 0 umesto stvarnih sredstava iz prethodnih zatvorenih smena.
-        // Fall-through na Proveru 2 (zatvorene smene u istoriji).
-        if (otherDeposit === 0 && otherOrders.length === 0 && otherReductions === 0) {
-            console.log('⚠️ Aktivna smena ' + otherUser + ' deluje kao orphan ' +
-                '(deposit=0, 0 narudžbina, 0 smanjenja) - preskačem i gledam istoriju');
+        // ✅ BUG FIX (Anja 16011 svaki dan): Preskoči aktivne smene BEZ cash
+        // aktivnosti, bez obzira na vrednost depozita. Razlog:
+        //  - deposit=0 + 0 aktivnosti = orphan/test sesija (raniji slučaj Vukašin)
+        //  - deposit>0 + 0 aktivnosti = ili (a) ghost smena koju je konobar
+        //    otvorio pa zaboravio da zatvori i depozit je stale, ili (b) sveža
+        //    smena upravo otvorena (deposit nasleđen iz validnog close-a).
+        //    U slučaju (a) treba istoriji da verujemo; u slučaju (b) istorija
+        //    daje ISTI broj kao i deposit (jer je odatle nasleđen), pa fall-through
+        //    daje identičan rezultat. Posebno bitno: self-heal kada je deposit
+        //    bio pogrešno nasleđen (kao Anja 16011) — sada se prekida petlja.
+        if (otherOrders.length === 0 && otherReductions === 0) {
+            console.log('⚠️ Aktivna smena ' + otherUser + ' nema cash aktivnost ' +
+                '(deposit=' + otherDeposit + ', 0 narudžbina, 0 smanjenja) - ' +
+                'preskačem i gledam istoriju');
         } else {
             inheritDeposit = Math.max(0, otherLive);
             inheritFrom = otherUser;
