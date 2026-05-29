@@ -324,109 +324,91 @@ async function openWorkday() {
             }));
         console.log('📋 Poslednjih 10 zatvorenih smena (workdayHistory):');
         console.table(closedRows);
+
+        // 💸 Sva smanjenja keša za TRENUTNI poslovni dan (odakle se vidi gde je
+        // npr. 41000 "Uzeo Dule" — na kojoj smeni/sesiji je upisano, ili NIJE).
+        try {
+            const _now = new Date();
+            const _cut = (typeof DAILY_CUTOFF_HOUR !== 'undefined' ? DAILY_CUTOFF_HOUR : 7);
+            const _bdStart = new Date(_now); _bdStart.setHours(_cut, 0, 0, 0);
+            if (_now < _bdStart) _bdStart.setDate(_bdStart.getDate() - 1);
+            const _bdEnd = new Date(_bdStart); _bdEnd.setDate(_bdEnd.getDate() + 1);
+            const _s = _bdStart.toISOString(), _e = _bdEnd.toISOString();
+            const redRows = [];
+            // iz aktivnih smena
+            Object.entries(DB.workdays || {}).forEach(([u, wd]) => {
+                if (wd && wd.startTime >= _s && wd.startTime < _e) {
+                    (wd.cashReductions || []).forEach(r => redRows.push({
+                        smena: u, status: 'aktivna', iznos: r.amount, razlog: r.reason, kad: r.timestamp, upisao: r.createdBy || ''
+                    }));
+                }
+            });
+            // iz zatvorenih smena danas
+            (DB.workdayHistory || []).forEach(s => {
+                if (s && s.loginTime >= _s && s.loginTime < _e) {
+                    (s.cashReductions || []).forEach(r => redRows.push({
+                        smena: s.user, status: 'zatvorena', iznos: r.amount, razlog: r.reason, kad: r.timestamp, upisao: r.createdBy || ''
+                    }));
+                }
+            });
+            const redTotal = redRows.reduce((a, r) => a + (Number(r.iznos) || 0), 0);
+            console.log('💸 Smanjenja keša DANAS (ukupno ' + redTotal + ' din):');
+            console.table(redRows);
+        } catch(e2) { console.warn('⚠️ Reductions dump nije uspeo:', e2); }
+
         console.groupEnd();
     } catch(e) {
         console.warn('⚠️ Diagnostic dump nije uspeo:', e);
     }
 
-    // Pronađi depozit za nasleđivanje:
-    // PRIORITET: Aktivna smena drugog konobara — ALI samo ako je novija od
-    //   poslednjeg validnog close-a (inače je close noviji, validniji podatak).
-    // FALLBACK 1: Najskorija zatvorena smena sa validnim finalCash (može i juče).
-    // FALLBACK 2: Ručni unos ako baš ne postoji istorija.
+    // Pronađi depozit za nasleđivanje (STANJE ZAJEDNIČKE KASE, ne "po konobaru"):
+    //   Kasa je JEDAN fond. Novi depozit = stvarno stanje kase poslovnog dana =
+    //   depozit NAJRANIJE smene + sve keš prodaje + svi vraćeni dugovi (keš)
+    //   − SVA smanjenja keša tog dana (bez obzira na kojoj su sesiji upisana).
+    //   PROVERA A: danas je već neko radio (aktivno ili zatvoreno) → stanje danas.
+    //   PROVERA B: danas još niko → kraj poslovnog dana poslednje zatvorene smene.
+    //   FALLBACK: ručni unos ako nema istorije.
     let inheritDeposit = null;
     let inheritFrom = '';
     let inheritReason = '';
     let inheritBreakdown = null;
 
-    // Unapred nađi referencu za vreme: poslednji validan close.
-    // Ova vrednost se koristi u Proveri 1 da odlučimo da li je aktivna smena
-    // "novija" od istorije ili "starija" (ghost).
+    // Poslednja validna zatvorena smena (koristi se za PROVERU B i sugestiju).
     const lastValidClose = _findLastValidClosedShift();
-    const lastCloseLogoutDate = lastValidClose ? new Date(lastValidClose.logoutTime) : null;
 
-    // Provera 1: Aktivne smene DRUGIH konobara
-    // - Iteriramo SVE aktivne (ne samo prvu) i biramo najboljeg kandidata.
-    // - Pravila preskakanja:
-    //   (a) 0 narudžbina + 0 smanjenja → nema cash aktivnosti, preskačem
-    //   (b) aktivna.startTime < poslednji_close.logoutTime → close je noviji,
-    //       preskačem aktivnu (jer joj je depozit nasleđen pre close-a, dakle
-    //       stale; close ima sveže info o trenutnom kešu).
-    // - Među preostalim kandidatima biram onaj sa NAJSKORIJIM startTime
-    //   (najsvežiji rad).
-    const activeCandidates = [];
-    Object.entries(DB.workdays || {}).forEach(([user, wd]) => {
-        if (user === username) return;
-        if (!wd || !wd.startTime) return;
-        if (wd.role === 'kuvar') return;
-        const userObj = (DB.users || []).find(u => u.username === user);
-        if (userObj && userObj.role === 'kuvar') return;
-
-        const startTime = wd.startTime;
-        const orders = (DB.orders || []).filter(o =>
-            o && o.createdBy === user && o.time >= startTime
-        );
-        const cashSales = orders.filter(o => !o.isDebtPayment && o.method === 'Cash')
-            .reduce((s, o) => s + (o.tot || 0), 0);
-        const debtCash = orders.filter(o => o.isDebtPayment && o.method === 'Cash')
-            .reduce((s, o) => s + (o.tot || 0), 0);
-        const reductions = (wd.cashReductions || [])
-            .reduce((s, r) => s + (r.amount || 0), 0);
-        const deposit = wd.deposit || 0;
-        const live = deposit + cashSales + debtCash - reductions;
-        const startDate = new Date(startTime);
-        const hasNoActivity = orders.length === 0 && reductions === 0;
-        const closeIsNewer = lastCloseLogoutDate && lastCloseLogoutDate > startDate;
-
-        const reasons = [];
-        if (hasNoActivity) reasons.push('0 narudžbina + 0 smanjenja');
-        if (closeIsNewer) reasons.push('poslednji close (' + lastValidClose.user + ' @ ' + lastCloseLogoutDate.toLocaleString('sr-RS') + ') noviji od start-a smene (' + startDate.toLocaleString('sr-RS') + ')');
-
-        if (reasons.length > 0) {
-            console.log('⏭️ Aktivna ' + user + ' preskočena: ' + reasons.join('; '));
-        } else {
-            activeCandidates.push({
-                user, wd, startDate, orders, cashSales, debtCash, reductions, deposit, live
-            });
-        }
-    });
-
-    if (activeCandidates.length > 0) {
-        // Pick najskorija startTime (najsvežiji rad)
-        activeCandidates.sort((a, b) => b.startDate - a.startDate);
-        const w = activeCandidates[0];
-        inheritDeposit = Math.max(0, w.live);
-        inheritFrom = w.user;
-        inheritReason = 'aktivna smena';
-        inheritBreakdown = 'deposit ' + w.deposit + ' + keš ' + w.cashSales +
-            ' + dugovi-keš ' + w.debtCash + ' − smanjenja ' + w.reductions +
-            ' = ' + inheritDeposit;
-        console.log('💰 Nasleđen depozit iz AKTIVNE smene ' + w.user + ': ' + inheritBreakdown);
+    // PROVERA A: stanje kase za TRENUTNI poslovni dan.
+    // BUG FIX (41000 "Uzeo Dule" smanjenje nije oduzeto kod Stefana):
+    // Ranije smo, ako je postojala AKTIVNA smena drugog konobara, nasleđivali
+    // iz te JEDNE smene (deposit + njen keš − NJENA smanjenja). Smanjenje keša
+    // se upisuje na onu sesiju koja je tada bila ulogovana — pa ako 41000 nije
+    // bilo na baš toj jednoj smeni (već na drugoj aktivnoj / admin / Anjinoj
+    // zatvorenoj), računica ga je promašila.
+    // Sada: uvek sabiramo CEO poslovni dan (sve smene: zatvorene + aktivne).
+    // Tako se svako smanjenje uračuna bez obzira na kojoj je sesiji upisano.
+    const todayCalc = _computeBusinessDayRegisterCash(new Date().toISOString());
+    if (todayCalc && todayCalc.shiftsCount > 0 && typeof todayCalc.registerCash === 'number') {
+        inheritDeposit = Math.max(0, todayCalc.registerCash);
+        inheritFrom = todayCalc.firstShiftUser || '—';
+        inheritReason = 'stanje kase danas (' + todayCalc.shiftsCount + ' smena)';
+        inheritBreakdown = 'depozit ' + todayCalc.firstDeposit + ' + keš ' + todayCalc.cashSales +
+            ' + dug-keš ' + todayCalc.debtCash + ' − smanjenja ' + todayCalc.totalReductions +
+            ' = ' + inheritDeposit + ' din (zajednička kasa, ceo dan)';
+        console.log('💰 Nasleđen depozit (STANJE KASE DANAS): ' + inheritBreakdown);
     }
 
-    // Provera 2: Najskorija ZATVORENA smena → izračunaj kraj njenog poslovnog
-    // dana po istoj formuli kao "Stanje Kase" na dnevnom izveštaju.
-    //
-    // BUG FIX (Anja preuzela 30886 umesto 26196):
-    // Ranije smo direktno koristili lastValidClose.finalCash. Problem: kad
-    // Stefan i Nevena oba rade isti dan sa istim depozitom 16011, njihovi
-    // pojedinačni finalCash duplo broje 16011 (Nevena.finalCash = 16011+kes-red,
-    // Stefan.finalCash = 16011+kes-red, ali stvarna kasa ima jedan depozit).
-    // Za multi-waiter dane to daje pogrešan iznos koji se onda propagira napred.
-    //
-    // Sada: računamo stanje kase za POSLOVNI DAN (svi konobari zajedno) =
-    // prvi depozit + svi keš + svi dug-keš − sva smanjenja. To je isti broj
-    // koji admin već vidi u dnevnom izveštaju, što olakšava reconciliation.
+    // PROVERA B: danas još niko nije radio → uzmi stanje kase na kraju
+    // poslovnog dana poslednje validne zatvorene smene (npr. juče). Ista
+    // formula kao "Stanje Kase" na dnevnom izveštaju (ceo dan, ne pojedinačno).
     if (inheritDeposit === null && lastValidClose) {
         const bdCalc = _computeBusinessDayRegisterCash(lastValidClose.logoutTime);
         if (bdCalc && typeof bdCalc.registerCash === 'number') {
             inheritDeposit = Math.max(0, bdCalc.registerCash);
             inheritFrom = lastValidClose.user;
-            inheritReason = 'poslovni dan ' + new Date(bdCalc.businessDayStart).toLocaleDateString('sr-RS') +
-                ' (kraj dana, ' + bdCalc.shiftsCount + ' smena)';
+            inheritReason = 'kraj poslovnog dana ' + new Date(bdCalc.businessDayStart).toLocaleDateString('sr-RS') +
+                ' (' + bdCalc.shiftsCount + ' smena)';
             inheritBreakdown = 'depozit ' + bdCalc.firstDeposit + ' + keš ' + bdCalc.cashSales +
                 ' + dug-keš ' + bdCalc.debtCash + ' − smanjenja ' + bdCalc.totalReductions +
-                ' = ' + inheritDeposit + ' din (stanje kase ceo dan, ne pojedinačno po smeni)';
+                ' = ' + inheritDeposit + ' din (zajednička kasa, ceo dan)';
             console.log('💰 Nasleđen depozit (POSLOVNI DAN ' + new Date(bdCalc.businessDayStart).toLocaleDateString('sr-RS') + '): ' + inheritBreakdown);
         } else {
             // Fallback ako računica ne uspe - koristi individualni finalCash
