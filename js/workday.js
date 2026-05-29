@@ -218,6 +218,43 @@ function _computeBusinessDayRegisterCash(referenceDateStr) {
     };
 }
 
+// 🛡️ Spaja dva niza smanjenja keša bez duplikata (ključ: timestamp+iznos+razlog).
+// Koristi se da lokalna (možda stale) i serverska kopija ne izgube nijedno
+// smanjenje. Smanjenje je KEŠ — gubitak je ozbiljan, pa uvek uzimamo UNIJU.
+function _mergeReductionArrays(a, b) {
+    const out = {};
+    [].concat(a || [], b || []).forEach(r => {
+        if (!r || typeof r.amount === 'undefined') return;
+        const k = (r.timestamp || '') + '|' + r.amount + '|' + (r.reason || '');
+        out[k] = r;
+    });
+    return Object.values(out);
+}
+
+// 🛡️ Povuče najsvežija smanjenja keša sa servera i spoji ih sa lokalnim.
+// Bez ovoga: ako je lokalna kopija stale (npr. listener je prepisao workday,
+// ili upis smanjenja nije stigao do servera), zatvaranje smene bi izgubilo
+// smanjenje (bug: -41000 na ekranu konobara, ali 0 u dnevnom izveštaju).
+async function _reconcileCashReductions(username, localReductions) {
+    if (typeof database === 'undefined' || (typeof DEMO_MODE !== 'undefined' && DEMO_MODE)) {
+        return localReductions || [];
+    }
+    try {
+        const safeKey = (typeof sanitizeFirebaseKey === 'function') ? sanitizeFirebaseKey(username) : username;
+        const snap = await database.ref('/workdays/' + safeKey + '/cashReductions').once('value');
+        const server = snap.val();
+        const merged = _mergeReductionArrays(localReductions, Array.isArray(server) ? server : []);
+        if (merged.length !== (localReductions || []).length) {
+            console.log('🛡️ Smanjenja spojena sa serverom pri zatvaranju: lokalno ' +
+                (localReductions || []).length + ' → spojeno ' + merged.length);
+        }
+        return merged;
+    } catch (e) {
+        console.warn('⚠️ Ne mogu da povučem smanjenja sa servera, koristim lokalna:', e.message);
+        return localReductions || [];
+    }
+}
+
 // Helper: najskorija ZATVORENA smena konobara sa validnim finalCash.
 // Preskače: kuvare, orphan prazne smene, smene bez validnog finalCash polja.
 // Vraća null ako ne postoji nijedna validna smena u istoriji.
@@ -621,7 +658,13 @@ function closeCashReductionModal() {
 }
 
 
-function confirmCashReduction() {
+async function confirmCashReduction() {
+    // 🔒 ZAŠTITA OD DUPLOG KLIKA - sprečava dupli unos istog smanjenja
+    if (window._cashReductionInProgress) {
+        console.warn('⚠️ confirmCashReduction već u toku - ignorišem dupli klik');
+        return;
+    }
+
     const amount = parseFloat(document.getElementById('cashReductionAmount').value) || 0;
     const type = document.getElementById('cashReductionType').value;
     var reason = document.getElementById('cashReductionReason').value.trim();
@@ -651,34 +694,85 @@ function confirmCashReduction() {
     } else if (type === 'mara') {
         reason = 'Uzela Mara';
     }
-    
+
     const username = DB.currentUser.username;
     const myWorkday = DB.workdays && DB.workdays[username];
-    
+
     if (!myWorkday) {
         showAlert('Niste otvorili radni dan!');
         return;
     }
-    
+
     // Inicijalizuj cashReductions ako ne postoji
     if (!myWorkday.cashReductions) {
         myWorkday.cashReductions = [];
     }
-    
-    // Dodaj smanjenje
-    myWorkday.cashReductions.push({
+
+    // Zabeleži smanjenje lokalno (jedan stabilan zapis - isti se ponovo šalje pri retry-u)
+    const entry = {
         amount: amount,
         reason: reason,
         timestamp: new Date().toISOString(),
         createdBy: username
-    });
-    
-    // ✅ ATOMIČKI UPDATE - ažurira SAMO /workdays/{username}/cashReductions
-    updateWorkday(username, { cashReductions: myWorkday.cashReductions });
+    };
+    myWorkday.cashReductions.push(entry);
+
+    // 🔒 Zaključaj dugme dok traje upis
+    window._cashReductionInProgress = true;
+    var confirmBtn = document.querySelector('#cashReductionModal button[onclick*="confirmCashReduction"]');
+    var prevBtnHtml = confirmBtn ? confirmBtn.innerHTML : '';
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.style.opacity = '0.5';
+        confirmBtn.style.pointerEvents = 'none';
+        confirmBtn.innerHTML = '⏳ Čuvam...';
+    }
+
+    // 🛡️ KRITIČNO: smanjenje je KEŠ - upis MORA da stigne do servera.
+    // Ranije je upis bio fire-and-forget pa bi loš internet TIHO izgubio
+    // smanjenje (bug: -41000 na ekranu konobara, ali 0 u dnevnom izveštaju).
+    // Sada čekamo potvrdu i pokušavamo više puta. Upis je idempotentan jer
+    // šalje ceo niz (update samo postavlja cashReductions polje).
+    var saved = false;
+    for (var attempt = 1; attempt <= 3 && !saved; attempt++) {
+        try {
+            await updateWorkday(username, { cashReductions: myWorkday.cashReductions });
+            saved = true;
+        } catch (e) {
+            console.warn('⚠️ Upis smanjenja keša nije uspeo (pokušaj ' + attempt + '/3):', e && e.message);
+            if (attempt < 3) {
+                await new Promise(function(r) { setTimeout(r, 800); });
+            }
+        }
+    }
+
+    // Otključaj dugme
+    if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = '1';
+        confirmBtn.style.pointerEvents = 'auto';
+        confirmBtn.innerHTML = prevBtnHtml;
+    }
+    window._cashReductionInProgress = false;
+
     closeCashReductionModal();
     render();
-    
-    showAlert(`✅ Keš smanjen za ${amount.toFixed(0)} din.`);
+
+    if (saved) {
+        showAlert('✅ Keš smanjen za ' + amount.toFixed(0) + ' din.');
+    } else {
+        // Upis NIJE potvrđen na serveru. Zapis ostaje lokalno (listener ga čuva i
+        // sam šalje na server kad se veza vrati; sačuvaće se i pri zatvaranju smene
+        // preko reconcile-a), ALI korisnik MORA da zna istinu.
+        showAlert(
+            '⚠️ PAŽNJA — smanjenje od ' + amount.toFixed(0) + ' din NIJE potvrđeno na serveru!\n\n' +
+            'Verovatno je loš internet. Zabeleženo je lokalno na ovom uređaju i pokušaće ponovo automatski, ali:\n' +
+            '• NE zatvaraj aplikaciju\n' +
+            '• NE unosi isto smanjenje ponovo\n' +
+            '• proveri internet\n\n' +
+            'Ako se ekran osveži a smanjenje nestane iz pregleda, javi vlasniku.'
+        );
+    }
 }
 
 
@@ -748,9 +842,12 @@ async function _doCloseWorkday() {
     const debtCash = debtOrders.filter(o => o.method === 'Cash').reduce((s,o) => s + o.tot, 0);
     
     // SMANJENJA KEŠA - oduzmi od keša
-    const cashReductions = myWorkday.cashReductions || [];
+    // 🛡️ Spoji sa serverskom kopijom da stale lokalna kopija ne izgubi nijedno
+    // smanjenje pri zatvaranju (poslednja brana protiv -41000 bug-a).
+    const cashReductions = await _reconcileCashReductions(username, myWorkday.cashReductions || []);
+    myWorkday.cashReductions = cashReductions;
     const totalCashReductions = cashReductions.reduce((sum, r) => sum + r.amount, 0);
-    
+
     // DEPOZIT - dodaj na ukupan učinak
     const deposit = myWorkday.deposit || 0;
     const finalCash = deposit + cash + debtCash - totalCashReductions; // Keš u kasi: depozit + keš + vraćeni dugovi keš - smanjenja
@@ -1031,9 +1128,12 @@ async function autoCloseWorkday(username, myWorkday) {
     const wire = realOrders.filter(o => o.method === 'Wire').reduce((s, o) => s + o.tot, 0);
     const debtCash = dayOrders.filter(o => o.isDebtPayment && o.method === 'Cash').reduce((s, o) => s + o.tot, 0);
     
-    const cashReductions = myWorkday.cashReductions || [];
+    // 🛡️ Spoji sa serverskom kopijom da stale lokalna kopija ne izgubi smanjenja
+    // ni pri auto-zatvaranju isteklih smena.
+    const cashReductions = await _reconcileCashReductions(username, myWorkday.cashReductions || []);
+    myWorkday.cashReductions = cashReductions;
     const totalCashReductions = cashReductions.reduce((sum, r) => sum + r.amount, 0);
-    
+
     const deposit = myWorkday.deposit || 0;
     const finalCash = deposit + cash + debtCash - totalCashReductions;
     const totalPerformance = totalRevenue + deposit;

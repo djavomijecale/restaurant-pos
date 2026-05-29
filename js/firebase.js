@@ -1078,6 +1078,36 @@ function startWorkdayListener() {
             }
         }
         
+        // 🛡️ Očuvaj lokalna smanjenja keša koja možda još nisu stigla do servera.
+        // Smanjenja su append-only (nikad se ne brišu), pa je UNIJA uvek bezbedna.
+        // Bez ovoga: listener prepiše lokalnu kopiju serverskom i izgubi smanjenje
+        // koje je upravo uneto a upis još nije potvrđen (bug: -41000 na ekranu
+        // konobara, 0 u dnevnom izveštaju). Radi SAMO za sopstvenu aktivnu smenu
+        // trenutnog korisnika - i sam vrati (self-heal) spojeni niz na server.
+        try {
+            const cu = DB.currentUser && DB.currentUser.username;
+            if (cu && DB.workdays && DB.workdays[cu] && mappedWorkdays[cu] &&
+                typeof _mergeReductionArrays === 'function') {
+                const localRed = DB.workdays[cu].cashReductions || [];
+                const serverRed = mappedWorkdays[cu].cashReductions || [];
+                const mergedRed = _mergeReductionArrays(localRed, serverRed);
+                if (mergedRed.length > serverRed.length) {
+                    console.warn('🛡️ Listener: očuvana lokalna smanjenja koja nisu na serveru (' +
+                        serverRed.length + ' → ' + mergedRed.length + '). Šaljem na server...');
+                    mappedWorkdays[cu].cashReductions = mergedRed;
+                    // Self-heal: gurni spojeni niz nazad na server da se ne izgubi.
+                    // Idempotentno - sledeći listener fire će imati server == lokalno.
+                    try {
+                        const cuKey = sanitizeFirebaseKey(cu);
+                        database.ref('/workdays/' + cuKey + '/cashReductions').set(mergedRed)
+                            .catch(function(e) { console.warn('⚠️ Self-heal upis smanjenja nije uspeo:', e && e.message); });
+                    } catch (e) { /* ignore */ }
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Greška pri očuvanju lokalnih smanjenja u listeneru:', e && e.message);
+        }
+
         DB.workdays = mappedWorkdays;
         const newCount = Object.keys(DB.workdays).length;
         
