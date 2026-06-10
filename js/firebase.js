@@ -84,7 +84,10 @@ if (typeof window !== 'undefined') {
 // ============================================
 
 // Load data from Firebase
-async function loadFromFirebase() {
+// opts.light === true → "light sync": ne skida teške istorijske čvorove
+// (orders, workdayHistory, invoices, cashbook) radi smanjenja Firebase
+// potrošnje pri čestoj cross-device sinhronizaciji. Vidi fetch blok niže.
+async function loadFromFirebase(opts) {
     if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return false;
     // ✅ ZAŠTITA: Ne učitavaj dok se čuva - prepisalo bi lokalne promene
     if (isSaving || saveQueued) {
@@ -113,11 +116,33 @@ async function loadFromFirebase() {
     }
     
     try {
-        const snapshot = await database.ref('/').once('value');
-        const data = snapshot.val();
-        
-        console.log('📦 Received data:', data);
-        
+        // ⚡ LIGHT SYNC (#9 - smanjenje Firebase potrošnje): u čestoj cross-device
+        // sinhronizaciji NE skidamo teške istorijske čvorove (orders,
+        // workdayHistory, invoices, cashbook). Njih NE diramo ovde — postojeći
+        // merge ih spaja sa "praznim" pa zadržava lokalnu kopiju (učitanu pri
+        // punom load-u na loginu/fokusu). Kuhinja/stolovi/dugovi/lager se i dalje
+        // osvežavaju u realnom vremenu. Pun load (bez opts.light) skida sve.
+        let data;
+        if (opts && opts.light) {
+            const lightPaths = ['menu','tables','settings','users','removedItems',
+                'kitchenOrders','groceryList','shoppingList','deletedGroceryItems',
+                'guestOrders','waiterCalls','inventory','debts','houseOrders',
+                'deletedOrderIds','kuvarBonus','workdays'];
+            // Ako bilo koje čitanje padne, Promise.all baca → ide u catch → ovaj
+            // ciklus se preskače (bez parcijalnog upisa koji bi mogao da obriše čvor).
+            const snaps = await Promise.all(lightPaths.map(p => database.ref('/' + p).once('value')));
+            data = {};
+            lightPaths.forEach((p, i) => {
+                const v = snaps[i].val();
+                if (v !== null && v !== undefined) data[p] = v;
+            });
+            console.log('⚡ Light sync (bez orders/workdayHistory/invoices/cashbook)');
+        } else {
+            const snapshot = await database.ref('/').once('value');
+            data = snapshot.val();
+            console.log('📦 Received data:', data);
+        }
+
         if (data && typeof data === 'object') {
             // ✅ RACE FIX: Snapshot lokalno-dirty stolova PRE overwrite-a.
             // Ako je korisnik upravo dodao/obrisao/naplatio stavke ali save još nije
@@ -841,7 +866,7 @@ function saveDebounced() {
 
 let isCheckingUpdates = false;
 
-async function checkForUpdates() {
+async function checkForUpdates(light) {
     if (!isFirebaseAuthReady || isCheckingUpdates) return;
     
     // ✅ KLJUČNA POPRAVKA: Ne učitavaj dok imamo nesačuvane lokalne promene
@@ -866,7 +891,7 @@ async function checkForUpdates() {
         if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
             const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
             lastUpdate = serverLastUpdate;
-            await loadFromFirebase();
+            await loadFromFirebase({ light: !!light });
             checkAndPlayNotificationSounds(oldPendingCount);
             render();
         }
@@ -911,7 +936,9 @@ let autoCloseTimer = null;
 
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-    autoRefreshTimer = setInterval(checkForUpdates, 10000);
+    // Poll na 10s radi LIGHT sync (jeftino - bez teških istorijskih čvorova).
+    // Fokus (startFocusRefresh) i dalje radi PUN refresh.
+    autoRefreshTimer = setInterval(function() { checkForUpdates(true); }, 10000);
 
     // ⏰ Provera isteklih smena svaka 5 minuta
     if (autoCloseTimer) clearInterval(autoCloseTimer);
@@ -959,7 +986,7 @@ function startLastUpdatedListener() {
         // Snimi staru pending count za kuvara PRE load-a
         const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
         lastUpdate = serverLastUpdate;
-        loadFromFirebase().then(() => {
+        loadFromFirebase({ light: true }).then(() => {
             checkAndPlayNotificationSounds(oldPendingCount);
             render();
         }).catch(err => console.error('❌ Real-time load error:', err));
