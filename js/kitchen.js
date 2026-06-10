@@ -156,7 +156,7 @@ function renderKitchen(c) {
                 order.items.forEach(item => {
                     h += `<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #2A2A4A">
                         <div>
-                            <span style="font-size:16px;font-weight:bold">${item.name}</span>
+                            <span style="font-size:16px;font-weight:bold">${escapeHtml(item.name)}</span>
                         </div>
                         <div style="background:#FFD700;color:#000;padding:4px 12px;border-radius:6px;font-weight:bold">
                             ${item.qty}x
@@ -210,7 +210,7 @@ function renderKitchen(c) {
                 
                 order.items.forEach(item => {
                     h += `<div style="display:flex;justify-content:space-between;padding:4px 0;color:#B0B0B0;font-size:14px">
-                        <span>${item.name}</span>
+                        <span>${escapeHtml(item.name)}</span>
                         <span style="color:#FFD700;font-weight:bold">${item.qty}x</span>
                     </div>`;
                 });
@@ -328,7 +328,7 @@ function renderKitchenReady(c) {
             h += '<div style="color:#FFF;opacity:0.9;font-size:15px">';
             
             order.items.forEach(function(item) {
-                h += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.15)">' + item.qty + 'x ' + item.name + '</div>';
+                h += '<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.15)">' + item.qty + 'x ' + escapeHtml(item.name) + '</div>';
             });
             
             h += '</div>';

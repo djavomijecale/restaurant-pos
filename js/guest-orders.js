@@ -28,7 +28,7 @@ function renderGuestOrders(c) {
             
             html += `<div style="background:rgba(0,0,0,0.2);padding:10px 14px;border-radius:8px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
                 <div>
-                    <span style="font-weight:bold">👤 ${call.guestName || 'Gost'}</span>
+                    <span style="font-weight:bold">👤 ${escapeHtml(call.guestName || 'Gost')}</span>
                     <span style="opacity:0.7;font-size:12px;margin-left:8px">· ${agoStr}</span>
                 </div>
                 <button onclick="dismissWaiterCall('${call.id}')" style="background:rgba(0,0,0,0.3);color:#FFF;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:bold">✓ OK</button>
@@ -106,7 +106,7 @@ function renderGuestOrderCard(order, showActions) {
     
     let html = `<div class="card" style="border-left:4px solid ${statusColor};cursor:default">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-weight:bold;font-size:16px">${statusIcon} ${order.guestName || 'Gost'}</span>
+            <span style="font-weight:bold;font-size:16px">${statusIcon} ${escapeHtml(order.guestName || 'Gost')}</span>
             <span style="color:#B0B0B0;font-size:12px">${timeAgo}</span>
         </div>`;
     
@@ -118,7 +118,7 @@ function renderGuestOrderCard(order, showActions) {
         const itemTotal = price * qty;
         calculatedTotal += itemTotal;
         html += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #2A2A4A">
-            <span>${item.name} × ${qty}</span>
+            <span>${escapeHtml(item.name)} × ${qty}</span>
             <span style="color:#FFD700">${itemTotal.toLocaleString()} din</span>
         </div>`;
     });
@@ -132,7 +132,7 @@ function renderGuestOrderCard(order, showActions) {
     
     if (order.guestNote) {
         html += `<div style="margin-top:8px;padding:8px;background:#16213E;border-radius:8px;font-size:13px;color:#B0B0B0">
-            💬 ${order.guestNote}
+            💬 ${escapeHtml(order.guestNote)}
         </div>`;
     }
     
@@ -161,7 +161,7 @@ function renderGuestOrderCard(order, showActions) {
         const table = DB.tables.find(t => t.num == order.assignedTable);
         const tableName = table && table.name ? table.name : 'Sto ' + order.assignedTable;
         html += `<div style="margin-top:8px;color:#4CAF50;font-size:13px">
-            📍 ${tableName} • Potvrdio: ${order.confirmedBy || '?'}
+            📍 ${escapeHtml(tableName)} • Potvrdio: ${escapeHtml(order.confirmedBy || '?')}
         </div>`;
     }
     
@@ -222,11 +222,17 @@ function confirmGuestOrder(orderId) {
             tableName: table.name || ('Sto ' + tableNum),
             waiterUsername: DB.currentUser.username,
             waiterName: DB.konobarName || DB.currentUser.username,
-            items: foodItems.map(item => ({
-                name: item.name,
-                qty: parseInt(item.qty) || 1,
-                note: order.guestNote || ''
-            })),
+            // 🛡️ Ime stavke uzmi iz MENIJA (autoritativno), ne iz gostovog
+            // payload-a — inače gost može da prošvercuje HTML u ime koje se
+            // posle prikazuje u kuhinji (XSS). Napomena se ekranira pri prikazu.
+            items: foodItems.map(item => {
+                const mi = DB.menu.find(m => m.id == item.id);
+                return {
+                    name: mi ? mi.name : String(item.name || '').slice(0, 60),
+                    qty: parseInt(item.qty) || 1,
+                    note: order.guestNote || ''
+                };
+            }),
             status: 'pending',
             orderedAt: new Date().toISOString(),
             orderedBy: DB.currentUser.username,

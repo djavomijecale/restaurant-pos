@@ -3,6 +3,22 @@
 // ============================================
 
 
+// 🛡️ Ekranira HTML iz NEPOUZDANOG teksta (gostovo ime/napomena sa QR strane)
+// pre ubacivanja u innerHTML. Bez ovoga gost može da ubaci npr.
+// <img src=x onerror=...> koji se izvrši u sesiji konobara/admina (stored XSS),
+// a ta sesija ima pun pristup bazi. Uvek koristi za bilo koji gostov unos.
+function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+if (typeof window !== 'undefined') window.escapeHtml = escapeHtml;
+
+
 // Zvučno obaveštenje za kuhinju (Web Audio API)
 function playKitchenSound() {
     try {
