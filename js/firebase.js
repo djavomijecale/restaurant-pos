@@ -84,7 +84,10 @@ if (typeof window !== 'undefined') {
 // ============================================
 
 // Load data from Firebase
-async function loadFromFirebase() {
+// opts.incremental === true → česta cross-device sinhronizacija: skida samo
+// poslednjih ORDERS_SYNC_CATCHUP računa (nove) umesto svih, i spaja ih u
+// DB.orders (koji ostaje KOMPLETAN). Pun load (login/fokus, bez opts) skida sve.
+async function loadFromFirebase(opts) {
     if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return false;
     // ✅ ZAŠTITA: Ne učitavaj dok se čuva - prepisalo bi lokalne promene
     if (isSaving || saveQueued) {
@@ -113,11 +116,35 @@ async function loadFromFirebase() {
     }
     
     try {
-        const snapshot = await database.ref('/').once('value');
-        const data = snapshot.val();
-        
-        console.log('📦 Received data:', data);
-        
+        // ⚡ Ne skidamo CEO "/" (to bi povuklo SVIH 5500+ računa svaki put).
+        // Skidamo svaki čvor posebno. RAČUNE: pun load skine sve (DB.orders ostaje
+        // kompletan), a česti sync (opts.incremental) samo poslednjih nekoliko.
+        let data;
+        {
+            const nonOrderPaths = ['menu','tables','deletedOrderIds','removedItems','settings',
+                'users','workdayHistory','kuvarBonus','kitchenOrders','inventory','invoices',
+                'debts','houseOrders','cashbook','groceryList','guestOrders','waiterCalls',
+                'shoppingList','deletedGroceryItems','workday','workdays'];
+            // RAČUNI: pun load skida sve; česta sinhronizacija (opts.incremental)
+            // skida samo poslednjih ORDERS_SYNC_CATCHUP (nove se spoje u DB.orders).
+            const _catchup = (typeof ORDERS_SYNC_CATCHUP !== 'undefined') ? ORDERS_SYNC_CATCHUP : 300;
+            const ordersRef = (opts && opts.incremental)
+                ? database.ref('orders').orderByKey().limitToLast(_catchup)
+                : database.ref('orders');
+            const results = await Promise.all([
+                ordersRef.once('value'),
+                ...nonOrderPaths.map(function(p) { return database.ref('/' + p).once('value'); })
+            ]);
+            data = {};
+            nonOrderPaths.forEach(function(p, i) {
+                const v = results[i + 1].val();
+                if (v !== null && v !== undefined) data[p] = v;
+            });
+            data.orders = _ordersFromSnap(results[0]);
+        }
+
+        console.log('📦 Učitano (računa: ' + (data.orders ? data.orders.length : 0) + (opts && opts.incremental ? ', inkrementalno' : ', pun') + ')');
+
         if (data && typeof data === 'object') {
             // ✅ RACE FIX: Snapshot lokalno-dirty stolova PRE overwrite-a.
             // Ako je korisnik upravo dodao/obrisao/naplatio stavke ali save još nije
@@ -566,6 +593,53 @@ function mergeArraysById(local, server, idField) {
     return merged;
 }
 
+
+// ============================================
+// POJEDINAČNO ČUVANJE NARUDŽBINA (#9 - smanjenje potrošnje + sigurnost)
+// Računi se VIŠE NE pišu kao ceo niz u glavnom save-u (to je moglo da pregazi
+// sve odjednom — uzrok izgubljenih računa). Svaki se gura ZASEBNO na /orders
+// preko push() → jedinstven ključ, fizički ne dira druge račune. Ključ pamtimo
+// na order._fbkey radi kasnijih izmena (npr. OctoPOS fiskalni id).
+// Stari niz /orders (keševi "0","1",...) ostaje netaknut kao rezerva; novi
+// dolaze kao push-ključevi pored njega.
+// ============================================
+async function persistNewOrder(order) {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
+    if (!order) return;
+    const ref = database.ref('orders').push();
+    order._fbkey = ref.key;
+    await ref.set(order);
+    // Javi ostalim uređajima da povuku sveže (pomeri i lokalni lastUpdate da
+    // nas sopstveni upis ne natera na reload)
+    try {
+        const ts = new Date().toISOString();
+        await database.ref('lastUpdated').set(ts);
+        lastUpdate = ts;
+    } catch (e) { /* notifikacija nije kritična */ }
+}
+
+// Ažurira postojeći račun (po zapamćenom ključu) - bez prepisivanja cele liste.
+async function updateOrderRecord(order, fields) {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return;
+    if (!order || !order._fbkey || !fields) return;
+    try {
+        await database.ref('orders/' + order._fbkey).update(fields);
+    } catch (e) {
+        console.warn('⚠️ Izmena računa nije sačuvana na server:', e && e.message);
+    }
+}
+
+// Izvuče račune iz snapshot-a i svakom postavi _fbkey (za kasnije izmene/brisanje).
+function _ordersFromSnap(snap) {
+    const out = [];
+    snap.forEach(function(child) {
+        const v = child.val();
+        if (v && typeof v === 'object') { v._fbkey = child.key; out.push(v); }
+    });
+    return out;
+}
+
+
 async function saveToFirebase() {
     // ✅ RACE FIX: Ako je load u toku, NE bacaj save tiho - to bi značilo da
     // lokalne promene (npr. "Kuća" na stolu) nikad ne stignu do servera, pa
@@ -613,22 +687,23 @@ async function saveToFirebase() {
     }
 
     try {
-        const criticalSnapshot = await database.ref('/').once('value');
-        const serverData = criticalSnapshot.val();
+        // ⚡ Ne čitamo CEO "/" (povuklo bi svih 5500+ računa). Čitamo SAMO
+        // kolekcije koje ovde merge-ujemo. RAČUNI SE VIŠE NE PIŠU U OVOM SAVE-U
+        // (idu pojedinačno preko persistNewOrder/push), pa ih ovde ni ne čitamo
+        // ni ne merge-ujemo — što i uklanja rizik da bulk save pregazi račune.
+        const mergePaths = ['deletedOrderIds','debts','workdayHistory','houseOrders',
+            'groceryList','kitchenOrders','guestOrders','waiterCalls','inventory',
+            'cashbook','invoices','tables','removedItems'];
+        const mergeSnaps = await Promise.all(mergePaths.map(function(p) { return database.ref('/' + p).once('value'); }));
+        const serverData = {};
+        mergePaths.forEach(function(p, i) { const v = mergeSnaps[i].val(); if (v !== null && v !== undefined) serverData[p] = v; });
 
         if (serverData && !isAdminDelete) {
-            // Učitaj listu obrisanih narudžbina sa servera (admin ih je obrisao)
+            // Spoji listu obrisanih narudžbina (i dalje filtrira PRIKAZ)
             const serverDeletedIds = serverData.deletedOrderIds || [];
             const localDeletedIds = DB.deletedOrderIds || [];
-            // Spoji obe liste
             DB.deletedOrderIds = [...new Set([...localDeletedIds, ...serverDeletedIds].map(String))];
-            const deletedIds = new Set(DB.deletedOrderIds);
-
-            // Merge orders - nikad ne brisemo narudzbine, ALI preskoči obrisane od admina
-            const serverOrders = (serverData.orders || []).filter(o => !deletedIds.has(String(o.id)));
-            DB.orders = mergeArraysById(DB.orders || [], serverOrders, 'id');
-            // Filtriraj i lokalne obrisane
-            DB.orders = DB.orders.filter(o => !deletedIds.has(String(o.id)));
+            // (NEMA orders merge — računi se ne pišu u bulk save-u; vidi persistNewOrder)
 
             // ✅ RACE FIX: Merge debts sa dirty-aware logikom (naplate mijenjaju
             // remaining bez dodira na time polje — mergeArraysById nije mogao
@@ -685,16 +760,12 @@ async function saveToFirebase() {
 
             console.log('🔀 Merge završen - orders:', DB.orders.length, 'debts:', DB.debts.length, 'history:', DB.workdayHistory.length);
 
-            // 🛡️ FINALNA ZAŠTITA: Blokiraj save ako bi obrisao podatke
-            const serverOrdersLen = Array.isArray(serverData.orders) ? serverData.orders.length : 0;
+            // 🛡️ FINALNA ZAŠTITA: Blokiraj save ako bi obrisao podatke.
+            // (Računi se VIŠE NE pišu u ovom save-u — idu pojedinačno — pa nema
+            // provere/rizika za njih ovde.)
             const serverDebtsLen = Array.isArray(serverData.debts) ? serverData.debts.length : 0;
             const serverHistoryLen = Array.isArray(serverData.workdayHistory) ? serverData.workdayHistory.length : 0;
 
-            if (DB.orders.length < serverOrdersLen) {
-                console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.orders.length + ' narudžbina, server ima ' + serverOrdersLen + '. Save otkazan.');
-                isSaving = false;
-                return;
-            }
             if (DB.debts.length < serverDebtsLen) {
                 console.error('🛡️ BLOKIRANO: Lokalno ima ' + DB.debts.length + ' dugova, server ima ' + serverDebtsLen + '. Save otkazan.');
                 isSaving = false;
@@ -732,7 +803,9 @@ async function saveToFirebase() {
     const dataToSave = {
         menu: DB.menu,
         // tables: DB.tables,  // ❌ UKLONJENO - cross-device race; vidi _dirtyTablePaths gore
-        orders: DB.orders,
+        // orders: DB.orders,  // ❌ UKLONJENO (#9) - računi se čuvaju POJEDINAČNO
+        //                     preko persistNewOrder()/push; bulk save ih ne dira
+        //                     (sprečava da se cela lista pregazi - uzrok gubitka).
         removedItems: DB.removedItems,
         settings: DB.settings,
         users: DB.users,
@@ -841,7 +914,7 @@ function saveDebounced() {
 
 let isCheckingUpdates = false;
 
-async function checkForUpdates() {
+async function checkForUpdates(incremental) {
     if (!isFirebaseAuthReady || isCheckingUpdates) return;
     
     // ✅ KLJUČNA POPRAVKA: Ne učitavaj dok imamo nesačuvane lokalne promene
@@ -866,7 +939,7 @@ async function checkForUpdates() {
         if (serverLastUpdate && serverLastUpdate !== lastUpdate) {
             const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
             lastUpdate = serverLastUpdate;
-            await loadFromFirebase();
+            await loadFromFirebase({ incremental: !!incremental });
             checkAndPlayNotificationSounds(oldPendingCount);
             render();
         }
@@ -911,7 +984,9 @@ let autoCloseTimer = null;
 
 function startAutoRefresh() {
     if (autoRefreshTimer) clearInterval(autoRefreshTimer);
-    autoRefreshTimer = setInterval(checkForUpdates, 10000);
+    // Poll na 10s = INKREMENTALNA sinhronizacija računa (jeftino). Fokus i login
+    // rade PUN load (skinu sve račune) - vidi startFocusRefresh.
+    autoRefreshTimer = setInterval(function() { checkForUpdates(true); }, 10000);
 
     // ⏰ Provera isteklih smena svaka 5 minuta
     if (autoCloseTimer) clearInterval(autoCloseTimer);
@@ -959,7 +1034,7 @@ function startLastUpdatedListener() {
         // Snimi staru pending count za kuvara PRE load-a
         const oldPendingCount = DB.kitchenOrders ? DB.kitchenOrders.filter(ko => ko.status === 'pending' || ko.status === 'preparing').length : 0;
         lastUpdate = serverLastUpdate;
-        loadFromFirebase().then(() => {
+        loadFromFirebase({ incremental: true }).then(() => {
             checkAndPlayNotificationSounds(oldPendingCount);
             render();
         }).catch(err => console.error('❌ Real-time load error:', err));

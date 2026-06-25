@@ -89,6 +89,15 @@ const DB = {
 
 let isLoading = false;
 
+// 🔄 SINHRONIZACIJA RAČUNA (#9 - smanjenje Firebase potrošnje)
+// Svi računi ostaju u memoriji (DB.orders) — svi izveštaji rade kao i pre.
+// Menja se SAMO mreža: pun load (login/fokus) skine sve, a česta cross-device
+// sinhronizacija (listener/10s poll) skine samo poslednjih ovoliko (nove) i
+// spoji ih. Glavna ušteda: merge-before-save više NE čita račune, i česti
+// sync ne povlači svih 5500+. Računi se čuvaju POJEDINAČNO (push) pa se ne mogu
+// međusobno pregaziti (to je i rešenje uzroka izgubljenih računa).
+const ORDERS_SYNC_CATCHUP = 300;
+
 // ============================================
 // SYNC DRINKS TO GROCERY LIST
 // ============================================

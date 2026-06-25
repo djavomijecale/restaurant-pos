@@ -25,8 +25,8 @@ function renderHistory(c) {
     }
     
     const filter = window.historyFilter;
-    
-    // Filter orders by date range
+
+    // Filter orders by date range (DB.orders je kompletan - puni se pri loginu)
     let filteredOrders = DB.orders.filter(o => {
         if (!o || !o.time) return false;
         const orderDate = o.time.split('T')[0];

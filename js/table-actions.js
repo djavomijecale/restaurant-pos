@@ -217,7 +217,7 @@ function confirmSplitPay(tableNum) {
     const selectedItems = table.order.filter(i => splitBillItems.includes(i.id));
     const total = selectedItems.reduce((s, i) => s + (i.price * i.qty), 0);
     
-    DB.orders.push({
+    const _splitOrder = {
         id: Date.now(),
         table: table.num,
         tableName: table.name,
@@ -231,8 +231,11 @@ function confirmSplitPay(tableNum) {
         createdBy: DB.konobarName || DB.currentUser.username,
         time: new Date().toISOString(),
         isSplitBill: true
-    });
-    
+    };
+    DB.orders.push(_splitOrder);
+    // 💾 Sačuvaj račun pojedinačno (računi se ne pišu više u bulk save-u)
+    if (typeof persistNewOrder === 'function') persistNewOrder(_splitOrder).catch(e => console.error('❌ Split račun nije sačuvan:', e && e.message));
+
     // Oduzmi iz lagera
     if (typeof deductInventoryOnPayment === 'function') {
         deductInventoryOnPayment(selectedItems);

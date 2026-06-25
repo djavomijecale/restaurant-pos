@@ -188,7 +188,18 @@ async function sendToOctopos(order, skipAutoCheck) {
                     console.warn('⚠️ Fiskalni račun nije preuzet:', e.message);
                 }
             }
-            
+
+            // 💾 Sačuvaj OctoPOS polja na samom računu (po ključu) — računi se ne
+            // pišu više u bulk save-u, pa moramo izmenu da gurnemo direktno.
+            if (typeof updateOrderRecord === 'function' && order._fbkey) {
+                updateOrderRecord(order, {
+                    octoposId: order.octoposId || null,
+                    octoposSent: !!order.octoposSent,
+                    octoposSentAt: order.octoposSentAt || null,
+                    fiscalReceipt: order.fiscalReceipt || null
+                });
+            }
+
             return { success: true, data: result.Data, receiptId: result.Data?.Id };
         } else {
             console.error('❌ OctoPOS greška:', result.Errors);

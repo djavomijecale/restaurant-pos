@@ -1326,13 +1326,27 @@ async function executeClearWorkday() {
             let stats = { orders: 0, shifts: 0, kitchen: 0, active: 0, removed: 0 };
             
             try {
-                // 1. Narudžbine
+                // 1. Narudžbine — čuvaju se POJEDINAČNO, pa ih moramo obrisati sa
+                //    servera po ključu (bulk save ih više ne piše). U deletedOrderIds
+                //    ih dodajemo kao osigurač da se ne vrate ni sa jednog uređaja.
                 if (doOrders) {
                     const before = DB.orders.length;
+                    const _removedOrders = DB.orders.filter(o => {
+                        const t = new Date(o.time);
+                        return (t >= dayStart && t <= dayEnd);
+                    });
                     DB.orders = DB.orders.filter(o => {
                         const t = new Date(o.time);
                         return !(t >= dayStart && t <= dayEnd);
                     });
+                    if (!DB.deletedOrderIds) DB.deletedOrderIds = [];
+                    for (const o of _removedOrders) {
+                        if (o && o.id !== undefined && o.id !== null) DB.deletedOrderIds.push(String(o.id));
+                        if (o && o._fbkey) {
+                            try { await database.ref('orders/' + o._fbkey).remove(); }
+                            catch (e) { console.warn('⚠️ Brisanje računa sa servera nije uspelo:', e && e.message); }
+                        }
+                    }
                     stats.orders = before - DB.orders.length;
                 }
                 

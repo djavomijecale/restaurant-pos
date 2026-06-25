@@ -518,7 +518,7 @@ function processDebtPayment(debtId, amount, method) {
         ? debt.items 
         : [{name: 'Vraćen dug - ' + debt.debtorName, price: amount, qty: 1}];
     
-    DB.orders.push({
+    const _debtOrder = {
         id: Date.now(),
         table: debt.table || 0,
         tableName: debt.tableName || 'Dug',
@@ -534,8 +534,11 @@ function processDebtPayment(debtId, amount, method) {
         isDebtPayment: true,
         debtorName: debt.debtorName,
         debtId: debt.id
-    });
-    
+    };
+    DB.orders.push(_debtOrder);
+    // 💾 Sačuvaj račun pojedinačno (računi se ne pišu više u bulk save-u)
+    if (typeof persistNewOrder === 'function') persistNewOrder(_debtOrder).catch(e => console.error('❌ Račun duga nije sačuvan:', e && e.message));
+
     save();
     
     const remainMsg = debt.remaining > 0 ? `\nPreostali dug: ${debt.remaining.toFixed(0)} din` : '\n✅ Dug potpuno podmiren!';
@@ -610,7 +613,7 @@ function processAllDebtPayments(debtorName, method) {
     });
     
     // Jedan zbirni unos u pazar
-    DB.orders.push({
+    const _debtAllOrder = {
         id: Date.now(),
         table: 0,
         tableName: 'Vraćen dug',
@@ -625,8 +628,10 @@ function processAllDebtPayments(debtorName, method) {
         time: new Date().toISOString(),
         isDebtPayment: true,
         debtorName: debtorName
-    });
-    
+    };
+    DB.orders.push(_debtAllOrder);
+    if (typeof persistNewOrder === 'function') persistNewOrder(_debtAllOrder).catch(e => console.error('❌ Račun duga nije sačuvan:', e && e.message));
+
     save();
     showAlert(`✅ Sva dugovanja podmirena!\n\n👤 ${debtorName}\n💵 ${totalPaid.toFixed(0)} din (${method})`);
     render();

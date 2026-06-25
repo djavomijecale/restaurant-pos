@@ -609,23 +609,27 @@ function renderPayment(c) {
 }
 
 
-function confirmPay() {
+async function confirmPay() {
     if(!payMethod) return;
     const table = DB.tables.find(t=>t.num===DB.selectedTable);
-    
+    if (!table) return;
+
+    // 🔒 ZAŠTITA OD DUPLOG KLIKA - sprečava dvostruku naplatu / dvostruko skidanje lagera
+    if (window._payInProgress) { console.warn('⚠️ confirmPay već u toku - ignorišem dupli klik'); return; }
+
     const isWaiter = DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
     const currentUsername = DB.currentUser ? DB.currentUser.username : null;
-    
+
     // Filtriraj samo njegove stavke
     let myOrder = table.order;
     if (isWaiter) {
-        myOrder = table.order.filter(item => 
+        myOrder = table.order.filter(item =>
             !item.createdBy || item.createdBy === currentUsername
         );
     }
-    
+
     const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
-    
+
     // Izračunaj popust (SVI KORISNICI)
     let discountAmount = 0;
     if(table.discountPercent > 0 && table.discountedItems && table.discountedItems.length > 0) {
@@ -635,9 +639,9 @@ function confirmPay() {
             }
         });
     }
-    
+
     const tot = Math.max(0, sub - discountAmount);
-    
+
     const newOrder = {
         id:Date.now(),
         table:table.num,
@@ -653,17 +657,39 @@ function confirmPay() {
         time:new Date().toISOString(),
         isFiscal: !!window.isFiscalReceipt
     };
-    
+
+    window._payInProgress = true;
     DB.orders.push(newOrder);
-    
+
+    // 💾 Sačuvaj račun POJEDINAČNO (čeka potvrdu — promet ne sme tiho da se izgubi).
+    // persistNewOrder postavlja newOrder._fbkey (za kasnije izmene, npr. OctoPOS).
+    let _orderSaved = false;
+    try {
+        if (typeof persistNewOrder === 'function') {
+            await persistNewOrder(newOrder);
+        }
+        _orderSaved = true;
+    } catch (e) {
+        console.error('❌ Račun nije sačuvan na server:', e && (e.message || e));
+    }
+
     // 🧾 OCTOPOS INTEGRACIJA - pošalji fiskalni račun ako je konobar uključio toggle
     if (typeof sendToOctopos === 'function' && OCTOPOS_CONFIG && OCTOPOS_CONFIG.enabled && window.octoposSendThis) {
         newOrder.octoposRequested = true;
         sendToOctopos(newOrder, true).then(result => {
             if (result.success) {
                 console.log('✅ OctoPOS fiskalni račun kreiran:', result.receiptId);
-                // Ažuriraj order sa OctoPOS ID-jem
-                save();
+                // Sačuvaj OctoPOS polja na samom računu (po ključu, ne ceo niz)
+                if (typeof updateOrderRecord === 'function') {
+                    updateOrderRecord(newOrder, {
+                        octoposId: newOrder.octoposId || null,
+                        octoposSent: !!newOrder.octoposSent,
+                        octoposSentAt: newOrder.octoposSentAt || null,
+                        octoposRequested: true,
+                        fiscalReceipt: newOrder.fiscalReceipt || null
+                    });
+                }
+                if (page === 'receipt') render();
             } else if (result.error && !result.error.includes('isključeno')) {
                 console.warn('⚠️ OctoPOS:', result.error);
                 // Prikaži upozorenje samo ako je greška (ne ako je isključeno za taj tip)
@@ -677,12 +703,12 @@ function confirmPay() {
             console.error('❌ OctoPOS error:', err);
         });
     }
-    
+
     // Oduzmi iz lagera
     if (typeof deductInventoryOnPayment === 'function') {
         deductInventoryOnPayment(myOrder);
     }
-    
+
     // KONOBAR: Briši samo njegove stavke
     // ADMIN: Briši sve
     if (isWaiter) {
@@ -697,7 +723,13 @@ function confirmPay() {
     // ✅ RACE FIX: Obeleži sto kao dirty da drugi uređaji ne vrate staru
     // narudžbinu (pre sync-a) i tako naplatu dupliciraju.
     if (typeof markTableDirty === 'function') markTableDirty(table.num);
-    save();
+    save(); // čuva stanje stolova (računi se čuvaju zasebno, gore)
+
+    window._payInProgress = false;
+
+    if (!_orderSaved) {
+        showAlert('⚠️ PAŽNJA: račun možda NIJE sačuvan na server (loš internet).\n\nProveri internet i NE gasi aplikaciju. Ako se ne pojavi u pazaru, ponovi unos.');
+    }
 
     page='receipt';
     render();
