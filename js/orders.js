@@ -660,6 +660,10 @@ async function confirmPay() {
 
     window._payInProgress = true;
     DB.orders.push(newOrder);
+    // Zapamti BAŠ ovaj račun za receipt ekran. Niz DB.orders se ubrzo
+    // prerasporedi (incremental sync spaja poslednjih N sa starima), pa
+    // DB.orders[length-1] više ne bude ovaj račun — receipt mora da zna tačno koji.
+    window._lastPaidOrder = newOrder;
 
     // 💾 Sačuvaj račun POJEDINAČNO (čeka potvrdu — promet ne sme tiho da se izgubi).
     // persistNewOrder postavlja newOrder._fbkey (za kasnije izmene, npr. OctoPOS).
@@ -737,7 +741,9 @@ async function confirmPay() {
 
 
 function renderReceipt(c) {
-    const o = DB.orders[DB.orders.length-1];
+    // Prikaži BAŠ naplaćeni račun (ne "poslednji u nizu" — niz se prerasporedi
+    // posle incremental sync-a pa bi se prikazao pogrešan, uvek isti račun).
+    const o = window._lastPaidOrder || DB.orders[DB.orders.length-1];
     if(!o) { c.innerHTML='<div class="empty">Nema narudžbi</div>'; return; }
     let h = `<div class="success"><div class="success-icon">✅</div><h2 style="color:#4CAF50;margin-bottom:24px">Plaćanje uspešno!</h2>
         <div style="background:#0F3460;padding:20px;border-radius:12px;max-width:400px;margin:0 auto">
