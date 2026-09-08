@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#1A1A2E">
 <title>Račun</title>
+<link rel="manifest" href="racun.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
@@ -23,6 +29,11 @@
     .brand { font-size:22px; font-weight:bold; color:#E94560; }
     .sub { color:#8A8AA8; font-size:13px; margin-top:2px; }
     .status { font-size:12px; color:#8A8AA8; text-align:right; }
+    .fsbtn {
+        background:#16213E; border:1px solid #2A2A4A; color:#8A8AA8; border-radius:10px;
+        width:42px; height:42px; font-size:18px; cursor:pointer; flex-shrink:0;
+    }
+    .fsbtn:active { background:#2A2A4A; }
 
     .card {
         background:#0F3460; border-radius:14px; padding:16px 18px; margin-bottom:12px;
@@ -102,7 +113,10 @@
             <div class="brand" id="restName">Račun</div>
             <div class="sub" id="screenLabel">Izaberi račun</div>
         </div>
-        <div class="status" id="status">Povezivanje…</div>
+        <div style="display:flex;align-items:center;gap:12px">
+            <div class="status" id="status">Povezivanje…</div>
+            <button class="fsbtn" id="fsBtn" onclick="toggleFullscreen()" title="Ceo ekran">⛶</button>
+        </div>
     </div>
 
     <div id="list"></div>
@@ -353,6 +367,46 @@ function pinPress(d) {
         }
     }
 }
+
+// ---- Ceo ekran + da se ekran ne gasi (tablet stoji na stolu) ----
+function goFullscreen() {
+    var el = document.documentElement;
+    var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
+    if (fn) { try { fn.call(el); } catch (e) {} }
+}
+function toggleFullscreen() {
+    var isFs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (isFs) {
+        var ex = document.exitFullscreen || document.webkitExitFullscreen;
+        if (ex) { try { ex.call(document); } catch (e) {} }
+    } else {
+        goFullscreen();
+    }
+    keepAwake();
+}
+
+// Wake Lock: dok je strana otvorena, tablet ne gasi ekran sam od sebe.
+var _wakeLock = null;
+function keepAwake() {
+    try {
+        if ('wakeLock' in navigator && !_wakeLock) {
+            navigator.wakeLock.request('screen').then(function(wl) {
+                _wakeLock = wl;
+                wl.addEventListener('release', function() { _wakeLock = null; });
+            }).catch(function() {});
+        }
+    } catch (e) {}
+}
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') keepAwake();
+});
+
+// Prvi dodir automatski uključuje ceo ekran (pregledači to traže posle klika).
+document.addEventListener('click', function _once() {
+    goFullscreen();
+    keepAwake();
+    document.removeEventListener('click', _once);
+});
 
 renderList();
 </script>
