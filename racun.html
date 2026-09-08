@@ -127,7 +127,7 @@
 <div id="pinModal">
     <div class="pinbox">
         <h3>🔒 Unesi PIN</h3>
-        <p>Za povratak na listu računa</p>
+        <p id="pinSub">Za povratak na listu računa</p>
         <div class="dots">
             <div class="dot" id="d0"></div><div class="dot" id="d1"></div>
             <div class="dot" id="d2"></div><div class="dot" id="d3"></div>
@@ -177,6 +177,18 @@ var orders = [];        // računi tekućeg radnog dana (najnoviji prvi)
 var shownOrder = null;  // račun koji gost trenutno gleda
 var pinValue = '';
 var serverPin = null;
+var pinPurpose = 'back';   // 'back' = nazad na listu | 'exitfs' = izlazak iz celog ekrana
+var connError = false;
+
+// Gore u uglu: broj računa vidi SAMO konobar (na listi).
+// Dok gost gleda svoj račun — ništa, da ne zna koliko je računa izdato danas.
+function updateStatus() {
+    var el = document.getElementById('status');
+    if (!el) return;
+    if (connError) { el.style.color = '#E94560'; el.textContent = '⚠️ Nema veze'; return; }
+    el.style.color = '#8A8AA8';
+    el.textContent = shownOrder ? '' : (orders.length + ' računa danas');
+}
 
 function esc(v) {
     if (v === null || v === undefined) return '';
@@ -214,7 +226,8 @@ database.ref('orders').orderByKey().limitToLast(ORDERS_TAIL).on('value', functio
     });
     out.sort(function(a, b) { return new Date(b.time) - new Date(a.time); });
     orders = out;
-    document.getElementById('status').textContent = orders.length + ' računa danas';
+    connError = false;
+    updateStatus();
     if (shownOrder) {
         // Osveži prikazani račun ako je u međuvremenu izmenjen
         for (var i = 0; i < orders.length; i++) {
@@ -225,7 +238,8 @@ database.ref('orders').orderByKey().limitToLast(ORDERS_TAIL).on('value', functio
         renderList();
     }
 }, function(err) {
-    document.getElementById('status').textContent = 'Greška veze';
+    connError = true;
+    updateStatus();
     console.error(err);
 });
 
@@ -245,6 +259,7 @@ function renderList() {
     document.getElementById('list').style.display = 'block';
     document.getElementById('restName').textContent = window._restName || 'Račun';
     document.getElementById('screenLabel').textContent = 'Izaberi račun koji pokazuješ gostu';
+    updateStatus();
 
     var el = document.getElementById('list');
     if (orders.length === 0) {
@@ -283,6 +298,7 @@ function renderDetail() {
     document.getElementById('detail').style.display = 'block';
     document.getElementById('restName').textContent = window._restName || '';
     document.getElementById('screenLabel').textContent = 'Vaš račun';
+    updateStatus();
 
     var items = o.items || [];
     if (!Array.isArray(items)) items = Object.values(items);
@@ -330,9 +346,12 @@ function renderDetail() {
 }
 
 // ---- PIN (samo za povratak na listu) ----
-function askPin() {
+function askPin(purpose) {
+    pinPurpose = purpose || 'back';
     pinValue = '';
     document.getElementById('pinErr').textContent = '';
+    document.getElementById('pinSub').textContent =
+        (pinPurpose === 'exitfs') ? 'Za izlazak iz celog ekrana' : 'Za povratak na listu računa';
     updateDots();
     document.getElementById('pinModal').style.display = 'flex';
 }
@@ -357,9 +376,14 @@ function pinPress(d) {
     if (pinValue.length === 4) {
         var expected = serverPin || DEFAULT_PIN;
         if (pinValue === expected) {
+            var what = pinPurpose;
             closePin();
-            shownOrder = null;
-            renderList();
+            if (what === 'exitfs') {
+                doExitFullscreen();
+            } else {
+                shownOrder = null;
+                renderList();
+            }
         } else {
             document.getElementById('pinErr').textContent = 'Pogrešan PIN';
             pinValue = '';
@@ -374,15 +398,20 @@ function goFullscreen() {
     var fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
     if (fn) { try { fn.call(el); } catch (e) {} }
 }
+function doExitFullscreen() {
+    var ex = document.exitFullscreen || document.webkitExitFullscreen;
+    if (ex) { try { ex.call(document); } catch (e) {} }
+}
+// Ulazak u ceo ekran je slobodan (konobar jednim klikom), a IZLAZAK traži PIN —
+// da gost ne može da otvori Chrome traku i pobegne sa strane.
 function toggleFullscreen() {
     var isFs = document.fullscreenElement || document.webkitFullscreenElement;
     if (isFs) {
-        var ex = document.exitFullscreen || document.webkitExitFullscreen;
-        if (ex) { try { ex.call(document); } catch (e) {} }
+        askPin('exitfs');
     } else {
         goFullscreen();
+        keepAwake();
     }
-    keepAwake();
 }
 
 // Wake Lock: dok je strana otvorena, tablet ne gasi ekran sam od sebe.
