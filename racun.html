@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1A1A2E">
+<title>Račun</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<style>
+    * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    body {
+        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+        background:#1A1A2E; color:#FFF; min-height:100vh; padding:16px;
+        -webkit-user-select:none; user-select:none;
+    }
+    .wrap { max-width:820px; margin:0 auto; }
+    .top {
+        display:flex; justify-content:space-between; align-items:center;
+        margin-bottom:18px; padding-bottom:14px; border-bottom:2px solid #2A2A4A;
+    }
+    .brand { font-size:22px; font-weight:bold; color:#E94560; }
+    .sub { color:#8A8AA8; font-size:13px; margin-top:2px; }
+    .status { font-size:12px; color:#8A8AA8; text-align:right; }
+
+    .card {
+        background:#0F3460; border-radius:14px; padding:16px 18px; margin-bottom:12px;
+        cursor:pointer; border:2px solid transparent; transition:border-color .15s;
+        display:flex; justify-content:space-between; align-items:center; gap:12px;
+    }
+    .card:active { border-color:#E94560; }
+    .card .l { min-width:0; }
+    .card .t { font-size:19px; font-weight:bold; }
+    .card .m { color:#8A8AA8; font-size:13px; margin-top:3px; }
+    .card .amt { font-size:24px; font-weight:bold; color:#FFD700; white-space:nowrap; }
+
+    .empty { text-align:center; color:#8A8AA8; padding:60px 20px; }
+    .empty .ic { font-size:56px; margin-bottom:14px; }
+
+    /* ---- Detalj računa (ono što gost gleda) ---- */
+    #detail { display:none; }
+    .bill { background:#0F3460; border-radius:18px; padding:26px; }
+    .bill-head { text-align:center; padding-bottom:18px; border-bottom:2px dashed #2A2A4A; }
+    .bill-head .rest { font-size:24px; font-weight:bold; color:#E94560; }
+    .bill-head .meta { color:#8A8AA8; font-size:14px; margin-top:6px; }
+    .row {
+        display:flex; justify-content:space-between; align-items:flex-start;
+        padding:13px 0; border-bottom:1px solid #23234A; gap:14px; font-size:19px;
+    }
+    .row .nm { flex:1; min-width:0; }
+    .row .qty { color:#8A8AA8; font-size:14px; margin-top:2px; }
+    .row .pr { color:#FFF; font-weight:600; white-space:nowrap; }
+    .total {
+        display:flex; justify-content:space-between; align-items:center;
+        margin-top:18px; padding-top:18px; border-top:2px dashed #2A2A4A;
+        font-size:26px; font-weight:bold;
+    }
+    .total .v { color:#FFD700; font-size:38px; }
+    .disc { display:flex; justify-content:space-between; color:#4CAF50; font-size:17px; padding:8px 0; }
+    .tips { margin-top:20px; background:#16213E; border-radius:14px; padding:16px 18px; }
+    .tips h4 { color:#8A8AA8; font-size:13px; font-weight:600; margin-bottom:12px; letter-spacing:.4px; }
+    .tip-row { display:flex; gap:10px; }
+    .tip {
+        flex:1; background:#0F3460; border-radius:10px; padding:12px 8px; text-align:center;
+    }
+    .tip .p { color:#8A8AA8; font-size:13px; }
+    .tip .v { color:#FFF; font-weight:bold; font-size:19px; margin-top:4px; }
+    .thanks { text-align:center; color:#8A8AA8; margin-top:22px; font-size:15px; }
+    .backbar { margin-top:18px; }
+    .btn {
+        width:100%; padding:15px; border:none; border-radius:12px; background:#2A2A4A;
+        color:#8A8AA8; font-size:15px; font-weight:600; cursor:pointer;
+    }
+    .btn:active { background:#3A3A5A; }
+
+    /* ---- PIN ---- */
+    #pinModal {
+        display:none; position:fixed; inset:0; background:rgba(0,0,0,.9);
+        align-items:center; justify-content:center; padding:20px; z-index:50;
+    }
+    .pinbox { background:#0F3460; border-radius:18px; padding:26px; width:100%; max-width:340px; text-align:center; }
+    .pinbox h3 { margin-bottom:6px; font-size:20px; }
+    .pinbox p { color:#8A8AA8; font-size:13px; margin-bottom:18px; }
+    .dots { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
+    .dot { width:16px; height:16px; border-radius:50%; background:#2A2A4A; }
+    .dot.on { background:#E94560; }
+    .pad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .key {
+        background:#16213E; border:none; border-radius:12px; padding:18px 0;
+        color:#FFF; font-size:24px; font-weight:bold; cursor:pointer;
+    }
+    .key:active { background:#2A2A4A; }
+    .key.wide { grid-column:span 1; font-size:16px; color:#8A8AA8; }
+    .err { color:#E94560; font-size:14px; margin-top:12px; min-height:18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="top">
+        <div>
+            <div class="brand" id="restName">Račun</div>
+            <div class="sub" id="screenLabel">Izaberi račun</div>
+        </div>
+        <div class="status" id="status">Povezivanje…</div>
+    </div>
+
+    <div id="list"></div>
+
+    <div id="detail"></div>
+</div>
+
+<div id="pinModal">
+    <div class="pinbox">
+        <h3>🔒 Unesi PIN</h3>
+        <p>Za povratak na listu računa</p>
+        <div class="dots">
+            <div class="dot" id="d0"></div><div class="dot" id="d1"></div>
+            <div class="dot" id="d2"></div><div class="dot" id="d3"></div>
+        </div>
+        <div class="pad">
+            <button class="key" onclick="pinPress('1')">1</button>
+            <button class="key" onclick="pinPress('2')">2</button>
+            <button class="key" onclick="pinPress('3')">3</button>
+            <button class="key" onclick="pinPress('4')">4</button>
+            <button class="key" onclick="pinPress('5')">5</button>
+            <button class="key" onclick="pinPress('6')">6</button>
+            <button class="key" onclick="pinPress('7')">7</button>
+            <button class="key" onclick="pinPress('8')">8</button>
+            <button class="key" onclick="pinPress('9')">9</button>
+            <button class="key wide" onclick="closePin()">Otkaži</button>
+            <button class="key" onclick="pinPress('0')">0</button>
+            <button class="key wide" onclick="pinBack()">⌫</button>
+        </div>
+        <div class="err" id="pinErr"></div>
+    </div>
+</div>
+
+<script>
+// ============================================
+// DIGITALNI RAČUN ZA GOSTA (tablet na stolu)
+// Zasebna, zaključana strana: ume SAMO da prikaže naplaćene račune tekućeg
+// radnog dana. Nema pazara, izveštaja, podešavanja — gost nema gde da ode.
+// Namerno NE čita ceo /settings (tamo su fiskalni ključevi), nego samo
+// /settings/name i /settings/racunPin.
+// ============================================
+var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyC1bcysO7v34xhqLTJlTNXpK_XtCS372aE",
+    databaseURL: "https://restaurant-pos-5ecf4-default-rtdb.europe-west1.firebasedatabase.app",
+    authDomain: "restaurant-pos-5ecf4.firebaseapp.com",
+    projectId: "restaurant-pos-5ecf4"
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+var database = firebase.database();
+firebase.auth().signInAnonymously().catch(function(e){ console.warn('Auth:', e); });
+
+var DAILY_CUTOFF_HOUR = 7;          // radni dan 7:00 → 7:00
+var ORDERS_TAIL = 200;              // koliko poslednjih računa povlačimo (jeftino)
+var TIP_PERCENTS = [10, 15, 20];
+var DEFAULT_PIN = '1234';
+
+var orders = [];        // računi tekućeg radnog dana (najnoviji prvi)
+var shownOrder = null;  // račun koji gost trenutno gleda
+var pinValue = '';
+var serverPin = null;
+
+function esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function fmt(n) { return Math.round(Number(n) || 0).toLocaleString('sr-RS'); }
+function hhmm(iso) {
+    try {
+        return new Date(iso).toLocaleTimeString('sr-RS', { hour:'2-digit', minute:'2-digit' });
+    } catch (e) { return ''; }
+}
+function businessDayRange() {
+    var now = new Date();
+    var start = new Date(now);
+    start.setHours(DAILY_CUTOFF_HOUR, 0, 0, 0);
+    if (now < start) start.setDate(start.getDate() - 1);
+    var end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+}
+
+// ---- Učitavanje računa (uživo) ----
+// orderByKey().limitToLast: povlačimo samo poslednjih N umesto svih 5000+.
+database.ref('orders').orderByKey().limitToLast(ORDERS_TAIL).on('value', function(snap) {
+    var range = businessDayRange();
+    var out = [];
+    snap.forEach(function(child) {
+        var o = child.val();
+        if (!o || !o.time) return;
+        if (o.time >= range.start && o.time < range.end) {
+            o._key = child.key;
+            out.push(o);
+        }
+    });
+    out.sort(function(a, b) { return new Date(b.time) - new Date(a.time); });
+    orders = out;
+    document.getElementById('status').textContent = orders.length + ' računa danas';
+    if (shownOrder) {
+        // Osveži prikazani račun ako je u međuvremenu izmenjen
+        for (var i = 0; i < orders.length; i++) {
+            if (orders[i]._key === shownOrder._key) { shownOrder = orders[i]; break; }
+        }
+        renderDetail();
+    } else {
+        renderList();
+    }
+}, function(err) {
+    document.getElementById('status').textContent = 'Greška veze';
+    console.error(err);
+});
+
+database.ref('settings/name').on('value', function(s) {
+    var n = s.val();
+    if (n && !shownOrder) document.getElementById('restName').textContent = n;
+    window._restName = n || 'Račun';
+});
+database.ref('settings/racunPin').on('value', function(s) {
+    var p = s.val();
+    serverPin = (p !== null && p !== undefined && String(p).length > 0) ? String(p) : null;
+});
+
+// ---- Lista naplaćenih računa ----
+function renderList() {
+    document.getElementById('detail').style.display = 'none';
+    document.getElementById('list').style.display = 'block';
+    document.getElementById('restName').textContent = window._restName || 'Račun';
+    document.getElementById('screenLabel').textContent = 'Izaberi račun koji pokazuješ gostu';
+
+    var el = document.getElementById('list');
+    if (orders.length === 0) {
+        el.innerHTML = '<div class="empty"><div class="ic">🧾</div>' +
+            '<p style="font-size:18px">Još nema naplaćenih računa danas</p>' +
+            '<p style="font-size:14px;margin-top:8px">Čim konobar naplati, račun se pojavi ovde.</p></div>';
+        return;
+    }
+    var h = '';
+    orders.forEach(function(o, idx) {
+        var pay = o.method === 'Cash' ? '💵 Keš' : (o.method === 'Card' ? '💳 Kartica' : '🏦 Prenos');
+        var items = (o.items || []).length;
+        h += '<div class="card" onclick="openBill(' + idx + ')">' +
+                '<div class="l">' +
+                    '<div class="t">' + esc(o.tableName || ('Sto ' + o.table)) + '</div>' +
+                    '<div class="m">' + hhmm(o.time) + ' · ' + esc(o.createdBy || '') +
+                        ' · ' + items + ' ' + (items === 1 ? 'stavka' : 'stavki') + ' · ' + pay + '</div>' +
+                '</div>' +
+                '<div class="amt">' + fmt(o.tot) + '</div>' +
+             '</div>';
+    });
+    el.innerHTML = h;
+}
+
+// ---- Prikaz jednog računa (ekran za gosta) ----
+function openBill(idx) {
+    shownOrder = orders[idx];
+    if (!shownOrder) return;
+    renderDetail();
+}
+
+function renderDetail() {
+    var o = shownOrder;
+    if (!o) return renderList();
+    document.getElementById('list').style.display = 'none';
+    document.getElementById('detail').style.display = 'block';
+    document.getElementById('restName').textContent = window._restName || '';
+    document.getElementById('screenLabel').textContent = 'Vaš račun';
+
+    var items = o.items || [];
+    if (!Array.isArray(items)) items = Object.values(items);
+
+    var h = '<div class="bill">' +
+        '<div class="bill-head">' +
+            '<div class="rest">' + esc(window._restName || '') + '</div>' +
+            '<div class="meta">' + esc(o.tableName || ('Sto ' + o.table)) + ' · ' + hhmm(o.time) + '</div>' +
+        '</div>';
+
+    items.forEach(function(i) {
+        var q = Number(i.qty) || 0;
+        var p = Number(i.price) || 0;
+        h += '<div class="row">' +
+                '<div class="nm">' + esc(i.name) +
+                    '<div class="qty">' + q + ' × ' + fmt(p) + ' din</div>' +
+                '</div>' +
+                '<div class="pr">' + fmt(q * p) + ' din</div>' +
+             '</div>';
+    });
+
+    if (Number(o.disc) > 0) {
+        h += '<div class="disc"><span>Popust' + (o.discountPercent ? ' (' + o.discountPercent + '%)' : '') +
+             '</span><span>− ' + fmt(o.disc) + ' din</span></div>';
+    }
+
+    h += '<div class="total"><span>UKUPNO</span><span class="v">' + fmt(o.tot) + ' din</span></div>';
+
+    // Predlog napojnice (samo informativno — ne naplaćuje se)
+    var tot = Number(o.tot) || 0;
+    h += '<div class="tips"><h4>PREDLOG NAPOJNICE (nije uračunata)</h4><div class="tip-row">';
+    TIP_PERCENTS.forEach(function(p) {
+        h += '<div class="tip"><div class="p">' + p + '%</div>' +
+             '<div class="v">' + fmt(tot * p / 100) + '</div></div>';
+    });
+    h += '</div></div>';
+
+    h += '<div class="thanks">Hvala na poseti! 🙏</div>';
+    h += '</div>';
+
+    h += '<div class="backbar"><button class="btn" onclick="askPin()">🔒 Nazad na listu (PIN)</button></div>';
+
+    document.getElementById('detail').innerHTML = h;
+    window.scrollTo(0, 0);
+}
+
+// ---- PIN (samo za povratak na listu) ----
+function askPin() {
+    pinValue = '';
+    document.getElementById('pinErr').textContent = '';
+    updateDots();
+    document.getElementById('pinModal').style.display = 'flex';
+}
+function closePin() {
+    document.getElementById('pinModal').style.display = 'none';
+    pinValue = '';
+    updateDots();
+}
+function pinBack() {
+    pinValue = pinValue.slice(0, -1);
+    updateDots();
+}
+function updateDots() {
+    for (var i = 0; i < 4; i++) {
+        document.getElementById('d' + i).className = 'dot' + (i < pinValue.length ? ' on' : '');
+    }
+}
+function pinPress(d) {
+    if (pinValue.length >= 4) return;
+    pinValue += d;
+    updateDots();
+    if (pinValue.length === 4) {
+        var expected = serverPin || DEFAULT_PIN;
+        if (pinValue === expected) {
+            closePin();
+            shownOrder = null;
+            renderList();
+        } else {
+            document.getElementById('pinErr').textContent = 'Pogrešan PIN';
+            pinValue = '';
+            setTimeout(updateDots, 150);
+        }
+    }
+}
+
+renderList();
+</script>
+</body>
+</html>

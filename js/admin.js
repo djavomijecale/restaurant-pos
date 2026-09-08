@@ -856,7 +856,25 @@ function renderSettings(c) {
             ${typeof renderGeoSettings === 'function' ? renderGeoSettings() : ''}
             
             <button class="btn" style="margin-top:16px" onclick="saveSettings()">Sačuvaj Postavke</button>
-            
+
+            <div style="border-top:3px solid #00BCD4;margin:32px 0;padding-top:24px">
+                <h3 style="color:#00BCD4;margin-bottom:16px">🧾 Digitalni Račun (tablet za goste)</h3>
+                <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #00BCD4;margin-bottom:16px">
+                    <p style="color:#B0B0B0;font-size:13px;line-height:1.7">
+                        Na tabletu otvori ovu adresu i sačuvaj je kao prečicu:<br>
+                        <span style="color:#00BCD4;font-weight:bold;word-break:break-all">${location.origin}${location.pathname.replace(/[^/]*$/, '')}racun.html</span><br><br>
+                        Tablet prikazuje <strong style="color:#4CAF50">samo naplaćene račune današnjeg dana</strong> — nema pazara,
+                        izveštaja ni podešavanja. Konobar izabere račun i da tablet gostu; za povratak na listu traži se PIN.
+                    </p>
+                </div>
+                <label style="color:#B0B0B0;font-size:13px;display:block;margin-bottom:4px">PIN za povratak (4 cifre)</label>
+                <input type="text" id="racunPinInput" maxlength="4" inputmode="numeric"
+                       value="${DB.settings.racunPin || '1234'}" placeholder="1234"
+                       style="max-width:160px;font-size:20px;letter-spacing:4px;text-align:center">
+                <p style="color:#888;font-size:12px;margin:6px 0 12px">Podrazumevano je 1234 — promeni ga da gosti ne bi pogodili.</p>
+                <button class="btn" style="background:#00BCD4" onclick="saveRacunPin()">💾 Sačuvaj PIN</button>
+            </div>
+
             <div style="border-top:3px solid #FF9800;margin:32px 0;padding-top:24px">
                 <h3 style="color:#FF9800;margin-bottom:16px">🧹 Očisti Radni Dan</h3>
                 <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #FF9800;margin-bottom:16px">
@@ -947,6 +965,19 @@ function saveSettings() {
     DB.settings.ip = document.getElementById('sip').value;
     save();
     showAlert('✅ Sačuvano!');
+}
+
+// PIN za digitalni račun na tabletu (racun.html traži ga za povratak na listu)
+function saveRacunPin() {
+    if (!DB.settings) DB.settings = {};
+    var v = (document.getElementById('racunPinInput').value || '').trim();
+    if (!/^[0-9]{4}$/.test(v)) {
+        showAlert('❌ PIN mora imati tačno 4 cifre (npr. 2580)');
+        return;
+    }
+    DB.settings.racunPin = v;
+    save();
+    showAlert('✅ PIN sačuvan! Tablet ga preuzima odmah (bez restarta).');
 }
 
 function saveCameraSettings() {
