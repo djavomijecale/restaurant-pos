@@ -126,6 +126,9 @@ function renderHistory(c) {
                 <button class="btn ${filter.viewMode==='sessions'?'':'btn-secondary'}"
                     onclick="window.historyFilter.viewMode='sessions';render()"
                     style="flex:1;min-width:100px">👥 Sesije</button>
+                ${!isWaiter ? `<button class="btn ${filter.viewMode==='artikli'?'':'btn-secondary'}"
+                    onclick="window.historyFilter.viewMode='artikli';render()"
+                    style="flex:1;min-width:110px">📦 Artikli</button>` : ''}
             </div>
     `;
 
@@ -140,10 +143,193 @@ function renderHistory(c) {
         h += renderHistoryFiscalOrders(fiscalOrders, fiscalTotal);
     } else if (filter.viewMode === 'sessions') {
         h += renderHistorySessions(filteredSessions);
+    } else if (filter.viewMode === 'artikli') {
+        h += renderHistoryItems(filteredOrders);
     }
     
     h += `</div>`;
     c.innerHTML = h;
+}
+
+
+// ============================================
+// 📦 PRODAJA PO ARTIKLU (admin)
+// Koristi već izabrani opseg datuma iz Istorije. Grupiše stavke iz računa po
+// nazivu (normalizovano, pa se isti artikal spoji i ako mu je ID menjan), pa
+// admin može da pretraži artikal i vidi koliko ga je prodato i kad.
+// ============================================
+function _normItemName(s) {
+    return String(s || '').toLowerCase()
+        .replace(/č|ć/g, 'c').replace(/š/g, 's').replace(/ž/g, 'z').replace(/đ/g, 'dj')
+        .replace(/\s+/g, ' ').trim();
+}
+
+// Radni dan (presek u 7:00) za dati ISO datum
+function _itemBusinessDay(iso) {
+    const CUT = (typeof DAILY_CUTOFF_HOUR !== 'undefined') ? DAILY_CUTOFF_HOUR : 7;
+    const d = new Date(iso);
+    if (d.getHours() < CUT) d.setDate(d.getDate() - 1);
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + dd;
+}
+
+function renderHistoryItems(orders) {
+    // --- Agregacija: artikal -> {qty, money, dani:{}, konobari:{}} ---
+    const agg = {};
+    (orders || []).forEach(function(o) {
+        if (!o || !o.time) return;
+        let items = o.items || [];
+        if (!Array.isArray(items)) items = Object.values(items);
+        const dan = _itemBusinessDay(o.time);
+        const ko = o.createdBy || 'Nepoznato';
+        items.forEach(function(it) {
+            if (!it || !it.name) return;
+            const key = _normItemName(it.name);
+            if (!key) return;
+            const q = Number(it.qty) || 0;
+            const m = q * (Number(it.price) || 0);
+            if (!agg[key]) agg[key] = { name: it.name, qty: 0, money: 0, dani: {}, konobari: {} };
+            agg[key].qty += q;
+            agg[key].money += m;
+            agg[key].dani[dan] = (agg[key].dani[dan] || 0) + q;
+            agg[key].konobari[ko] = (agg[key].konobari[ko] || 0) + q;
+        });
+    });
+
+    window._histItems = agg; // za detalje na klik
+    const lista = Object.keys(agg).map(function(k) { return { key: k, v: agg[k] }; })
+        .sort(function(a, b) { return b.v.qty - a.v.qty; });
+
+    const fmt = function(n) { return Math.round(Number(n) || 0).toLocaleString('sr-RS'); };
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
+
+    if (lista.length === 0) {
+        return `<div style="background:#0F3460;padding:40px;border-radius:12px;text-align:center;color:#B0B0B0">
+            <p style="font-size:44px;margin-bottom:12px">📦</p>
+            <p>Nema prodatih artikala u izabranom periodu</p>
+            <p style="font-size:13px;margin-top:8px">Promeni datume gore pa klikni 🔍 Primeni</p>
+        </div>`;
+    }
+
+    const ukQ = lista.reduce(function(s, x) { return s + x.v.qty; }, 0);
+    const ukM = lista.reduce(function(s, x) { return s + x.v.money; }, 0);
+
+    let h = `<div style="background:#0F3460;padding:20px;border-radius:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+            <h3 style="color:#E94560;margin:0">📦 Prodaja po artiklu</h3>
+            <div style="color:#B0B0B0;font-size:13px">${lista.length} različitih artikala · ukupno <b style="color:#FFD700">${fmt(ukQ)}</b> kom · <b style="color:#FFD700">${fmt(ukM)}</b> din</div>
+        </div>
+
+        <input type="text" id="itemSearchBox" placeholder="🔍 Ukucaj naziv artikla (npr. prsuta, margarita, espresso)…"
+            oninput="filterHistoryItems(this.value)"
+            style="width:100%;padding:12px;border-radius:8px;border:2px solid #2A2A4A;background:#16213E;color:#FFF;font-size:16px;margin-bottom:6px">
+        <div id="itemSearchInfo" style="color:#888;font-size:12px;margin-bottom:12px">Klikni na artikal da vidiš po danima i po konobaru.</div>
+
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+            <thead>
+                <tr style="color:#B0B0B0;font-size:12px;text-align:left">
+                    <th style="padding:8px 6px;border-bottom:2px solid #2A2A4A">Artikal</th>
+                    <th style="padding:8px 6px;border-bottom:2px solid #2A2A4A;text-align:right">Kom</th>
+                    <th style="padding:8px 6px;border-bottom:2px solid #2A2A4A;text-align:right">Promet</th>
+                </tr>
+            </thead>
+            <tbody id="itemRows">`;
+
+    lista.forEach(function(x) {
+        h += `<tr class="item-row" data-key="${esc(x.key)}" data-name="${esc(x.key)}"
+                onclick="toggleHistoryItem('${esc(x.key).replace(/'/g, "\\'")}')"
+                style="cursor:pointer;border-bottom:1px solid #1E1E3A">
+                <td style="padding:10px 6px">${esc(x.v.name)}</td>
+                <td style="padding:10px 6px;text-align:right;font-weight:bold">${fmt(x.v.qty)}</td>
+                <td style="padding:10px 6px;text-align:right;color:#FFD700">${fmt(x.v.money)}</td>
+            </tr>
+            <tr class="item-detail" id="det_${esc(x.key).replace(/[^a-z0-9]/gi, '_')}" style="display:none">
+                <td colspan="3" style="padding:0 6px 14px"><div class="det-box" style="background:#16213E;border-radius:8px;padding:12px"></div></td>
+            </tr>`;
+    });
+
+    h += `</tbody></table></div>
+        <p style="color:#888;font-size:12px;margin-top:14px">
+            Period se bira gore („Od datuma" / „Do datuma" pa 🔍 Primeni). Dan se računa po smeni — presek u 7:00 ujutru.
+        </p>
+    </div>`;
+    return h;
+}
+
+// Pretraga bez ponovnog crtanja (da ne gubi fokus dok se kuca)
+function filterHistoryItems(q) {
+    const term = _normItemName(q);
+    const rows = document.querySelectorAll('#itemRows tr.item-row');
+    let vidljivo = 0, qty = 0, money = 0;
+    rows.forEach(function(r) {
+        const key = r.getAttribute('data-name') || '';
+        const ok = !term || key.indexOf(term) >= 0;
+        r.style.display = ok ? '' : 'none';
+        const det = r.nextElementSibling;
+        if (det && det.classList.contains('item-detail') && !ok) det.style.display = 'none';
+        if (ok) {
+            vidljivo++;
+            const v = (window._histItems || {})[r.getAttribute('data-key')];
+            if (v) { qty += v.qty; money += v.money; }
+        }
+    });
+    const info = document.getElementById('itemSearchInfo');
+    if (info) {
+        const f = function(n) { return Math.round(n).toLocaleString('sr-RS'); };
+        info.innerHTML = term
+            ? `Pronađeno: <b style="color:#FFF">${vidljivo}</b> artikala · <b style="color:#FFD700">${f(qty)}</b> kom · <b style="color:#FFD700">${f(money)}</b> din`
+            : 'Klikni na artikal da vidiš po danima i po konobaru.';
+    }
+}
+
+function toggleHistoryItem(key) {
+    const id = 'det_' + key.replace(/[^a-z0-9]/gi, '_');
+    const row = document.getElementById(id);
+    if (!row) return;
+    if (row.style.display !== 'none') { row.style.display = 'none'; return; }
+
+    const v = (window._histItems || {})[key];
+    const box = row.querySelector('.det-box');
+    if (v && box) {
+        const fmt = function(n) { return Math.round(Number(n) || 0).toLocaleString('sr-RS'); };
+        const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
+        const dani = Object.keys(v.dani).sort();
+        const brDana = dani.length;
+        const prosek = brDana ? (v.qty / brDana) : 0;
+        const maxQ = dani.reduce(function(m, d) { return Math.max(m, v.dani[d]); }, 0) || 1;
+
+        let d = `<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;font-size:13px;color:#B0B0B0">
+                <span>Dana sa prodajom: <b style="color:#FFF">${brDana}</b></span>
+                <span>Prosek: <b style="color:#FFF">${prosek.toFixed(1)}</b> kom/dan</span>
+                <span>Najbolji dan: <b style="color:#FFF">${fmt(maxQ)}</b> kom</span>
+            </div>`;
+
+        d += '<div style="color:#B0B0B0;font-size:12px;margin-bottom:6px">PO DANIMA</div>';
+        dani.forEach(function(dan) {
+            const q = v.dani[dan];
+            const pct = Math.round(100 * q / maxQ);
+            const dt = dan.split('-');
+            d += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                    <span style="color:#B0B0B0;font-size:12px;min-width:56px">${dt[2]}.${dt[1]}.</span>
+                    <div style="flex:1;background:#0F3460;border-radius:4px;height:16px;overflow:hidden">
+                        <div style="width:${pct}%;height:100%;background:#E94560"></div>
+                    </div>
+                    <span style="min-width:34px;text-align:right;font-weight:bold;font-size:13px">${fmt(q)}</span>
+                </div>`;
+        });
+
+        const kon = Object.keys(v.konobari).sort(function(a, b) { return v.konobari[b] - v.konobari[a]; });
+        if (kon.length) {
+            d += '<div style="color:#B0B0B0;font-size:12px;margin:12px 0 6px">PO KONOBARU</div><div style="display:flex;flex-wrap:wrap;gap:8px">';
+            kon.forEach(function(k) {
+                d += `<span style="background:#0F3460;padding:6px 10px;border-radius:14px;font-size:13px">${esc(k)}: <b>${fmt(v.konobari[k])}</b></span>`;
+            });
+            d += '</div>';
+        }
+        box.innerHTML = d;
+    }
+    row.style.display = '';
 }
 
 
