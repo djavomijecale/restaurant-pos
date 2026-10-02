@@ -21,6 +21,74 @@ function shouldSendToKitchen(menuItem) {
 }
 
 
+// ============================================
+// 🍳 Prozor za dopisivanje u postojeću kuhinjsku porudžbinu
+//
+// Konobar često kuca sto u više navrata (pa dopuni, pa se predomisli), pa
+// te stavke treba da odu kuvaru kao JEDNA porudžbina. Ali samo nakratko.
+//
+// VAŽNO: prozor se meri od NASTANKA porudžbine (createdAt), a NE od
+// poslednje dopisane stavke. Da se meri od poslednje, svaka nova stavka bi
+// pomerila rok i porudžbina bi rasla bez kraja — tako je sto Bašta 4
+// nakupio 25 stavki i sve ih sručio kuvaru čim se ulogovao.
+//
+// `orderedAt` se i dalje osvežava pri dopisivanju (kuvar po njemu sortira i
+// filtrira po smeni), zato nastanak mora da se pamti zasebno.
+// ============================================
+const KITCHEN_MERGE_WINDOW_MIN = 20;
+
+function _findOpenKitchenOrder(tableNum, username) {
+    const granica = Date.now() - KITCHEN_MERGE_WINDOW_MIN * 60000;
+    return (DB.kitchenOrders || []).find(function(ko) {
+        if (!ko || ko.status !== 'pending') return false;       // 'preparing' kuvar već radi
+        if (ko.tableNum !== tableNum || ko.waiterUsername !== username) return false;
+        const nastala = ko.createdAt || ko.orderedAt;           // stare nemaju createdAt
+        return !!nastala && new Date(nastala).getTime() >= granica;
+    });
+}
+
+// Pošalji JEDAN komad u kuhinju: dopiši u otvorenu porudžbinu ili otvori novu.
+//
+// Ranije su obe grane u addToTable imale svoju kopiju ovoga, ali grana za
+// POVEĆANJE KOLIČINE je samo dopisivala u zatečenu `pending` porudžbinu —
+// ako je nije bilo (kuvar je već preuzeo, ili je prozor istekao), dodatna
+// porcija se NIJE slala kuhinji. Konobar je naplati, a kuvar za nju ne zna.
+function _sendItemToKitchen(table, menuItem) {
+    const ko = _findOpenKitchenOrder(table.num, DB.currentUser.username);
+    if (ko) {
+        const stavka = ko.items.find(function(i) { return i.id === menuItem.id; });
+        if (stavka) stavka.qty++;
+        else ko.items.push({ id: menuItem.id, name: menuItem.name, qty: 1 });
+        ko.orderedAt = new Date().toISOString();
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', ko.id);
+        console.log('✅ Dodato u postojeću kuhinjsku porudžbinu');
+        return;
+    }
+
+    // Nova porudžbina. Id mora da bude jedinstven — porudžbine se spajaju
+    // po id-u, pa bi dva uređaja u istoj milisekundi spojila dva stola u jedan.
+    let novId = Date.now();
+    while ((DB.kitchenOrders || []).some(function(k) { return k && k.id === novId; })) novId++;
+
+    const sada = new Date().toISOString();
+    const nova = {
+        id: novId,
+        tableNum: table.num,
+        tableName: table.name,
+        waiterUsername: DB.currentUser.username,
+        waiterName: DB.konobarName || DB.currentUser.username,
+        items: [{ id: menuItem.id, name: menuItem.name, qty: 1 }],
+        status: 'pending',          // 'pending', 'preparing', 'ready', 'completed'
+        createdAt: sada,            // FIKSNO — po ovome se meri prozor za dopisivanje
+        orderedAt: sada,            // osvežava se pri dopisivanju (sortiranje / filter smene)
+        readyAt: null,
+        completedAt: null
+    };
+    DB.kitchenOrders.push(nova);
+    if (typeof markDirty === 'function') markDirty('kitchenOrders', nova.id);
+    console.log('✅ Nova kuhinjska porudžbina');
+}
+
 function addToTable(itemId) {
     // 🛡️ Bez otvorene smene se ne kuca (inače nema zapisa o smeni, plate ni keša)
     if (typeof _waiterWithoutShift === 'function' && _waiterWithoutShift()) {
@@ -37,86 +105,19 @@ function addToTable(itemId) {
     
     if(existing) {
         existing.qty++;
-        
-        // Ako ide u kuhinju, ažuriraj količinu u kuhinjskoj narudžbini
-        if(shouldSendToKitchen(menuItem)) {
-            // Samo dodaj u PENDING narudzbinu (kuvar je jos nije video)
-            // Ako je vec 'preparing', ne diraj je - kreiraj novu dole
-            const kitchenOrder = DB.kitchenOrders.find(ko =>
-                ko.status === 'pending' &&
-                ko.tableNum === table.num &&
-                ko.waiterUsername === DB.currentUser.username
-            );
-
-            if(kitchenOrder) {
-                const kitchenItem = kitchenOrder.items.find(i => i.id === itemId);
-                if(kitchenItem) {
-                    kitchenItem.qty++;
-                } else {
-                    kitchenOrder.items.push({
-                        id: menuItem.id,
-                        name: menuItem.name,
-                        qty: 1
-                    });
-                }
-                kitchenOrder.orderedAt = new Date().toISOString();
-                if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
-            }
-        }
+        if(shouldSendToKitchen(menuItem)) _sendItemToKitchen(table, menuItem);
     } else {
         // Dodaj novu stavku sa createdBy poljem
         table.order.push({
-            ...menuItem, 
+            ...menuItem,
             qty: 1,
             createdBy: DB.currentUser.username,
             addedAt: new Date().toISOString()
         });
-        
-        // 🍳 Ako ide u kuhinju, pošalji!
+
         if(shouldSendToKitchen(menuItem)) {
-            console.log('🍳 Slanje u kuhinju:', menuItem.name);
-            
-            // Pronađi postojeću PENDING narudžbinu (kuvar je jos nije video)
-            // Ako je 'preparing' - kuvar vec radi na njoj, ne dodajemo u nju
-            let kitchenOrder = DB.kitchenOrders.find(ko =>
-                ko.status === 'pending' &&
-                ko.tableNum === table.num &&
-                ko.waiterUsername === DB.currentUser.username
-            );
-            
-            if(kitchenOrder) {
-                // Dodaj u postojeću narudžbinu
-                kitchenOrder.items.push({
-                    id: menuItem.id,
-                    name: menuItem.name,
-                    qty: 1
-                });
-                kitchenOrder.orderedAt = new Date().toISOString();
-                if (typeof markDirty === 'function') markDirty('kitchenOrders', kitchenOrder.id);
-                console.log('✅ Dodato u postojeću narudžbinu');
-            } else {
-                // Kreiraj novu kuhinjsku narudžbinu
-                const newKitchenOrder = {
-                    id: Date.now(),
-                    tableNum: table.num,
-                    tableName: table.name,
-                    waiterUsername: DB.currentUser.username,
-                    waiterName: DB.konobarName || DB.currentUser.username,
-                    items: [{
-                        id: menuItem.id,
-                        name: menuItem.name,
-                        qty: 1
-                    }],
-                    status: 'pending', // 'pending', 'preparing', 'ready', 'completed'
-                    orderedAt: new Date().toISOString(),
-                    readyAt: null,
-                    completedAt: null
-                };
-                
-                DB.kitchenOrders.push(newKitchenOrder);
-                if (typeof markDirty === 'function') markDirty('kitchenOrders', newKitchenOrder.id);
-                console.log('✅ Nova kuhinjska narudžbina kreirana');
-            }
+            console.log("🍳 Slanje u kuhinju:", menuItem.name);
+            _sendItemToKitchen(table, menuItem);
         }
     }
     

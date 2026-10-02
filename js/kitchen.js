@@ -48,13 +48,35 @@ function renderKitchen(c) {
     
     // Očisti completed narudžbine starije od 24h
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    // 🧹 ...i ZAOSTALE `pending`/`preparing` od pre ove smene.
+    // Porudžbina koju niko nije preuzeo ranije nije isticala NIKAD: konobar
+    // je svaku novu stavku dopisivao u nju i osvežavao joj `orderedAt`, pa je
+    // sto Bašta 4 nakupio 25 stavki i sve ih sručio kuvaru čim se ulogovao.
+    // Prag je početak smene kuvara (sve starije je bilo pre nego što je došao),
+    // a ako nema smene — početak radnog dana. Meri se po `createdAt` jer se
+    // `orderedAt` pomera pri dopisivanju i sakriva pravu starost.
+    let _staleCutoff = shiftStart;
+    if (!_staleCutoff && typeof getBusinessDayStart === 'function') {
+        try { _staleCutoff = getBusinessDayStart().toISOString(); } catch (e) { _staleCutoff = null; }
+    }
+    const _zaostala = function(ko) {
+        if (!ko || (ko.status !== 'pending' && ko.status !== 'preparing')) return false;
+        if (!_staleCutoff) return false;
+        const nastala = ko.createdAt || ko.orderedAt;
+        return !!nastala && nastala < _staleCutoff;
+    };
+
     const beforeClean = DB.kitchenOrders.length;
     const _staleKO = DB.kitchenOrders.filter(ko =>
-        ko.status === 'completed' && ko.completedAt && ko.completedAt <= oneDayAgo
+        (ko.status === 'completed' && ko.completedAt && ko.completedAt <= oneDayAgo) || _zaostala(ko)
     );
-    DB.kitchenOrders = DB.kitchenOrders.filter(ko =>
-        ko.status !== 'completed' || !ko.completedAt || ko.completedAt > oneDayAgo
-    );
+    if (_staleKO.length) {
+        console.log('🧹 Brišem ' + _staleKO.length + ' zaostalih kuhinjskih porudžbina:',
+            _staleKO.map(k => k.tableName + ' (' + (k.items || []).length + ' stavki, ' + k.status + ')'));
+    }
+    const _staleIds = new Set(_staleKO.map(k => k.id));
+    DB.kitchenOrders = DB.kitchenOrders.filter(ko => !_staleIds.has(ko.id));
     if (DB.kitchenOrders.length < beforeClean) {
         if (typeof markDeleted === 'function') {
             _staleKO.forEach(ko => markDeleted('kitchenOrders', ko.id));
