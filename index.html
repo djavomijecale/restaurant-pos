@@ -104,6 +104,16 @@
                 </select>
                 <p style="color:#FFD700;font-size:12px;margin-top:4px">⚠️ VAŽNO: Samo "Hrana" se šalje kuvaru u kuhinju!</p>
             </div>
+            <div style="margin-bottom:16px">
+                <label style="color:#B0B0B0;display:block;margin-bottom:8px">🫓 Troši testo</label>
+                <select id="menuItemDoughInput" style="width:100%">
+                    <option value="">— automatski (po nazivu) —</option>
+                    <option value="big">Veliko testo (pizza 32cm)</option>
+                    <option value="small">Malo testo (26cm / sendvič / fokača)</option>
+                    <option value="none">Ne troši testo</option>
+                </select>
+                <p style="color:#888;font-size:12px;margin-top:4px">Ostavi na „automatski" ako je pizza/sendvič već prepoznat.</p>
+            </div>
             <div style="margin-bottom:24px">
                 <label style="color:#B0B0B0;display:block;margin-bottom:8px">📂 Grupa</label>
                 <input type="text" id="menuItemGroupInput" list="menuGroupList" placeholder="Npr: Pizza, Sendviči, Topli napici..." style="width:100%">
@@ -228,6 +238,10 @@
             <div class="nav-item kuvar-only" id="navShopping" onclick="nav('shopping')">
                 <span style="font-size:24px">🛒</span>
                 <span style="font-size:11px">Nabavka</span>
+            </div>
+            <div class="nav-item dough-only" id="navDough" onclick="nav('dough')">
+                <span style="font-size:24px">🫓</span>
+                <span style="font-size:11px">Testa</span>
             </div>
             <div class="nav-item kuvar-only" id="navKuvarReport" onclick="nav('kuvarreport')">
                 <span style="font-size:24px">📊</span>
@@ -461,6 +475,7 @@
     <script src="js/tables.js"></script>
     <script src="js/octopos.js"></script>
     <script src="js/orders.js"></script>
+    <script src="js/dough.js"></script>
     <script src="js/house.js"></script>
     <script src="js/kitchen.js"></script>
     <script src="js/shopping.js"></script>

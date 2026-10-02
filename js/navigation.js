@@ -28,7 +28,7 @@ function nav(p) {
     }
 
     // Provera pristupa za konobare
-    if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'history')) {
+    if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'history' || p === 'dough')) {
         showAlert('Nemate pristup ovoj stranici');
         return;
     }
@@ -46,6 +46,7 @@ function nav(p) {
     });
     const navMap = {
         'menu': 0, 'tables': 1, 'kitchen': 'navKitchen', 'shopping': 'navShopping,navShoppingAdmin',
+        'dough': 'navDough',
         'kuvarreport': 'navKuvarReport', 'report': 'navReport', 'history': 'navHistory',
         'guestorders': 'navGuestOrders', 'removed': 'navRemoved', 'users': 'navUsers',
         'edit': 'navEdit', 'settings': 'navSettings', 'inventory': 'navInventory', 'debts': 'navDebts',
@@ -113,6 +114,7 @@ function render() {
     else if(page==='payment') renderPayment(c);
     else if(page==='receipt') renderReceipt(c);
     else if(page==='kitchen') renderKitchen(c);
+    else if(page==='dough') renderDough(c);
     else if(page==='kitchenready') renderKitchenReady(c);
     else if(page==='kuvarreport') renderKuvarReport(c);
     else if(page==='shopping') renderShopping(c);

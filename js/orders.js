@@ -31,6 +31,8 @@ function addToTable(itemId) {
     }
     const table = DB.tables.find(t=>t.num===DB.selectedTable);
     const menuItem = DB.menu.find(i=>i.id===itemId);
+    // 🫓 Upozori ako nema testa (ne blokira kucanje)
+    if (typeof doughWarnIfEmpty === 'function') doughWarnIfEmpty(menuItem);
     const existing = table.order.find(i=>i.id===itemId && i.createdBy===DB.currentUser.username);
     
     if(existing) {

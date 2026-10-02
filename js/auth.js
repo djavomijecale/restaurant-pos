@@ -159,7 +159,9 @@ async function loginWaiter() {
             if (hasServerWorkday) {
                 // Sinhronizuj localStorage sa serverskim startTime (prepiše bilo kakav stari cache)
                 localStorage.setItem('kuvarLoginTime', DB.workdays[user.username].startTime);
-                page = 'kitchen';
+                // 🫓 Pri svakom logovanju kuvar prvo upisuje stanje testa
+                window._doughFromLogin = true;
+                page = 'dough';
             } else {
                 // Nema aktivne smene na serveru → očisti stari cache i pitaj za otvaranje
                 localStorage.removeItem('kuvarLoginTime');
@@ -179,7 +181,9 @@ async function loginWaiter() {
                             save();
                         }
                     }
-                    page = 'kitchen';
+                    // 🫓 Pri svakom logovanju kuvar prvo upisuje stanje testa
+                    window._doughFromLogin = true;
+                    page = 'dough';
                     render();
                 });
                 return;

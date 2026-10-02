@@ -257,6 +257,8 @@ function addMenuItem() {
     document.getElementById('menuItemDescInput').value = '';
     document.getElementById('menuItemPriceInput').value = '';
     document.getElementById('menuItemCatInput').value = 'Hrana';
+    const _dNew = document.getElementById('menuItemDoughInput');
+    if (_dNew) _dNew.value = '';
     document.getElementById('menuItemGroupInput').value = '';
     populateGroupList();
     document.getElementById('menuItemModal').classList.add('show');
@@ -276,6 +278,8 @@ function saveMenuItem() {
     const price = parseFloat(document.getElementById('menuItemPriceInput').value);
     const cat = document.getElementById('menuItemCatInput').value;
     const group = document.getElementById('menuItemGroupInput').value.trim();
+    const doughSel = document.getElementById('menuItemDoughInput');
+    const dough = doughSel ? doughSel.value : '';
     
     if(!name) {
         showAlert('⚠️ Molimo unesite naziv stavke');
@@ -295,17 +299,20 @@ function saveMenuItem() {
             item.price = price;
             item.cat = cat;
             item.group = group || item.group || '';
+            if (dough) item.dough = dough; else delete item.dough;   // '' = automatski
             showAlert(`✅ Stavka "${name}" je ažurirana!`);
         }
     } else {
-        DB.menu.push({
+        const _novi = {
             id: Date.now(),
             name: name,
             desc: desc,
             price: price,
             cat: cat,
             group: group || ''
-        });
+        };
+        if (dough) _novi.dough = dough;   // '' = automatski po nazivu
+        DB.menu.push(_novi);
         showAlert(`✅ Stavka "${name}" je dodata! ${shouldSendToKitchen({cat:cat}) ? '🍳 Biće slana u kuhinju.' : ''}`);
     }
     
@@ -326,6 +333,8 @@ function editItem(id) {
     document.getElementById('menuItemPriceInput').value = i.price;
     document.getElementById('menuItemCatInput').value = i.cat;
     document.getElementById('menuItemGroupInput').value = i.group || '';
+    const _dSel = document.getElementById('menuItemDoughInput');
+    if (_dSel) _dSel.value = i.dough || '';
     populateGroupList();
     document.getElementById('menuItemModal').classList.add('show');
     document.getElementById('menuItemNameInput').focus();
