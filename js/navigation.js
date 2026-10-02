@@ -3,7 +3,30 @@
 // ============================================
 
 
+// 🛡️ Da li konobar radi BEZ otvorene smene?
+// Bez ovoga je konobar mogao da se uloguje, preskoči ekran "Otvori smenu",
+// ode na Stolove i kuca celo veče — a da nigde ne postoji zapis o smeni
+// (nema plate, nema "Smanji keš", admin ne vidi da neko radi).
+function _waiterWithoutShift() {
+    if (!DB.currentUser) return false;
+    const r = DB.currentUser.role;
+    if (r !== 'konobar' && r !== 'waiter') return false;          // admin i kuvar se ne diraju
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return false;
+    // Ne blokiraj dok se podaci povlače sa servera — da sync-u ne bi na tren
+    // izgledalo kao da smena ne postoji i izbacilo konobara usred rada.
+    if (typeof isLoading !== 'undefined' && isLoading) return false;
+    return !(DB.workdays && DB.workdays[DB.currentUser.username]);
+}
+
 function nav(p) {
+    // 🛡️ Konobar bez otvorene smene ne može nigde osim na otvaranje smene
+    if (p !== 'workday' && _waiterWithoutShift()) {
+        showAlert('⚠️ Nemaš otvorenu smenu!\n\nPrvo otvori smenu (unesi depozit), pa onda možeš da kucaš.');
+        page = 'workday';
+        render();
+        return;
+    }
+
     // Provera pristupa za konobare
     if(DB.currentUser && (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter') && (p === 'edit' || p === 'settings' || p === 'removed' || p === 'users' || p === 'history')) {
         showAlert('Nemate pristup ovoj stranici');

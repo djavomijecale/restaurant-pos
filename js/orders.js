@@ -22,6 +22,13 @@ function shouldSendToKitchen(menuItem) {
 
 
 function addToTable(itemId) {
+    // 🛡️ Bez otvorene smene se ne kuca (inače nema zapisa o smeni, plate ni keša)
+    if (typeof _waiterWithoutShift === 'function' && _waiterWithoutShift()) {
+        showAlert('⚠️ Nemaš otvorenu smenu!\n\nPrvo otvori smenu (unesi depozit), pa onda kucaj.');
+        page = 'workday';
+        render();
+        return;
+    }
     const table = DB.tables.find(t=>t.num===DB.selectedTable);
     const menuItem = DB.menu.find(i=>i.id===itemId);
     const existing = table.order.find(i=>i.id===itemId && i.createdBy===DB.currentUser.username);
@@ -611,6 +618,13 @@ function renderPayment(c) {
 
 async function confirmPay() {
     if(!payMethod) return;
+    // 🛡️ Poslednja brana: naplata bez otvorene smene nije dozvoljena
+    if (typeof _waiterWithoutShift === 'function' && _waiterWithoutShift()) {
+        showAlert('⚠️ Nemaš otvorenu smenu — naplata nije moguća!\n\nOtvori smenu (unesi depozit) pa naplati.');
+        page = 'workday';
+        render();
+        return;
+    }
     const table = DB.tables.find(t=>t.num===DB.selectedTable);
     if (!table) return;
 
