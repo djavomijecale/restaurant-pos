@@ -950,6 +950,8 @@ function renderSettings(c) {
             
             ${renderDuplicateIdFix()}
 
+            ${renderRebuildShift()}
+
             <div style="border-top:3px solid #E94560;margin:32px 0;padding-top:24px">
                 <h3 style="color:#E94560;margin-bottom:16px">🗑️ Resetuj Podatke</h3>
                 <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #E94560;margin-bottom:16px">
@@ -1058,6 +1060,216 @@ function fixDuplicateMenuIds() {
                 promene.map(function(p) { return '• ' + p.naziv; }).join('\n') +
                 '\n\nSada se mogu normalno kucati i menjati u Meniju.');
             render();
+        });
+}
+
+
+// ============================================
+// 🔁 Rekonstrukcija propuštene smene
+//
+// Ako je konobar radio a smena nije bila otvorena (ili je auto-presek nije
+// zatvorio), u istoriji nema zapisa — nema plate, nema bonusa, a dnevni
+// izveštaj ne štima. Ovde se zapis pravi naknadno IZ RAČUNA, istim
+// formulama koje koristi normalno zatvaranje smene (js/workday.js).
+//
+// NE zove se autoCloseWorkday(): ona na kraju briše stavke sa stolova i
+// briše aktivnu smenu — na živom sistemu bi to pobrisalo tekući rad.
+// Ovde se dira SAMO workdayHistory.
+// ============================================
+
+// Izračunaj kako bi smena izgledala — bez ikakvog upisa.
+function computeRebuiltShift(username, startISO, endISO, deposit) {
+    const start = new Date(startISO), end = new Date(endISO);
+    const durationMin = Math.floor((end - start) / 60000);
+
+    const dayOrders = (DB.orders || []).filter(function(o) {
+        return o && o.createdBy === username && o.time >= startISO && o.time <= endISO;
+    });
+    const realOrders = dayOrders.filter(function(o) { return !o.isDebtPayment; });
+    const sum = function(list) { return list.reduce(function(s, o) { return s + (Number(o.tot) || 0); }, 0); };
+    const totalRevenue = sum(realOrders);
+    const cash = sum(realOrders.filter(function(o) { return o.method === 'Cash'; }));
+    const card = sum(realOrders.filter(function(o) { return o.method === 'Card'; }));
+    const wire = sum(realOrders.filter(function(o) { return o.method === 'Wire'; }));
+    const debtCash = sum(dayOrders.filter(function(o) { return o.isDebtPayment && o.method === 'Cash'; }));
+
+    // Plata — ista formula kao u workday.js
+    const u = (DB.users || []).find(function(x) { return x && x.username === username; });
+    const hourlyRate = (u && u.hourlyRate) || 350;
+    const salary = Math.floor((durationMin / 60) * hourlyRate);
+
+    // Bonus — ista pravila i ISTA podešavanja kao pri normalnom zatvaranju
+    const startHour = start.getHours(), endHour = end.getHours();
+    const isFirstShift = startHour >= 8 && startHour < 14 && endHour >= 15 && endHour <= 17;
+    const isSecondShift = startHour >= 14 && startHour < 20 && (endHour >= 22 || endHour < 7);
+    const cfg = (typeof getBonusSettings === 'function') ? getBonusSettings() : null;
+    let bonusEarned = false, bonusAmount = 0, bonusReason = '';
+    if (cfg && isFirstShift) {
+        if (totalRevenue >= cfg.firstShiftTier2Threshold) { bonusEarned = true; bonusAmount = cfg.firstShiftTier2Amount; bonusReason = 'Prva smena - prihod ≥ ' + cfg.firstShiftTier2Threshold.toLocaleString() + ' din.'; }
+        else if (totalRevenue >= cfg.firstShiftTier1Threshold) { bonusEarned = true; bonusAmount = cfg.firstShiftTier1Amount; bonusReason = 'Prva smena - prihod ≥ ' + cfg.firstShiftTier1Threshold.toLocaleString() + ' din.'; }
+    }
+    if (cfg && isSecondShift) {
+        if (totalRevenue >= cfg.secondShiftTier2Threshold) { bonusEarned = true; bonusAmount = cfg.secondShiftTier2Amount; bonusReason = 'Druga smena - prihod ≥ ' + cfg.secondShiftTier2Threshold.toLocaleString() + ' din.'; }
+        else if (totalRevenue >= cfg.secondShiftTier1Threshold) { bonusEarned = true; bonusAmount = cfg.secondShiftTier1Amount; bonusReason = 'Druga smena - prihod ≥ ' + cfg.secondShiftTier1Threshold.toLocaleString() + ' din.'; }
+    }
+
+    const dep = Number(deposit) || 0;
+    return {
+        user: username,
+        loginTime: startISO,
+        logoutTime: endISO,
+        duration: durationMin,
+        orderCount: realOrders.length,
+        revenue: totalRevenue,
+        cashRevenue: cash,
+        cardRevenue: card,
+        wireRevenue: wire,
+        deposit: dep,
+        totalPerformance: totalRevenue + dep,
+        cashReductions: [],
+        totalCashReductions: 0,
+        finalCash: dep + cash + debtCash,
+        salary: salary,
+        hourlyRate: hourlyRate,
+        bonusEarned: bonusEarned,
+        bonusAmount: bonusAmount,
+        bonusReason: bonusReason,
+        isFirstShift: isFirstShift,
+        isSecondShift: isSecondShift,
+        rebuilt: true,            // zapis je naknadno rekonstruisan, nije izmeren
+        rebuiltAt: new Date().toISOString(),
+        rebuiltBy: DB.currentUser ? DB.currentUser.username : ''
+    };
+}
+
+function renderRebuildShift() {
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
+    const ljudi = (DB.users || []).filter(function(u) {
+        return u && u.username && u.role !== 'admin';
+    }).map(function(u) { return '<option value="' + esc(u.username) + '">' + esc(u.username) + '</option>'; }).join('');
+    const danas = new Date().toISOString().slice(0, 10);
+    return `<div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                <h3 style="color:#FF9800;margin-bottom:16px">🔁 Rekonstruiši propuštenu smenu</h3>
+                <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #FF9800;margin-bottom:16px">
+                    <p style="color:#B0B0B0;font-size:13px;line-height:1.7">
+                        Za smenu koja je odrađena ali nije zapisana — nema plate ni bonusa u istoriji.
+                        Zapis se pravi <strong style="color:#FFF">iz računa</strong>, istim formulama kao pri
+                        normalnom zatvaranju smene.<br>
+                        <strong style="color:#4CAF50">Prvo pokaže brojeve, upisuje tek kad potvrdiš.</strong>
+                    </p>
+                </div>
+                <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Radnik</label>
+                <select id="rbUser">${ljudi}</select>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+                    <div style="flex:1;min-width:130px">
+                        <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Datum</label>
+                        <input type="date" id="rbDate" value="${danas}" style="width:100%">
+                    </div>
+                    <div style="flex:1;min-width:120px">
+                        <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Počela</label>
+                        <input type="time" id="rbStart" value="16:00" style="width:100%">
+                    </div>
+                    <div style="flex:1;min-width:120px">
+                        <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Završila</label>
+                        <input type="time" id="rbEnd" value="23:00" style="width:100%">
+                    </div>
+                    <div style="flex:1;min-width:110px">
+                        <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Depozit</label>
+                        <input type="number" id="rbDeposit" value="0" min="0" step="1" style="width:100%">
+                    </div>
+                </div>
+                <p style="color:#888;font-size:12px;margin:10px 0">Ako je radila preko ponoći, vreme kraja manje od početka se računa kao sledeći dan.</p>
+                <button class="btn" style="background:#FF9800" onclick="previewRebuildShift()">🔍 Prikaži brojeve</button>
+                <div id="rbPreview"></div>
+            </div>`;
+}
+
+// Čuva poslednji izračunat zapis da se upisuje TAČNO ono što je prikazano.
+let _rbPending = null;
+
+function previewRebuildShift() {
+    const username = document.getElementById('rbUser').value;
+    const datum = document.getElementById('rbDate').value;
+    const t1 = document.getElementById('rbStart').value;
+    const t2 = document.getElementById('rbEnd').value;
+    const deposit = document.getElementById('rbDeposit').value;
+    const box = document.getElementById('rbPreview');
+    if (!username || !datum || !t1 || !t2) { showAlert('Popuni radnika, datum i oba vremena.'); return; }
+
+    const start = new Date(datum + 'T' + t1 + ':00');
+    const end = new Date(datum + 'T' + t2 + ':00');
+    if (end <= start) end.setDate(end.getDate() + 1);          // radila preko ponoći
+    // Kraj obuhvata CEO izabrani minut. Bez ovoga račun otkucan u 23:00:16
+    // ispada iz smene kad se upiše kraj "23:00" — pazar bi bio manji za taj
+    // račun, a baš poslednji račun je najčešće na samoj granici.
+    end.setSeconds(59, 999);
+
+    const z = computeRebuiltShift(username, start.toISOString(), end.toISOString(), deposit);
+    _rbPending = z;
+
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
+    const vreme = function(d) { return d.toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+    const red = function(k, v, boja) { return '<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:#B0B0B0">' + k + '</span><b style="color:' + (boja || '#FFF') + '">' + v + '</b></div>'; };
+
+    if (!z.orderCount) {
+        box.innerHTML = '<div style="background:#16213E;border-left:4px solid #E94560;padding:14px;border-radius:10px;margin-top:14px;color:#E94560;font-size:13px">' +
+            'U tom periodu nema nijednog računa od <b>' + esc(username) + '</b>. Proveri radnika, datum i vremena.</div>';
+        _rbPending = null;
+        return;
+    }
+
+    // Da li već postoji zapis za taj dan?
+    const istiDan = (DB.workdayHistory || []).filter(function(h) {
+        return h && h.user === username && h.loginTime && h.loginTime.slice(0, 10) === z.loginTime.slice(0, 10);
+    });
+
+    box.innerHTML = '<div style="background:#0F3460;padding:16px;border-radius:12px;margin-top:14px">' +
+        '<h4 style="color:#FFD700;margin-bottom:10px">' + esc(username) + ' · ' + vreme(start) + ' → ' + vreme(end) + '</h4>' +
+        red('Trajanje', (z.duration / 60).toFixed(2) + ' h') +
+        red('Računa', z.orderCount) +
+        red('Promet', z.revenue.toLocaleString('sr-RS') + ' din', '#FFD700') +
+        red('  keš', z.cashRevenue.toLocaleString('sr-RS') + ' din') +
+        red('  kartica', z.cardRevenue.toLocaleString('sr-RS') + ' din') +
+        (z.wireRevenue ? red('  uplata', z.wireRevenue.toLocaleString('sr-RS') + ' din') : '') +
+        red('Pazar (keš u kasi)', z.finalCash.toLocaleString('sr-RS') + ' din') +
+        '<hr style="border-color:#2A2A4A;margin:10px 0">' +
+        red('Plata', z.salary.toLocaleString('sr-RS') + ' din', '#4CAF50') +
+        '<div style="color:#888;font-size:11px;margin-top:-4px">' + (z.duration / 60).toFixed(2) + ' h × ' + z.hourlyRate + ' din/h</div>' +
+        (z.bonusEarned
+            ? red('Bonus', '+ ' + z.bonusAmount.toLocaleString('sr-RS') + ' din', '#4CAF50') + '<div style="color:#888;font-size:11px;margin-top:-4px">' + esc(z.bonusReason) + '</div>'
+            : '<div style="color:#888;font-size:12px;padding:4px 0">Bez bonusa' + (z.isSecondShift || z.isFirstShift ? ' (promet ispod praga)' : ' (ne računa se kao prva ni druga smena)') + '</div>') +
+        '<hr style="border-color:#2A2A4A;margin:10px 0">' +
+        red('UKUPNO ZA ISPLATU', (z.salary + z.bonusAmount).toLocaleString('sr-RS') + ' din', '#FFD700') +
+        (istiDan.length
+            ? '<div style="background:#16213E;border-left:4px solid #E94560;padding:10px;border-radius:8px;margin-top:12px;color:#E94560;font-size:12px">⚠️ Za ' + esc(username) + ' već postoji ' + istiDan.length + ' zapis za taj datum. Proveri da ne upišeš duplo.</div>'
+            : '') +
+        '<button class="btn" style="background:#4CAF50;margin-top:14px" onclick="commitRebuildShift()">✅ Upiši u istoriju</button>' +
+        '</div>';
+}
+
+function commitRebuildShift() {
+    if (!_rbPending) { showAlert('Prvo pritisni "Prikaži brojeve".'); return; }
+    const z = _rbPending;
+    showConfirm('Upisati smenu?',
+        z.user + ', ' + new Date(z.loginTime).toLocaleString('sr-RS') + ' → ' + new Date(z.logoutTime).toLocaleString('sr-RS') +
+        '\n\nPromet ' + z.revenue.toLocaleString('sr-RS') + ' din, za isplatu ' + (z.salary + z.bonusAmount).toLocaleString('sr-RS') + ' din.' +
+        '\n\nZapis se upisuje u istoriju smena.',
+        function(potvrda) {
+            if (!potvrda) return;
+            if (!DB.workdayHistory) DB.workdayHistory = [];
+            DB.workdayHistory.push(z);
+            const gotovo = function() {
+                _rbPending = null;
+                showAlert('✅ Smena upisana za ' + z.user + '.\n\nPlata ' + z.salary.toLocaleString('sr-RS') +
+                    (z.bonusAmount ? ' + bonus ' + z.bonusAmount.toLocaleString('sr-RS') : '') + ' din.');
+                render();
+            };
+            if (typeof pushWorkdayHistory === 'function') {
+                pushWorkdayHistory().then(gotovo).catch(function(e) {
+                    console.error(e);
+                    showAlert('⚠️ Upis u bazu nije uspeo. Zapis je samo na ovom uređaju — pokušaj ponovo.');
+                });
+            } else { save(); gotovo(); }
         });
 }
 
