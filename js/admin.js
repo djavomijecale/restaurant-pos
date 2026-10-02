@@ -897,6 +897,8 @@ function renderSettings(c) {
                 <button class="btn" style="background:#FF9800" onclick="clearWorkday()">🧹 Očisti Radni Dan</button>
             </div>
             
+            ${renderDuplicateIdFix()}
+
             <div style="border-top:3px solid #E94560;margin:32px 0;padding-top:24px">
                 <h3 style="color:#E94560;margin-bottom:16px">🗑️ Resetuj Podatke</h3>
                 <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #E94560;margin-bottom:16px">
@@ -914,6 +916,102 @@ function renderSettings(c) {
                 <button class="btn" style="background:#E94560" onclick="resetAllData()">🗑️ Obriši Sve Podatke</button>
             </div>
         </div>`;
+}
+
+// ============================================
+// 🔧 Artikli koji dele ID
+//
+// Dva artikla u meniju su imala isti id kao pizza ("wood" / "beli luk svoja",
+// "losos 26" / "bosiljak"). Pretraga po id-u uvek vrati PRVI, pa je:
+//   • konobar pritiskom na dodatak kucao pizzu i naplatio njenu cenu,
+//   • "izmeni" u Meniju otvaralo pogrešan artikal,
+//   • "obriši" na dodatku brisalo PIZZU.
+// Zato ovde dodatak dobija nov jedinstven id. Pizza zadržava svoj, pa
+// istorija računa ostaje nedirnuta. Sekcija se sama sakrije kad duplikata
+// više nema, pa može i da ostane u aplikaciji kao provera.
+// ============================================
+
+// Grupe artikala koji dele isti id (prvi u nizu je onaj koji pretraga vraća).
+function findDuplicateMenuIds() {
+    if (!DB.menu || !DB.menu.length) return [];
+    const po = {};
+    DB.menu.forEach(function(m) {
+        if (!m || m.id === undefined || m.id === null) return;
+        const k = String(m.id);
+        (po[k] = po[k] || []).push(m);
+    });
+    return Object.keys(po).filter(function(k) { return po[k].length > 1; }).map(function(k) {
+        return { id: k, items: po[k] };
+    });
+}
+
+function renderDuplicateIdFix() {
+    const dups = findDuplicateMenuIds();
+    if (!dups.length) return '';
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
+    let red = '';
+    dups.forEach(function(d) {
+        const zadrzava = d.items[0];
+        const menjaju = d.items.slice(1);
+        red += '<div style="margin-bottom:10px">' +
+            '<span style="color:#4CAF50">zadržava id:</span> <b style="color:#FFF">' + esc(zadrzava.name) + '</b> (' + zadrzava.price + ' din)<br>' +
+            '<span style="color:#FFD700">dobija nov id:</span> ' +
+            menjaju.map(function(m) { return '<b style="color:#FFF">' + esc(m.name) + '</b> (' + m.price + ' din)'; }).join(', ') +
+            '</div>';
+    });
+    return `<div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                <h3 style="color:#FF9800;margin-bottom:16px">🔧 Artikli koji dele ID (${dups.length})</h3>
+                <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #FF9800;margin-bottom:16px">
+                    <p style="color:#FF9800;font-weight:bold;margin-bottom:8px">Pritisak na jedan artikal kuca drugi</p>
+                    <p style="color:#B0B0B0;font-size:13px;line-height:1.7">
+                        Ovi artikli imaju isti id, pa aplikacija uvek nađe prvi — konobar kucanjem
+                        drugog naplati cenu prvog, a brisanje drugog briše prvi.<br><br>
+                        ${red}
+                        <strong style="color:#4CAF50">Istorija računa se NE menja</strong> — artikal koji je do sada
+                        bio u upotrebi zadržava svoj id.
+                    </p>
+                </div>
+                <button class="btn" style="background:#FF9800" onclick="fixDuplicateMenuIds()">🔧 Dodeli nove ID-jeve</button>
+            </div>`;
+}
+
+function fixDuplicateMenuIds() {
+    const dups = findDuplicateMenuIds();
+    if (!dups.length) { showAlert('Nema artikala koji dele id.'); return; }
+
+    let spisak = '', ukupno = 0;
+    dups.forEach(function(d) {
+        d.items.slice(1).forEach(function(m) { spisak += '\n• ' + m.name + ' (' + m.price + ' din)'; ukupno++; });
+    });
+
+    showConfirm('🔧 Dodeli nove ID-jeve',
+        'Nov id dobijaju ' + ukupno + ' artikla:' + spisak +
+        '\n\nArtikli koji su do sada bili u upotrebi zadržavaju svoj id, pa istorija računa ostaje nedirnuta.\n\nNastavi?',
+        function(potvrda) {
+            if (!potvrda) return;
+
+            // Nov id mora da bude jedinstven u celom meniju, a ne samo u ovoj grupi.
+            const zauzeti = {};
+            DB.menu.forEach(function(m) { if (m && m.id !== undefined && m.id !== null) zauzeti[String(m.id)] = true; });
+
+            const promene = [];
+            dups.forEach(function(d) {
+                d.items.slice(1).forEach(function(m) {
+                    let nov;
+                    do { nov = Date.now() + Math.random(); } while (zauzeti[String(nov)]);
+                    zauzeti[String(nov)] = true;
+                    promene.push({ naziv: m.name, stari: m.id, novi: nov });
+                    m.id = nov;
+                });
+            });
+
+            save();
+            console.log('🔧 Novi ID-jevi:', promene);
+            showAlert('✅ Ispravljeno ' + promene.length + ' artikla.\n\n' +
+                promene.map(function(p) { return '• ' + p.naziv; }).join('\n') +
+                '\n\nSada se mogu normalno kucati i menjati u Meniju.');
+            render();
+        });
 }
 
 
