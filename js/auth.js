@@ -158,8 +158,25 @@ async function loginWaiter() {
             const hasServerWorkday = DB.workdays && DB.workdays[user.username] && DB.workdays[user.username].startTime;
             if (hasServerWorkday) {
                 // Sinhronizuj localStorage sa serverskim startTime (prepiše bilo kakav stari cache)
-                localStorage.setItem('kuvarLoginTime', DB.workdays[user.username].startTime);
-                // 🍞 Pri svakom logovanju kuvar prvo upisuje stanje testa
+                const _kStart = DB.workdays[user.username].startTime;
+                localStorage.setItem('kuvarLoginTime', _kStart);
+
+                const _uTesta = () => {
+                    // 🍞 Pri svakom logovanju kuvar prvo upisuje stanje testa
+                    window._doughFromLogin = true;
+                    page = 'dough';
+                    if (typeof startGeoTracking === 'function') startGeoTracking();
+                    render();
+                };
+
+                // ⚠️ Smena od ranijeg radnog dana: kuvari nisu u auto-preseku, pa
+                // zaboravljena smena ostaje otvorena danima — plata bi se računala
+                // od tada, a jela za bonus brojala unazad. Pitaj ga šta hoće.
+                if (typeof kuvarShiftIsStale === 'function' && kuvarShiftIsStale(_kStart)) {
+                    warnStaleKuvarShift(_kStart, _uTesta);
+                    return;
+                }
+
                 window._doughFromLogin = true;
                 page = 'dough';
             } else {

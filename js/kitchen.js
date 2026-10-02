@@ -84,15 +84,18 @@ function renderKitchen(c) {
         save();
     }
     
-    // Bonus tracking za kuvara
+    // Bonus tracking za kuvara — PO SMENI, kreće od nule pri svakom logovanju.
+    // DB.kuvarBonus[username].total i dalje raste kao doživotna statistika, ali
+    // se NE koristi za bonus: bonus se dobija samo ako u JEDNOJ smeni napravi
+    // dovoljno jela. Ranije se sabiralo sa doživotnim zbirom, pa je kuvaru na
+    // početku smene pisalo npr. "72 jela" iako tog dana nije napravio ništa.
     const kuvarUsername = isKuvar ? DB.currentUser.username : null;
-    const kuvarBonusData = isKuvar && DB.kuvarBonus ? (DB.kuvarBonus[kuvarUsername] || {total: 0}) : {total: 0};
     // Broji samo completed/ready narudzbine iz TEKUCE smene (od loginTime)
     const kuvarLoginTime = isKuvar ? localStorage.getItem('kuvarLoginTime') : null;
     const completedDishesInShift = allOrders
         .filter(ko => (ko.status === 'completed' || ko.status === 'ready') && (!kuvarLoginTime || (ko.orderedAt && ko.orderedAt >= kuvarLoginTime)))
         .reduce((sum, ko) => sum + ko.items.reduce((s, i) => s + i.qty, 0), 0);
-    const totalDishesForBonus = kuvarBonusData.total + completedDishesInShift;
+    const totalDishesForBonus = completedDishesInShift;
     // Konfigurisano kroz Postavke → Bonusi (default 30 jela po bonusu)
     const _bonusCfg = (typeof getBonusSettings === 'function') ? getBonusSettings() : { kuvarDishesPerBonus: 30, kuvarBonusAmount: 1000 };
     const _dishesPerBonus = _bonusCfg.kuvarDishesPerBonus || 30;
@@ -115,7 +118,7 @@ function renderKitchen(c) {
         h += `<div style="background:linear-gradient(135deg,#0F3460,#16213E);padding:16px;border-radius:12px;margin-bottom:16px;border:2px solid #FFD700">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
                 <span style="color:#FFD700;font-weight:bold">🏆 Bonus: ${bonusCount}x</span>
-                <span style="color:#B0B0B0;font-size:12px">${totalDishesForBonus} jela ukupno</span>
+                <span style="color:#B0B0B0;font-size:12px">${totalDishesForBonus} jela u ovoj smeni</span>
             </div>
             <div style="background:#1A1A2E;border-radius:8px;height:12px;overflow:hidden;margin-bottom:6px">
                 <div style="background:linear-gradient(90deg,#FFD700,#FF9800);height:100%;width:${bonusProgress}%;border-radius:8px;transition:width 0.5s"></div>
@@ -539,14 +542,67 @@ function renderKuvarReport(c) {
 }
 
 
-function closeKuvarShift() {
+// ============================================
+// ⚠️ Smena koja je ostala otvorena od ranije
+//
+// Kuvari su izuzeti iz auto-preseka u 7:00 (vidi checkAndAutoCloseShifts) —
+// smenu zatvaraju sami. Ako kuvar samo zatvori aplikaciju, smena ostaje
+// otvorena danima: plata se računa od tog starog početka (72h × satnica!),
+// a jela za bonus se broje unazad. Zato ga pri logovanju upozorimo.
+// ============================================
+
+// Da li je smena iz nekog ranijeg radnog dana?
+function kuvarShiftIsStale(startISO) {
+    if (!startISO || typeof getBusinessDayStart !== 'function') return false;
+    try { return new Date(startISO) < getBusinessDayStart(); } catch (e) { return false; }
+}
+
+// Razumno vreme kraja za zaboravljenu smenu: poslednja porudžbina koju je
+// obradio. Ako je nema — presek u 7:00 posle početka smene. Nikako "sada",
+// jer bi plata obuhvatila i sve vreme dok aplikacija nije ni bila otvorena.
+function kuvarShiftSensibleEnd(startISO) {
+    const start = new Date(startISO).getTime();
+    let poslednja = 0;
+    (DB.kitchenOrders || []).forEach(function(ko) {
+        if (!ko) return;
+        [ko.completedAt, ko.readyAt, ko.orderedAt].forEach(function(t) {
+            if (!t) return;
+            const v = new Date(t).getTime();
+            if (v >= start && v > poslednja) poslednja = v;
+        });
+    });
+    if (poslednja) return new Date(poslednja).toISOString();
+    const presek = new Date(startISO);
+    presek.setDate(presek.getDate() + 1);
+    presek.setHours(typeof DAILY_CUTOFF_HOUR !== 'undefined' ? DAILY_CUTOFF_HOUR : 7, 0, 0, 0);
+    return presek.toISOString();
+}
+
+// Upozori kuvara i ponudi zatvaranje. `onContinue` se zove ako nastavi staru smenu.
+function warnStaleKuvarShift(startISO, onContinue) {
+    const start = new Date(startISO);
+    const sati = Math.floor((Date.now() - start.getTime()) / 3600000);
+    const kraj = kuvarShiftSensibleEnd(startISO);
+    const fmt = function(d) { return new Date(d).toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+    showConfirm('⚠️ Smena ti je otvorena od ranije',
+        'Smena ti je otvorena od ' + fmt(start) + ' — to je ' + sati + ' sati.\n\n' +
+        'Ako je ostaviš otvorenu, plata se računa od tada, a jela za bonus se broje unazad.\n\n' +
+        'Zatvoriti je sada? Kraj bi bio ' + fmt(kraj) + ' (poslednja porudžbina koju si obradio).',
+        function(da) {
+            if (da) closeKuvarShift({ endTime: kraj, skipConfirm: true });
+            else if (typeof onContinue === 'function') onContinue();
+        });
+}
+
+function closeKuvarShift(opts) {
     const username = DB.currentUser.username;
     const loginTime = localStorage.getItem('kuvarLoginTime');
+    const _endOverride = opts && opts.endTime ? opts.endTime : null;
 
-    showConfirm('🍳 Završi Smenu', 'Da li želite da završite smenu?', (confirmed) => {
+    const _nastavi = (confirmed) => {
         if (!confirmed) return;
 
-        const endTime = new Date().toISOString();
+        const endTime = _endOverride || new Date().toISOString();
         const startTime = loginTime ? new Date(loginTime) : new Date();
         const duration = Math.floor((new Date(endTime) - startTime) / 1000 / 60);
 
@@ -575,7 +631,7 @@ function closeKuvarShift() {
         // Bonus tracking - dodaj jela u ukupan broj
         if (!DB.kuvarBonus) DB.kuvarBonus = {};
         if (!DB.kuvarBonus[username]) DB.kuvarBonus[username] = {total: 0};
-        const prevTotal = DB.kuvarBonus[username].total;
+        // Doživotni zbir se i dalje vodi kao statistika, ali više ne odlučuje o bonusu.
         DB.kuvarBonus[username].total += totalDishes;
         const newTotal = DB.kuvarBonus[username].total;
 
@@ -583,9 +639,10 @@ function closeKuvarShift() {
         const _closeBonusCfg = (typeof getBonusSettings === 'function') ? getBonusSettings() : { kuvarDishesPerBonus: 30, kuvarBonusAmount: 1000 };
         const _closeDishesPerBonus = _closeBonusCfg.kuvarDishesPerBonus || 30;
         const _closeBonusAmount = _closeBonusCfg.kuvarBonusAmount || 1000;
-        const prevBonuses = Math.floor(prevTotal / _closeDishesPerBonus);
-        const newBonuses = Math.floor(newTotal / _closeDishesPerBonus);
-        const earnedBonuses = newBonuses - prevBonuses;
+        // Bonus se računa SAMO iz ove smene — mora da napravi dovoljno jela
+        // u jednoj smeni. (Ranije se gledalo kad doživotni zbir pređe prag,
+        // pa je bonus mogao da padne na smenu u kojoj je napravio dva jela.)
+        const earnedBonuses = Math.floor(totalDishes / _closeDishesPerBonus);
 
         // Obrisi completed I ready narudzbine (kuvar ih ne treba vise, admin ih vidi u istoriji narudzbina)
         // Ovo sprečava da se iste narudzbine prenose u sledecu smenu i ponovo broje
@@ -641,12 +698,13 @@ function closeKuvarShift() {
         // Prikazi rezime
         const hours = Math.floor(duration / 60);
         const mins = duration % 60;
-        let msg = `✅ Smena završena!\n\n⏱️ Trajanje: ${hours}h ${mins}min\n📋 Narudžbine: ${completedCount}\n🍽️ Jela: ${totalDishes}\n💰 Plata: ${salary} din (${hourlyRate}/sat)\n🏆 Ukupno jela: ${newTotal}`;
+        let msg = `✅ Smena završena!\n\n⏱️ Trajanje: ${hours}h ${mins}min\n📋 Narudžbine: ${completedCount}\n🍽️ Jela u smeni: ${totalDishes}\n💰 Plata: ${salary} din (${hourlyRate}/sat)`;
         if (earnedBonuses > 0) {
-            msg += `\n\n🎉 BONUS x${earnedBonuses}! (ukupno ${newBonuses} bonusa)`;
+            msg += `\n\n🎉 BONUS x${earnedBonuses} = ${bonusAmount} din`;
         } else {
-            msg += `\n\nJoš ${30 - (newTotal % 30)} jela do sledećeg bonusa`;
+            msg += `\n\nBez bonusa — treba ${_closeDishesPerBonus} jela u jednoj smeni (napravio ${totalDishes})`;
         }
+        msg += `\n\n🏆 Ukupno jela od početka rada: ${newTotal}`;
         showAlert(msg);
 
         // Odjavi kuvara
@@ -656,6 +714,11 @@ function closeKuvarShift() {
         localStorage.removeItem('konobarName');
         page = 'login';
         render();
-    });
+    };
+
+    // Kad se zatvara zaboravljena smena sa ekrana za logovanje, kuvar je već
+    // potvrdio tamo — ne pitamo ga dvaput.
+    if (opts && opts.skipConfirm) _nastavi(true);
+    else showConfirm('🍳 Završi Smenu', 'Da li želite da završite smenu?', _nastavi);
 }
 
