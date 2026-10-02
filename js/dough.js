@@ -1,5 +1,5 @@
 // ============================================
-// 🫓 STANJE TESTA
+// 🍞 STANJE TESTA
 // Velika testa = pizze 32cm · Mala testa = pizze 26cm, sendviči, fokača
 //
 // VAŽNO (zašto ovako): stanje se NE umanjuje upisom u bazu na svaku prodaju.
@@ -139,7 +139,7 @@ function doughWarnIfEmpty(item) {
 }
 
 // ============================================
-// EKRAN: 🫓 Testa
+// EKRAN: 🍞 Testa
 // ============================================
 function renderDough(c) {
     const s = computeDoughStock();
@@ -158,7 +158,7 @@ function renderDough(c) {
     };
 
     let h = `<div style="max-width:720px;margin:0 auto">
-        <h2 style="margin-bottom:6px">🫓 Stanje testa</h2>
+        <h2 style="margin-bottom:6px">🍞 Stanje testa</h2>
         <p style="color:#B0B0B0;font-size:13px;margin-bottom:18px">
             Skida se automatski čim konobar otkuca pizzu ili sendvič.
         </p>

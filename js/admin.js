@@ -250,6 +250,31 @@ function populateGroupList() {
     }
 }
 
+// ============================================
+// 🆔 Jedinstven id za artikal menija
+//
+// Staro `Date.now() + Math.random()` je izgledalo bezbedno, a nije bilo:
+// ceo deo (~1.77e12) pojede skoro svu tačnost double-a, pa razlomku ostane
+// samo ~4096 mogućih vrednosti (korak 0.000244). Za 191 artikal verovatnoća
+// duplikata je 98.8% — tako su "wood"/"beli luk svoja" i "losos 26"/"bosiljak"
+// i dobili isti id, pa je pritisak na dodatak kucao pizzu.
+//
+// Sada: ms * 1000 + brojač (ostaje CEO broj, 1.77e15 < 2^53 pa nema gubitka
+// tačnosti) i obavezna provera da id nije već zauzet. DB.menu se čita svaki
+// put, pa je jedinstven i unutar jednog uvoza cenovnika — svaki artikal se
+// upiše u DB.menu pre nego što se traži sledeći id.
+// ============================================
+let _menuIdSeq = 0;
+function newMenuItemId() {
+    const zauzeti = {};
+    (DB.menu || []).forEach(function(m) {
+        if (m && m.id !== undefined && m.id !== null) zauzeti[String(m.id)] = true;
+    });
+    let id = Date.now() * 1000 + (_menuIdSeq++ % 1000);
+    while (zauzeti[String(id)]) id++;
+    return id;
+}
+
 function addMenuItem() {
     editingMenuItemId = null;
     document.getElementById('menuItemModalTitle').textContent = '➕ Dodaj Stavku';
@@ -290,7 +315,33 @@ function saveMenuItem() {
         showAlert('⚠️ Molimo unesite validnu cenu');
         return;
     }
-    
+
+    // Naziv je takođe ključ za traženje artikla (npr. koje testo troši),
+    // pa dva ista naziva prave istu dvosmislenost kao dva ista id-a.
+    // Ne blokiramo — možda baš tako treba — ali pitamo.
+    const _isti = DB.menu.filter(function(m) {
+        return m && _menuNameKey(m.name) === _menuNameKey(name) && m.id !== editingMenuItemId;
+    });
+    if (_isti.length) {
+        showConfirm('⚠️ Naziv već postoji',
+            'U meniju već postoji "' + _isti[0].name + '" (' + _isti[0].price + ' din, ' + (_isti[0].cat || '?') + ').\n\n' +
+            'Dva artikla sa istim nazivom se teže razlikuju u izveštajima, a aplikacija ih traži po nazivu kad ' +
+            'odlučuje koje testo troše.\n\nDodati ipak?',
+            function(potvrda) { if (potvrda) _saveMenuItemWrite(name, desc, price, cat, group, dough); });
+        return;
+    }
+
+    _saveMenuItemWrite(name, desc, price, cat, group, dough);
+}
+
+// Normalizovan naziv (ista pravila kao u js/dough.js) za poređenje.
+function _menuNameKey(s) {
+    return String(s || '').toLowerCase()
+        .replace(/č|ć/g, 'c').replace(/š/g, 's').replace(/ž/g, 'z').replace(/đ/g, 'dj')
+        .replace(/\s+/g, ' ').trim();
+}
+
+function _saveMenuItemWrite(name, desc, price, cat, group, dough) {
     if(editingMenuItemId) {
         const item = DB.menu.find(i => i.id === editingMenuItemId);
         if(item) {
@@ -304,7 +355,7 @@ function saveMenuItem() {
         }
     } else {
         const _novi = {
-            id: Date.now(),
+            id: newMenuItemId(),
             name: name,
             desc: desc,
             price: price,
@@ -446,7 +497,7 @@ function importCSVFile(file) {
                 if(isNaN(price) || price <= 0) continue;
                 
                 DB.menu.push({
-                    id: Date.now() + Math.random(),
+                    id: newMenuItemId(),
                     name: name,
                     desc: desc || '',
                     price: price,
@@ -467,7 +518,7 @@ function importCSVFile(file) {
                 if(isNaN(price) || price <= 0) continue;
                 
                 DB.menu.push({
-                    id: Date.now() + Math.random(),
+                    id: newMenuItemId(),
                     name: p[0],
                     desc: p[1] || '',
                     price: price,
@@ -647,7 +698,7 @@ function importExcel(file) {
                 
                 // Add to menu
                 DB.menu.push({
-                    id: Date.now() + Math.random(),
+                    id: newMenuItemId(),
                     name: name,
                     desc: desc,
                     price: price,
@@ -990,16 +1041,12 @@ function fixDuplicateMenuIds() {
         function(potvrda) {
             if (!potvrda) return;
 
-            // Nov id mora da bude jedinstven u celom meniju, a ne samo u ovoj grupi.
-            const zauzeti = {};
-            DB.menu.forEach(function(m) { if (m && m.id !== undefined && m.id !== null) zauzeti[String(m.id)] = true; });
-
+            // newMenuItemId() čita DB.menu, a id upisujemo odmah — zato je nov id
+            // jedinstven u celom meniju, a ne samo unutar ove grupe.
             const promene = [];
             dups.forEach(function(d) {
                 d.items.slice(1).forEach(function(m) {
-                    let nov;
-                    do { nov = Date.now() + Math.random(); } while (zauzeti[String(nov)]);
-                    zauzeti[String(nov)] = true;
+                    const nov = newMenuItemId();
                     promene.push({ naziv: m.name, stari: m.id, novi: nov });
                     m.id = nov;
                 });
