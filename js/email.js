@@ -50,32 +50,33 @@ function buildShiftReportText(report) {
         lines.push('─────────────────────────────────');
         lines.push('  ☕ KAFA SA MLINA');
         lines.push('─────────────────────────────────');
-        lines.push('Stanje mlina (upisao konobar): ' + _c.reading);
-        if (_c.grinderDoses === null) {
-            lines.push('Prvo očitavanje — nema prethodno stanje za poređenje.');
-            lines.push('Od sledeće smene se vidi razlika.');
+        var _hhmm = function(t) { return new Date(t).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}); };
+        lines.push('Period: od ponoći do ' + _hhmm(_c.to) + '  (mlin se resetuje u ponoć)');
+        lines.push('');
+        lines.push('Samleveno (mlin):  ' + _c.grinderDoses + ' doza   ← upisao konobar');
+        lines.push('Otkucano (kasa):   ' + _c.posDoses + ' doza  [' + _c.posCups + ' kafa]');
+        var _r = _c.diff;
+        if (_r === 0) {
+            lines.push('RAZLIKA:           0  ✅ poklapa se');
+        } else if (_r > 0) {
+            lines.push('RAZLIKA:           +' + _r + '  ⚠️ mlin pokazuje VIŠE nego kasa');
+            lines.push('   (' + _r + ' ' + (_r === 1 ? 'doza je samlevena' : 'doza je samleveno') + ' a nije otkucano)');
         } else {
-            lines.push('Prethodno stanje: ' + _c.prevReading +
-                (_c.prevAt ? ' (' + new Date(_c.prevAt).toLocaleString('sr-RS') + ')' : ''));
+            lines.push('RAZLIKA:           ' + _r + '  ⚠️ kasa pokazuje više nego mlin');
+            lines.push('   (otkucano je više nego što je samleveno — proveri unos)');
+        }
+        lines.push('');
+        lines.push('Od toga otkucao ' + (report.user || 'konobar') + ': ' + _c.myDoses + ' doza [' + _c.myCups + ' kafa]');
+        if (_c.posDoses !== _c.myDoses) {
+            lines.push('   (poredi se sa SVIM konobarima u periodu — mlin je');
+            lines.push('    zajednički, pa se ne može razdvojiti po konobaru)');
+        }
+        if (_c.crossedMidnight) {
             lines.push('');
-            lines.push('Samleveno (mlin):  ' + _c.grinderDoses + ' doza');
-            lines.push('Otkucano (kasa):   ' + _c.posDoses + ' doza  [' + _c.posCups + ' kafa]');
-            var _r = _c.diff;
-            if (_r === 0) {
-                lines.push('RAZLIKA:           0  ✅ poklapa se');
-            } else if (_r > 0) {
-                lines.push('RAZLIKA:           +' + _r + '  ⚠️ mlin pokazuje VIŠE nego kasa');
-                lines.push('   (' + _r + ' ' + (_r === 1 ? 'doza je samlevena' : 'doza je samleveno') + ' a nije otkucano)');
-            } else {
-                lines.push('RAZLIKA:           ' + _r + '  ⚠️ kasa pokazuje više nego mlin');
-                lines.push('   (otkucano je više nego što je samleveno — proveri unos)');
-            }
-            lines.push('');
-            lines.push('Od toga otkucao ' + (report.user || 'konobar') + ': ' + _c.myDoses + ' doza [' + _c.myCups + ' kafa]');
-            if (_c.posDoses !== _c.myDoses) {
-                lines.push('   (razlika se poredi sa SVIM konobarima u periodu —');
-                lines.push('    mlin je zajednički, pa se ne može razdvojiti po konobaru)');
-            }
+            lines.push('⚠️ NIJE POKRIVENO: smena je počela pre ponoći.');
+            lines.push('   Pre ponoći je otkucano ' + _c.uncoveredDoses + ' doza [' + _c.uncoveredCups + ' kafa],');
+            lines.push('   ali se to iz ovog broja ne može proveriti — mlin je');
+            lines.push('   u ponoći resetovan.');
         }
         lines.push('');
     }

@@ -1,9 +1,16 @@
 // ============================================
 // ☕ KAFA SA MLINA
 //
-// Kontrola da li sve samlevene kafe prođu kroz kasu. Brojač na mlinu je
-// KUMULATIVAN — samo raste — pa se pamti poslednje očitano stanje, a
-// potrošnja u smeni je razlika: očitano − prethodno očitano.
+// Kontrola da li sve samlevene kafe prođu kroz kasu.
+//
+// MLIN SE RESETUJE U PONOĆ. Zato očitan broj NIJE stanje brojača koje treba
+// oduzimati od prethodnog — on već jeste "sve samleveno od 00:00 danas".
+// Poredi se direktno sa kasom za isti period: od ponoći do zatvaranja smene.
+//
+// Zato se NE računa razlika između dva očitavanja: smena koja radi preko
+// ponoći dala bi besmislicu (prethodno 40 u 16h, očitano 12 u 01:30 → −28).
+// Iz istog razloga manji broj od prošlog puta nije greška — posle ponoći je
+// to normalno.
 //
 // Konobar NE vidi broj iz kase dok ne unese svoj (slep unos). Da vidi
 // unapred, samo bi prekucao taj isti broj i provera bi izgubila smisao.
@@ -50,13 +57,15 @@ function getCoffeeDoses(item) {
     return COFFEE_DEFAULT_DOSES[n] || 0;
 }
 
-// Doze i šolje otkucane u periodu (fromISO, toISO]. `username` = samo taj konobar.
+// Doze i šolje otkucane u periodu [fromISO, toISO]. `username` = samo taj konobar.
+// Donja granica je UKLJUČUJUĆA jer je to ponoć — kafa otkucana tačno u 00:00
+// pripada novom danu mlina.
 function countCoffeeDoses(fromISO, toISO, username) {
     let doses = 0, cups = 0;
     const scan = function(list) {
         (list || []).forEach(function(o) {
             if (!o || !o.time) return;
-            if (fromISO && o.time <= fromISO) return;
+            if (fromISO && o.time < fromISO) return;
             if (toISO && o.time > toISO) return;
             if (username && o.createdBy !== username) return;
             if (o.isDebtPayment) return;                  // vraćen dug nije nova kafa
@@ -93,30 +102,55 @@ function setGrinderReading(value, atISO) {
     save();
 }
 
+// Ponoć pre datog trenutka — trenutak kada se mlin resetovao.
+function grinderDayStart(atISO) {
+    const d = new Date(atISO);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
 // Uporedi očitano stanje mlina sa onim što je prošlo kroz kasu.
 //
-// Razlika sa mlina pokriva period od POSLEDNJEG OČITAVANJA, pa se poredi sa
-// kasom za isti period i za SVE konobare — ako su dvoje radili, kafe koje je
-// otkucao drugi su takođe prošle kroz taj isti mlin. Zasebno se vodi i koliko
-// je otkucao konobar koji zatvara smenu.
+// Očitan broj = sve samleveno od ponoći, pa se poredi sa kasom od ponoći do
+// zatvaranja smene, i to za SVE konobare — mlin je zajednički, kafe koje je
+// otkucao drugi prošle su kroz isti mlin. Zasebno se vodi koliko je otkucao
+// konobar koji zatvara smenu.
+//
+// Smena koja je počela juče a zatvara se posle ponoći: očitanje pokriva samo
+// deo POSLE ponoći. Koliko je ta smena otkucala PRE ponoći vodi se posebno,
+// kao nepokriveno — mlin je u međuvremenu resetovan i taj deo se iz ovog
+// broja ne može proveriti.
 function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
+    const ponoc = grinderDayStart(endISO);
+    const ponocISO = ponoc.toISOString();
+    const preseklaPonoc = new Date(shiftStartISO) < ponoc;
+
+    const svi = countCoffeeDoses(ponocISO, endISO, null);
+    const moje = countCoffeeDoses(ponocISO, endISO, username);
+    const r = Math.round(Number(reading) || 0);
     const last = getGrinderLast();
-    const from = last ? last.at : shiftStartISO;
-    const svi = countCoffeeDoses(from, endISO, null);
-    const moje = countCoffeeDoses(shiftStartISO, endISO, username);
-    const delta = last ? (Math.round(Number(reading) || 0) - Number(last.value)) : null;
+
+    // Deo smene pre ponoći koji ovo očitanje ne pokriva.
+    const nepokriveno = preseklaPonoc
+        ? countCoffeeDoses(shiftStartISO, new Date(ponoc.getTime() - 1).toISOString(), null)
+        : { doses: 0, cups: 0 };
+
     return {
-        reading: Math.round(Number(reading) || 0),
-        prevReading: last ? Number(last.value) : null,
-        prevAt: last ? last.at : null,
-        prevBy: last ? last.by : null,
-        from: from,
-        grinderDoses: delta,                                  // null = prvo očitavanje
+        reading: r,
+        from: ponocISO,                       // period poređenja: od ponoći
+        to: endISO,
+        crossedMidnight: preseklaPonoc,
+        grinderDoses: r,                      // očitan broj JESTE broj doza od ponoći
         posDoses: svi.doses,
         posCups: svi.cups,
         myDoses: moje.doses,
         myCups: moje.cups,
-        diff: (delta === null ? null : delta - svi.doses)     // + = mlin pokazuje više nego kasa
+        uncoveredDoses: nepokriveno.doses,    // pre ponoći, van domašaja ovog očitanja
+        uncoveredCups: nepokriveno.cups,
+        diff: r - svi.doses,                  // + = mlin pokazuje više nego kasa
+        prevReading: last ? Number(last.value) : null,
+        prevAt: last ? last.at : null,
+        prevBy: last ? last.by : null
     };
 }
 
@@ -131,11 +165,14 @@ function askGrinderReading() {
         const last = getGrinderLast();
         const info = document.getElementById('grinderLastInfo');
         if (info) {
-            info.innerHTML = last
-                ? 'Poslednje upisano: <b style="color:#FFF">' + last.value + '</b> — ' +
+            // Prethodno očitavanje ima smisla pokazati samo ako je od danas —
+            // mlin se resetovao u ponoć, pa jučerašnji broj ne znači ništa.
+            const istiDan = last && grinderDayStart(last.at).getTime() === grinderDayStart(new Date()).getTime();
+            info.innerHTML = istiDan
+                ? 'Danas je već upisano: <b style="color:#FFF">' + last.value + '</b> — ' +
                   (last.by ? escapeHtml(last.by) + ', ' : '') +
-                  new Date(last.at).toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                : 'Ovo je prvo očitavanje — upisuje se kao početno stanje.';
+                  new Date(last.at).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })
+                : 'Mlin se resetuje u ponoć — upiši broj koji <b style="color:#FFF">sada</b> piše na njemu.';
         }
         const inp = document.getElementById('grinderInput');
         if (inp) { inp.value = ''; }
@@ -167,13 +204,14 @@ function grinderSubmit() {
     const v = Math.round(Number(raw));
     if (!isFinite(v) || v < 0) { setErr('Unesi ispravan broj.'); return; }
 
-    // Brojač je kumulativan — manji broj znači grešku u kucanju ili zamenjen/
-    // resetovan mlin. Ne odbijamo, ali tražimo potvrdu da ne prođe greškom.
+    // Manji broj je greška SAMO ako je prethodno očitavanje od ISTOG dana —
+    // posle ponoći se mlin resetuje, pa je manji broj tada očekivan.
     const last = getGrinderLast();
-    if (last && v < Number(last.value)) {
-        showConfirm('⚠️ Manji broj nego prošli put',
-            'Upisao si ' + v + ', a poslednje stanje je bilo ' + last.value + '.\n\n' +
-            'Brojač na mlinu ne ide unazad — ako nije resetovan ili zamenjen, verovatno je greška u kucanju.\n\n' +
+    if (last && v < Number(last.value) &&
+        grinderDayStart(last.at).getTime() === grinderDayStart(new Date()).getTime()) {
+        showConfirm('⚠️ Manji broj nego maločas',
+            'Upisao si ' + v + ', a danas je već upisano ' + last.value + '.\n\n' +
+            'Mlin se resetuje tek u ponoć, pa u toku dana broj ne ide unazad — verovatno je greška u kucanju.\n\n' +
             'Da upišem ipak ' + v + '?',
             function(da) { if (da) _closeGrinderModal(v); });
         return;
