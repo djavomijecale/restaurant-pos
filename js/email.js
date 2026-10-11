@@ -45,6 +45,41 @@ function buildShiftReportText(report) {
         lines.push('');
     }
     
+    if (report.coffee) {
+        var _c = report.coffee;
+        lines.push('─────────────────────────────────');
+        lines.push('  ☕ KAFA SA MLINA');
+        lines.push('─────────────────────────────────');
+        lines.push('Stanje mlina (upisao konobar): ' + _c.reading);
+        if (_c.grinderDoses === null) {
+            lines.push('Prvo očitavanje — nema prethodno stanje za poređenje.');
+            lines.push('Od sledeće smene se vidi razlika.');
+        } else {
+            lines.push('Prethodno stanje: ' + _c.prevReading +
+                (_c.prevAt ? ' (' + new Date(_c.prevAt).toLocaleString('sr-RS') + ')' : ''));
+            lines.push('');
+            lines.push('Samleveno (mlin):  ' + _c.grinderDoses + ' doza');
+            lines.push('Otkucano (kasa):   ' + _c.posDoses + ' doza  [' + _c.posCups + ' kafa]');
+            var _r = _c.diff;
+            if (_r === 0) {
+                lines.push('RAZLIKA:           0  ✅ poklapa se');
+            } else if (_r > 0) {
+                lines.push('RAZLIKA:           +' + _r + '  ⚠️ mlin pokazuje VIŠE nego kasa');
+                lines.push('   (' + _r + ' ' + (_r === 1 ? 'doza je samlevena' : 'doza je samleveno') + ' a nije otkucano)');
+            } else {
+                lines.push('RAZLIKA:           ' + _r + '  ⚠️ kasa pokazuje više nego mlin');
+                lines.push('   (otkucano je više nego što je samleveno — proveri unos)');
+            }
+            lines.push('');
+            lines.push('Od toga otkucao ' + (report.user || 'konobar') + ': ' + _c.myDoses + ' doza [' + _c.myCups + ' kafa]');
+            if (_c.posDoses !== _c.myDoses) {
+                lines.push('   (razlika se poredi sa SVIM konobarima u periodu —');
+                lines.push('    mlin je zajednički, pa se ne može razdvojiti po konobaru)');
+            }
+        }
+        lines.push('');
+    }
+
     lines.push('─────────────────────────────────');
     lines.push('  PLATA');
     lines.push('─────────────────────────────────');

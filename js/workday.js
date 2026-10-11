@@ -824,6 +824,18 @@ async function _doCloseWorkday() {
         return;
     }
 
+    // ☕ Obavezno stanje mlina. Traži se PRE svega ostalog i slepo — konobar
+    // ne vidi koliko je kafa prošlo kroz kasu, da ne bi prosto prekucao taj broj.
+    let _grinderReading = null;
+    if (typeof askGrinderReading === 'function') {
+        _grinderReading = await askGrinderReading();
+        if (_grinderReading === null) {
+            showAlert('Smena nije zatvorena.\n\nStanje mlina mora da se upiše pre zatvaranja smene.');
+            render();                     // vrati dugme "Zatvori smenu" u upotrebljivo stanje
+            return;
+        }
+    }
+
     // Filtriraj samo narudžbine ovog konobara od početka njegovog dana
     const dayOrders = DB.orders.filter(o => 
         o.time >= myWorkday.startTime && 
@@ -882,7 +894,16 @@ async function _doCloseWorkday() {
         salary: salary,
         hourlyRate: hourlyRate
     };
-    
+
+    // ☕ Uporedi mlin sa kasom i pomeri poslednje očitano stanje.
+    // Mora POSLE endTime, da period poređenja ide tačno do kraja smene.
+    let coffeeCheck = null;
+    if (_grinderReading !== null && typeof computeCoffeeCheck === 'function') {
+        coffeeCheck = computeCoffeeCheck(_grinderReading, myWorkday.startTime, endTime, username);
+        setGrinderReading(_grinderReading, endTime);
+        finalReport.coffee = coffeeCheck;
+    }
+
     localStorage.setItem('lastWorkdayReport', JSON.stringify(finalReport));
     
     // Inicijalizuj workdayHistory ako ne postoji
@@ -977,9 +998,10 @@ async function _doCloseWorkday() {
         bonusReason: bonusReason,
         isFirstShift: isFirstShift,
         isSecondShift: isSecondShift,
+        coffee: coffeeCheck,
         inheritedFrom: myWorkday.inheritedFrom || null
     });
-    
+
     console.log('✅ Sesija dodata u workdayHistory:', DB.workdayHistory.length, 'sesija ukupno');
 
     // ✅ KRITIČNO: Sačuvaj workdayHistory ATOMIČKI pre brisanja workday-a

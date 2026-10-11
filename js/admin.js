@@ -948,6 +948,8 @@ function renderSettings(c) {
                 <button class="btn" style="background:#FF9800" onclick="clearWorkday()">🧹 Očisti Radni Dan</button>
             </div>
             
+            ${renderCoffeeSettings()}
+
             ${renderDuplicateIdFix()}
 
             ${renderRebuildShift()}
@@ -970,6 +972,93 @@ function renderSettings(c) {
             </div>
         </div>`;
 }
+
+// ============================================
+// ☕ Kafa sa mlina — koji artikli i koliko doza
+//
+// Poređenje ide po DOZAMA, ne po šoljama: "dupli espreso" troši dve.
+// Bez toga bi mlin uvek pokazivao više od kase i svaka smena bi lažno
+// "falila". Doza se pamti na samom artiklu (item.coffeeDoses), isto kao
+// testo u js/dough.js, pa preživi preimenovanje.
+// ============================================
+
+// Artikli koje ima smisla ponuditi: topli napici + sve što je već podešeno
+// + sve što po nazivu liči na kafu (da kafa iz druge grupe ne ostane skrivena).
+function _coffeeCandidates() {
+    const kw = /kafa|espres|capp|kapu|macch|latte|late|moka|ristre|americ|iced c/i;
+    return (DB.menu || []).filter(function(m) {
+        if (!m) return false;
+        if ((m.group || '').toUpperCase() === 'TOPLI NAPICI') return true;
+        if (m.coffeeDoses !== undefined && m.coffeeDoses !== null && m.coffeeDoses !== '') return true;
+        return kw.test(m.name || '');
+    });
+}
+
+function renderCoffeeSettings() {
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
+    const lista = _coffeeCandidates();
+    if (!lista.length) return '';
+
+    const last = (typeof getGrinderLast === 'function') ? getGrinderLast() : null;
+    const stanje = last
+        ? 'Poslednje upisano stanje mlina: <b style="color:#FFF">' + last.value + '</b> — ' +
+          (last.by ? esc(last.by) + ', ' : '') +
+          new Date(last.at).toLocaleString('sr-RS', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : 'Stanje mlina još nije upisano — upisaće se pri prvom zatvaranju smene.';
+
+    let redovi = '';
+    lista.forEach(function(m) {
+        const doza = (typeof getCoffeeDoses === 'function') ? getCoffeeDoses(m) : 0;
+        redovi += `<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #16213E">
+            <div style="flex:1;min-width:0">
+                <div style="color:${doza > 0 ? '#FFF' : '#888'};font-size:14px">${esc(m.name)}</div>
+                <div style="color:#888;font-size:11px">${m.price} din · ${esc(m.group || '-')}</div>
+            </div>
+            <input type="number" class="coffeeDoseInput" data-name="${esc(m.name)}" min="0" max="9" step="1"
+                   value="${doza}" style="width:62px;text-align:center;font-size:16px;padding:7px">
+        </div>`;
+    });
+
+    return `<div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                <h3 style="color:#FF9800;margin-bottom:16px">☕ Kafa sa mlina</h3>
+                <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #FF9800;margin-bottom:16px">
+                    <p style="color:#B0B0B0;font-size:13px;line-height:1.7">
+                        Konobar pri zatvaranju smene mora da upiše stanje brojača sa mlina.
+                        Aplikacija uporedi koliko je samleveno sa onim što je prošlo kroz kasu i
+                        pošalje ti razliku u izveštaju na mejl.<br><br>
+                        Upiši koliko <b style="color:#FFF">doza</b> troši svaki artikal —
+                        <b style="color:#FFF">0</b> znači da ne dira mlin.
+                        Dupli espreso troši 2.<br><br>
+                        ${stanje}
+                    </p>
+                </div>
+                <div style="background:#0F3460;padding:14px 16px;border-radius:12px;margin-bottom:14px">
+                    ${redovi}
+                </div>
+                <button class="btn" style="background:#FF9800" onclick="saveCoffeeSettings()">☕ Sačuvaj doze</button>
+            </div>`;
+}
+
+function saveCoffeeSettings() {
+    const polja = document.querySelectorAll('.coffeeDoseInput');
+    if (!polja.length) return;
+    let promenjeno = 0, ukupno = 0;
+    polja.forEach(function(el) {
+        const naziv = el.getAttribute('data-name');
+        const m = (DB.menu || []).find(function(x) { return x && x.name === naziv; });
+        if (!m) return;
+        const v = Math.max(0, Math.round(Number(el.value) || 0));
+        const staro = (typeof getCoffeeDoses === 'function') ? getCoffeeDoses(m) : 0;
+        if (v !== staro) promenjeno++;
+        m.coffeeDoses = v;                       // upisuje se i 0, da se zna da je namerno isključeno
+        if (v > 0) ukupno++;
+    });
+    save();
+    showAlert('✅ Sačuvano.\n\n' + ukupno + ' artikala se broji kao kafa sa mlina' +
+        (promenjeno ? '\n(' + promenjeno + ' izmenjeno)' : ''));
+    render();
+}
+
 
 // ============================================
 // 🔧 Artikli koji dele ID
