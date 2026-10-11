@@ -155,6 +155,17 @@ function renderTableOrder(c) {
     if(!table.discountedItems) table.discountedItems = [];
     if(table.discountPercent === undefined) table.discountPercent = 0;
 
+    // 💸 SAMOISPRAVKA: popust na praznom stolu je zaostao od ranije (reset je
+    // bio samo u admin grani pri naplati). Čisti se pri prvom otvaranju stola,
+    // da se zatečeni popusti ne vuku dok neko ne naplati baš taj sto.
+    if (!table.order.length && (table.discountPercent > 0 || table.discountedItems.length)) {
+        table.discount = 0;
+        table.discountPercent = 0;
+        table.discountedItems = [];
+        if (typeof markTableDirty === 'function') markTableDirty(table.num);
+        save();
+    }
+
     const sub = myOrder.reduce((s,i)=>s+(i.price*i.qty),0);
     
     // Izračunaj popust (SVA KORISNICI MOGU DA KORISTE)
@@ -494,10 +505,12 @@ function clearTable(tableNum) {
                 table.order = table.order.filter(item => item.createdBy !== currentUsername);
             } else {
                 table.order = [];
-                table.discount = 0;
-                table.discountPercent = 0;
-                table.discountedItems = [];
             }
+
+            // 💸 Isto i pri čišćenju stola — popust ne sme da pretekne.
+            table.discount = 0;
+            table.discountPercent = 0;
+            table.discountedItems = [];
 
             // 🛵 Kad sto ostane prazan, oznaka dostave se gasi — inače bi je
             // nasledio sledeći gost na tom stolu.
@@ -752,10 +765,16 @@ async function confirmPay() {
         table.order = table.order.filter(item => item.createdBy !== currentUsername);
     } else {
         table.order = [];
-        table.discount = 0;
-        table.discountPercent = 0;
-        table.discountedItems = [];
     }
+
+    // 💸 Popust se briše pri SVAKOJ naplati, ne samo kad naplaćuje admin.
+    // Ranije je reset stajao samo u admin grani, pa je konobaru popust ostajao
+    // na stolu i posle naplate: sledeći gost bi ga dobio, a pošto se popust
+    // vezuje za ID artikla (discountedItems), isti artikal otkucan kasnije
+    // bio bi umanjen sam od sebe. Popust važi za jedan račun, ne za sto.
+    table.discount = 0;
+    table.discountPercent = 0;
+    table.discountedItems = [];
 
     // 🛵 Kad sto ostane prazan, oznaka dostave se gasi — inače bi je nasledio
     // sledeći gost na tom stolu.
