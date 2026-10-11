@@ -110,6 +110,19 @@ function setGrinderReading(value, atISO) {
     save();
 }
 
+// Očitanje iz ove smene koje može da posluži i kao provera pri zatvaranju,
+// pa se konobaru ne traži dvaput. Null = mora da unese.
+//
+// Uslov je da je sa ISTOG dana mlina kao trenutak zatvaranja. Ako zatvara
+// posle ponoći, očitanje od sinoć ne pokriva ništa posle ponoći — brojač je
+// resetovan — pa se tad ipak mora uneti nov broj.
+function reusableGrinderReading(shiftStartISO, endISO) {
+    const oc = findGrinderReadingIn(shiftStartISO, new Date(new Date(endISO).getTime() + 1).toISOString());
+    if (!oc) return null;
+    if (grinderDayStart(oc.at).getTime() !== grinderDayStart(endISO).getTime()) return null;
+    return oc;
+}
+
 // Poslednje očitavanje u intervalu [odISO, doISO) — koristi se da se nađe
 // ono uzeto pred ponoć.
 function findGrinderReadingIn(odISO, doISO) {
@@ -141,15 +154,25 @@ function grinderDayStart(atISO) {
 // deo POSLE ponoći. Koliko je ta smena otkucala PRE ponoći vodi se posebno,
 // kao nepokriveno — mlin je u međuvremenu resetovan i taj deo se iz ovog
 // broja ne može proveriti.
-function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
-    const ponoc = grinderDayStart(endISO);
+// `readingAtISO` = kada je taj broj očitan. Nije uvek kraj smene: ako je
+// konobar očitao u 23h a zatvara pre ponoći, taj isti broj služi kao provera
+// i ne traži mu se ponovo. Sve otkucano POSLE očitanja ostaje nepokriveno i
+// prijavljuje se kao takvo.
+function computeCoffeeCheck(reading, readingAtISO, shiftStartISO, endISO, username) {
+    const at = readingAtISO || endISO;
+    const ponoc = grinderDayStart(at);
     const ponocISO = ponoc.toISOString();
     const preseklaPonoc = new Date(shiftStartISO) < ponoc;
 
-    const svi = countCoffeeDoses(ponocISO, endISO, null);
-    const moje = countCoffeeDoses(ponocISO, endISO, username);
+    const svi = countCoffeeDoses(ponocISO, at, null);
+    const moje = countCoffeeDoses(ponocISO, at, username);
     const r = Math.round(Number(reading) || 0);
     const last = getGrinderLast();
+
+    // Rep: otkucano između očitanja i kraja smene (očitanje ga ne vidi).
+    const rep = (at < endISO)
+        ? countCoffeeDoses(new Date(new Date(at).getTime() + 1).toISOString(), endISO, null)
+        : { doses: 0, cups: 0 };
 
     // Deo smene PRE ponoći. Zatvaranje posle ponoći ga ne vidi — mlin je
     // resetovan. Zato aplikacija traži očitanje u 23h: ako ga ima, taj deo
@@ -162,7 +185,7 @@ function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
     let vece = null;
     if (preseklaPonoc) {
         const oc = findGrinderReadingIn(shiftStartISO, ponocISO);
-        if (oc) {
+        if (oc && oc.at !== at) {        // ne prikazuj isto očitanje dvaput
             const prethodnaPonoc = grinderDayStart(oc.at).toISOString();
             const kasa = countCoffeeDoses(prethodnaPonoc, oc.at, null);
             vece = {
@@ -179,6 +202,8 @@ function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
     return {
         evening: vece,            // provera dela pre ponoći (null = nije očitano u 23h)
         reading: r,
+        readingAt: at,                        // kada je očitano (ne mora biti kraj smene)
+        reusedEvening: at !== endISO,         // iskorišćeno očitanje iz 23h, nije traženo ponovo
         from: ponocISO,                       // period poređenja: od ponoći
         to: endISO,
         crossedMidnight: preseklaPonoc,
@@ -189,6 +214,8 @@ function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
         myCups: moje.cups,
         uncoveredDoses: nepokriveno.doses,    // pre ponoći, van domašaja ovog očitanja
         uncoveredCups: nepokriveno.cups,
+        tailDoses: rep.doses,                 // otkucano posle očitanja do kraja smene
+        tailCups: rep.cups,
         diff: r - svi.doses,                  // + = mlin pokazuje više nego kasa
         prevReading: last ? Number(last.value) : null,
         prevAt: last ? last.at : null,

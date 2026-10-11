@@ -826,8 +826,19 @@ async function _doCloseWorkday() {
 
     // ☕ Obavezno stanje mlina. Traži se PRE svega ostalog i slepo — konobar
     // ne vidi koliko je kafa prošlo kroz kasu, da ne bi prosto prekucao taj broj.
-    let _grinderReading = null;
-    if (typeof askGrinderReading === 'function') {
+    //
+    // Ako je već očitao u 23h i zatvara pre ponoći, taj broj služi i ovde —
+    // ne gnjavimo ga dvaput. Posle ponoći se ipak mora uneti nov: mlin je u
+    // međuvremenu resetovan, pa stari broj ne pokriva ništa posle ponoći.
+    let _grinderReading = null, _grinderAt = null;
+    const _vecOcitano = (typeof reusableGrinderReading === 'function')
+        ? reusableGrinderReading(myWorkday.startTime, new Date().toISOString())
+        : null;
+    if (_vecOcitano) {
+        _grinderReading = Number(_vecOcitano.value);
+        _grinderAt = _vecOcitano.at;
+        console.log('☕ Koristim očitanje mlina od ' + _vecOcitano.at + ' (' + _vecOcitano.value + ')');
+    } else if (typeof askGrinderReading === 'function') {
         _grinderReading = await askGrinderReading();
         if (_grinderReading === null) {
             showAlert('Smena nije zatvorena.\n\nStanje mlina mora da se upiše pre zatvaranja smene.');
@@ -899,8 +910,11 @@ async function _doCloseWorkday() {
     // Mora POSLE endTime, da period poređenja ide tačno do kraja smene.
     let coffeeCheck = null;
     if (_grinderReading !== null && typeof computeCoffeeCheck === 'function') {
-        coffeeCheck = computeCoffeeCheck(_grinderReading, myWorkday.startTime, endTime, username);
-        setGrinderReading(_grinderReading, endTime);
+        coffeeCheck = computeCoffeeCheck(_grinderReading, _grinderAt || endTime,
+                                         myWorkday.startTime, endTime, username);
+        // Upisuje se samo ako je sad unet. Očitanje iz 23h je već zapisano —
+        // ponovni upis bi mu pomerio vreme na kraj smene i pokvario period.
+        if (!_grinderAt) setGrinderReading(_grinderReading, endTime);
         finalReport.coffee = coffeeCheck;
     }
 

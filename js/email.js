@@ -51,7 +51,10 @@ function buildShiftReportText(report) {
         lines.push('  ☕ KAFA SA MLINA');
         lines.push('─────────────────────────────────');
         var _hhmm = function(t) { return new Date(t).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}); };
-        lines.push('Period: od ponoći do ' + _hhmm(_c.to) + '  (mlin se resetuje u ponoć)');
+        lines.push('Period: od ponoći do ' + _hhmm(_c.readingAt || _c.to) + '  (mlin se resetuje u ponoć)');
+        if (_c.reusedEvening) {
+            lines.push('Konobar je očitao u ' + _hhmm(_c.readingAt) + ', smena zatvorena u ' + _hhmm(_c.to) + '.');
+        }
         lines.push('');
         lines.push('Samleveno (mlin):  ' + _c.grinderDoses + ' doza   ← upisao konobar');
         lines.push('Otkucano (kasa):   ' + _c.posDoses + ' doza  [' + _c.posCups + ' kafa]');
@@ -70,6 +73,11 @@ function buildShiftReportText(report) {
         if (_c.posDoses !== _c.myDoses) {
             lines.push('   (poredi se sa SVIM konobarima u periodu — mlin je');
             lines.push('    zajednički, pa se ne može razdvojiti po konobaru)');
+        }
+        if (_c.tailDoses > 0) {
+            lines.push('');
+            lines.push('(posle očitanja otkucano još ' + _c.tailDoses + ' doza [' + _c.tailCups +
+                ' kafa] do kraja smene — taj deo nije pokriven)');
         }
         if (_c.crossedMidnight && _c.evening) {
             var _e = _c.evening;
