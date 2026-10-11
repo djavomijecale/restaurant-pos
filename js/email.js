@@ -120,7 +120,47 @@ function buildShiftReportText(report) {
     }
     
     lines.push('');
-    
+
+    // 🏠 Sve što je otkucano "na kuću" u ovoj smeni. Ne ulazi u promet ni
+    // u pazar — zato stoji zasebno, a ne među narudžbinama.
+    if (report.houseOrders && report.houseOrders.length > 0) {
+        var _ho = report.houseOrders;
+        var _hoTot = _ho.reduce(function(s, h) { return s + (Number(h.tot) || 0); }, 0);
+        lines.push('─────────────────────────────────');
+        lines.push('  🏠 NA KUĆU (' + _ho.length + ')');
+        lines.push('─────────────────────────────────');
+        lines.push('Ukupno: ' + _hoTot.toLocaleString('sr-RS') + ' din');
+        lines.push('');
+
+        // Zbirno po imenu — odmah se vidi ko najviše troši
+        var _poImenu = {};
+        _ho.forEach(function(h) {
+            var k = h.houseName || '(bez imena)';
+            if (!_poImenu[k]) _poImenu[k] = { n: 0, tot: 0 };
+            _poImenu[k].n++;
+            _poImenu[k].tot += (Number(h.tot) || 0);
+        });
+        Object.keys(_poImenu)
+            .sort(function(a, b) { return _poImenu[b].tot - _poImenu[a].tot; })
+            .forEach(function(k) {
+                var d = _poImenu[k];
+                lines.push('  ' + k + ': ' + d.n + (d.n === 1 ? ' račun' : ' računa') +
+                    ', ' + d.tot.toLocaleString('sr-RS') + ' din');
+            });
+        lines.push('');
+
+        _ho.forEach(function(h, idx) {
+            var t = new Date(h.time).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'});
+            var items = h.items || [];
+            if (!Array.isArray(items)) items = Object.values(items);
+            lines.push((idx + 1) + '. ' + t + ' | ' + (h.houseName || '(bez imena)') +
+                ' | ' + (h.tableName || ('Sto ' + h.table)) +
+                ' | ' + (Number(h.tot) || 0).toFixed(0) + ' din');
+            lines.push('   ' + items.map(function(it) { return it.name + ' x' + it.qty; }).join(', '));
+        });
+        lines.push('');
+    }
+
     if (report.orders && report.orders.length > 0) {
         lines.push('─────────────────────────────────');
         lines.push('  NARUDŽBINE (' + report.orders.length + ')');

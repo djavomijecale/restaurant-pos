@@ -4,6 +4,21 @@
 // Stavke koje se NE naplaćuju i NE vide u dnevnim izveštajima
 // Svaka stavka se vezuje za ime (novo ili postojeće)
 
+// Kuća naplate jednog konobara u jednoj smeni — za izveštaj na mejl.
+// Ne ulaze u promet ni u pazar, idu samo kao informacija.
+//
+// `createdBy` se upisuje kao (konobarName || username), pa se poredi sa oba:
+// ostatak aplikacije piše username, a ovde je istorijski konobarName.
+function collectHouseOrdersForShift(username, fromISO, toISO) {
+    return (DB.houseOrders || []).filter(function(h) {
+        if (!h || !h.time) return false;
+        if (fromISO && h.time < fromISO) return false;
+        if (toISO && h.time > toISO) return false;
+        return h.createdBy === username ||
+               (DB.konobarName && h.createdBy === DB.konobarName && username === DB.currentUser.username);
+    }).sort(function(a, b) { return a.time < b.time ? -1 : 1; });
+}
+
 // ============================================
 // MODAL ZA IZBOR IMENA - KUĆA
 // ============================================

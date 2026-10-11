@@ -918,6 +918,12 @@ async function _doCloseWorkday() {
         finalReport.coffee = coffeeCheck;
     }
 
+    // 🏠 Šta je ovaj konobar otkucao "na kuću" u ovoj smeni.
+    // Ne ulazi u promet ni u pazar — ide u izveštaj samo kao informacija.
+    if (typeof collectHouseOrdersForShift === 'function') {
+        finalReport.houseOrders = collectHouseOrdersForShift(username, myWorkday.startTime, endTime);
+    }
+
     localStorage.setItem('lastWorkdayReport', JSON.stringify(finalReport));
     
     // Inicijalizuj workdayHistory ako ne postoji
