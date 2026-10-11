@@ -38,8 +38,8 @@
          vidi taj broj, samo bi ga prekucao i provera ne bi značila ništa. -->
     <div class="modal" id="grinderModal">
         <div class="modal-content">
-            <h2 style="color:#E94560;margin-bottom:8px">☕ Stanje mlina</h2>
-            <p style="color:#B0B0B0;font-size:14px;margin-bottom:16px">
+            <h2 style="color:#E94560;margin-bottom:8px" id="grinderTitle">☕ Stanje mlina</h2>
+            <p style="color:#B0B0B0;font-size:14px;margin-bottom:16px" id="grinderSubtitle">
                 Pročitaj broj sa brojača na mlinu i upiši ga. Mlin se resetuje u ponoć, pa je to broj kafa samlevenih od ponoći. Bez ovoga se smena ne može zatvoriti.
             </p>
             <div id="grinderLastInfo" style="background:#16213E;padding:10px 12px;border-radius:8px;color:#B0B0B0;font-size:13px;margin-bottom:16px"></div>
@@ -49,7 +49,7 @@
                    onkeydown="if(event.key==='Enter'){event.preventDefault();grinderSubmit();}">
             <div id="grinderError" style="color:#E94560;font-size:13px;min-height:18px;margin-bottom:12px"></div>
             <div style="display:flex;gap:12px">
-                <button class="btn btn-secondary" onclick="grinderCancel()">Odustani</button>
+                <button class="btn btn-secondary" id="grinderCancelBtn" onclick="grinderCancel()">Odustani</button>
                 <button class="btn" onclick="grinderSubmit()">Potvrdi</button>
             </div>
         </div>

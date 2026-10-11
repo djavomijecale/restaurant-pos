@@ -94,12 +94,33 @@ function getGrinderLast() {
 
 function setGrinderReading(value, atISO) {
     if (!DB.settings) DB.settings = {};
-    DB.settings.grinderLast = {
+    const zapis = {
         value: Math.round(Number(value) || 0),
         at: atISO || new Date().toISOString(),
         by: DB.currentUser ? DB.currentUser.username : ''
     };
+    DB.settings.grinderLast = zapis;
+    // Dnevnik svih očitavanja — treba zbog očitanja u 23h: smena koja radi
+    // preko ponoći time dobija i deo PRE ponoći (vidi computeCoffeeCheck).
+    if (!Array.isArray(DB.settings.grinderReadings)) DB.settings.grinderReadings = [];
+    DB.settings.grinderReadings.push(zapis);
+    if (DB.settings.grinderReadings.length > 60) {
+        DB.settings.grinderReadings = DB.settings.grinderReadings.slice(-60);
+    }
     save();
+}
+
+// Poslednje očitavanje u intervalu [odISO, doISO) — koristi se da se nađe
+// ono uzeto pred ponoć.
+function findGrinderReadingIn(odISO, doISO) {
+    const sve = (DB.settings && DB.settings.grinderReadings) || [];
+    let naj = null;
+    sve.forEach(function(r) {
+        if (!r || !r.at) return;
+        if (r.at < odISO || r.at >= doISO) return;
+        if (!naj || r.at > naj.at) naj = r;
+    });
+    return naj;
 }
 
 // Ponoć pre datog trenutka — trenutak kada se mlin resetovao.
@@ -130,12 +151,33 @@ function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
     const r = Math.round(Number(reading) || 0);
     const last = getGrinderLast();
 
-    // Deo smene pre ponoći koji ovo očitanje ne pokriva.
+    // Deo smene PRE ponoći. Zatvaranje posle ponoći ga ne vidi — mlin je
+    // resetovan. Zato aplikacija traži očitanje u 23h: ako ga ima, taj deo
+    // se proverava zasebno (očitanje u 23h = sve samleveno od prethodne ponoći).
+    const preMidnightISO = new Date(ponoc.getTime() - 1).toISOString();
     const nepokriveno = preseklaPonoc
-        ? countCoffeeDoses(shiftStartISO, new Date(ponoc.getTime() - 1).toISOString(), null)
+        ? countCoffeeDoses(shiftStartISO, preMidnightISO, null)
         : { doses: 0, cups: 0 };
 
+    let vece = null;
+    if (preseklaPonoc) {
+        const oc = findGrinderReadingIn(shiftStartISO, ponocISO);
+        if (oc) {
+            const prethodnaPonoc = grinderDayStart(oc.at).toISOString();
+            const kasa = countCoffeeDoses(prethodnaPonoc, oc.at, null);
+            vece = {
+                reading: Number(oc.value),
+                at: oc.at,
+                by: oc.by || '',
+                posDoses: kasa.doses,
+                posCups: kasa.cups,
+                diff: Number(oc.value) - kasa.doses
+            };
+        }
+    }
+
     return {
+        evening: vece,            // provera dela pre ponoći (null = nije očitano u 23h)
         reading: r,
         from: ponocISO,                       // period poređenja: od ponoći
         to: endISO,
@@ -155,24 +197,95 @@ function computeCoffeeCheck(reading, shiftStartISO, endISO, username) {
 }
 
 // ============================================
+// ⏰ Podsetnik u 23h
+//
+// Smena koja radi preko ponoći ne može sa završnog broja da proveri deo PRE
+// ponoći — mlin se u međuvremenu resetuje. Zato se stanje traži i u 23h, dok
+// brojač još pokriva taj dan.
+//
+// Ne blokira rad (konobar je u 23h u poslu), ali se vraća svakih 10 minuta
+// dok se ne upiše ili dok ne prođe ponoć, posle čega nema svrhe.
+// ============================================
+const GRINDER_EVENING_HOUR = 23;
+let _grinderSnoozeUntil = 0;
+let _grinderEveningTimer = null;
+
+// Treba li SADA tražiti večernje očitanje?
+function needsEveningGrinderReading() {
+    if (typeof DEMO_MODE !== 'undefined' && DEMO_MODE) return false;
+    if (!DB.currentUser) return false;
+    const r = DB.currentUser.role;
+    if (r !== 'konobar' && r !== 'waiter') return false;              // kuvar i admin ne diraju mlin
+    if (!(DB.workdays && DB.workdays[DB.currentUser.username])) return false;   // nema otvorenu smenu
+    if (_grinderResolve) return false;                                // modal je već otvoren
+    if (Date.now() < _grinderSnoozeUntil) return false;
+
+    const sada = new Date();
+    if (sada.getHours() !== GRINDER_EVENING_HOUR) return false;       // samo u 23h
+
+    // Mlin je zajednički — ako je neko već očitao posle 23h, dosta je.
+    const prag = new Date(sada); prag.setHours(GRINDER_EVENING_HOUR, 0, 0, 0);
+    return !findGrinderReadingIn(prag.toISOString(), new Date(prag.getTime() + 3600000).toISOString());
+}
+
+function checkEveningGrinderReading() {
+    if (!needsEveningGrinderReading()) return;
+    askGrinderReading({
+        title: '⏰ Očitaj mlin pre ponoći',
+        subtitle: 'U ponoć se mlin resetuje. Upiši broj koji sada piše na njemu, da se ' +
+                  'i večerašnje kafe mogu proveriti.',
+        cancelLabel: 'Za 10 minuta'
+    }).then(function(v) {
+        if (v === null) { _grinderSnoozeUntil = Date.now() + 10 * 60000; return; }
+        setGrinderReading(v);
+        showAlert('✅ Upisano: ' + v + '\n\nHvala — večerašnje kafe su sada pokrivene.');
+    });
+}
+
+function startGrinderEveningReminder() {
+    if (_grinderEveningTimer) clearInterval(_grinderEveningTimer);
+    _grinderEveningTimer = setInterval(checkEveningGrinderReading, 2 * 60000);
+    setTimeout(checkEveningGrinderReading, 20000);
+}
+
+// ============================================
 // Unos pri zatvaranju smene (slep — bez broja iz kase)
 // ============================================
 let _grinderResolve = null;
 
-function askGrinderReading() {
+function askGrinderReading(opts) {
     return new Promise(function(resolve) {
         _grinderResolve = resolve;
+        const o = opts || {};
+        const h = document.getElementById('grinderTitle');
+        if (h) h.textContent = o.title || '☕ Stanje mlina';
+        const sub = document.getElementById('grinderSubtitle');
+        if (sub) {
+            sub.textContent = o.subtitle ||
+                'Pročitaj broj sa brojača na mlinu i upiši ga. Mlin se resetuje u ponoć, pa je to ' +
+                'broj kafa samlevenih od ponoći. Bez ovoga se smena ne može zatvoriti.';
+        }
+        const cx = document.getElementById('grinderCancelBtn');
+        if (cx) cx.textContent = o.cancelLabel || 'Odustani';
         const last = getGrinderLast();
         const info = document.getElementById('grinderLastInfo');
         if (info) {
             // Prethodno očitavanje ima smisla pokazati samo ako je od danas —
             // mlin se resetovao u ponoć, pa jučerašnji broj ne znači ništa.
             const istiDan = last && grinderDayStart(last.at).getTime() === grinderDayStart(new Date()).getTime();
-            info.innerHTML = istiDan
-                ? 'Danas je već upisano: <b style="color:#FFF">' + last.value + '</b> — ' +
-                  (last.by ? escapeHtml(last.by) + ', ' : '') +
-                  new Date(last.at).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })
-                : 'Mlin se resetuje u ponoć — upiši broj koji <b style="color:#FFF">sada</b> piše na njemu.';
+            if (istiDan) {
+                info.innerHTML = 'Danas je već upisano: <b style="color:#FFF">' + last.value + '</b> — ' +
+                    (last.by ? escapeHtml(last.by) + ', ' : '') +
+                    new Date(last.at).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' });
+                info.style.display = '';
+            } else if (o.subtitle) {
+                // Večernji podsetnik već objašnjava reset — ne ponavljaj isto.
+                info.innerHTML = '';
+                info.style.display = 'none';
+            } else {
+                info.innerHTML = 'Mlin se resetuje u ponoć — upiši broj koji <b style="color:#FFF">sada</b> piše na njemu.';
+                info.style.display = '';
+            }
         }
         const inp = document.getElementById('grinderInput');
         if (inp) { inp.value = ''; }

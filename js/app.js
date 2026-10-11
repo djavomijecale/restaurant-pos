@@ -77,6 +77,11 @@ async function initApp() {
         if (typeof startShiftReminders === 'function') {
             startShiftReminders();
         }
+
+        // ☕ Podsetnik da se mlin očita pre ponoći (tad se resetuje)
+        if (typeof startGrinderEveningReminder === 'function') {
+            startGrinderEveningReminder();
+        }
         
         // Initial render
         render();
