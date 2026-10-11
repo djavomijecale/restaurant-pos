@@ -45,6 +45,21 @@ function buildShiftReportText(report) {
         lines.push('');
     }
     
+    // 🛵 Koliko je prometa otišlo na dostavu (oznaka se bira na stolu).
+    if (report.delivery && report.delivery.count > 0) {
+        var _d = report.delivery;
+        lines.push('─────────────────────────────────');
+        lines.push('  🛵 DOSTAVA');
+        lines.push('─────────────────────────────────');
+        lines.push('Porudžbina: ' + _d.count);
+        lines.push('Promet: ' + _d.total.toLocaleString('sr-RS') + ' din');
+        var _uk = Number(report.totalRevenue) || 0;
+        if (_uk > 0) {
+            lines.push('Udeo u prometu smene: ' + Math.round(_d.total / _uk * 100) + '%');
+        }
+        lines.push('');
+    }
+
     if (report.coffee) {
         var _c = report.coffee;
         lines.push('─────────────────────────────────');

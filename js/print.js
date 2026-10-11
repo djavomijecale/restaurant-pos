@@ -12,6 +12,18 @@
 // sa --kiosk-printing (vidi Postavke → Štampanje za kuhinju).
 // ============================================
 
+// 🛵 Dostava se bira na stolu i važi dok se sto ne naplati ili očisti.
+// Prelazi i na naplaćen račun (vidi confirmPay) da bi se promet dostave
+// mogao izdvojiti u izveštaju — kuhinjski papir ne zna ništa o novcu.
+function toggleDelivery(tableNum) {
+    const table = (DB.tables || []).find(function(t) { return t.num === tableNum; });
+    if (!table) return;
+    table.isDelivery = !table.isDelivery;
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
+    save();
+    render();
+}
+
 // Poslednja kuhinjska porudžbina za taj sto koja nije završena.
 function _latestKitchenOrderFor(tableNum, username) {
     let naj = null;
@@ -36,7 +48,8 @@ function requestKitchenPrint(tableNum) {
 
     // Drugi put je ponovna štampa — kuhinja mora da zna da to nije nova porudžbina.
     const ponovo = !!ko.printedAt;
-    printKitchenTicket(ko, ponovo);
+    const table = (DB.tables || []).find(function(t) { return t.num === tableNum; });
+    printKitchenTicket(ko, ponovo, !!(table && table.isDelivery));
 
     ko.printedAt = new Date().toISOString();
     if (typeof markDirty === 'function') markDirty('kitchenOrders', ko.id);
@@ -44,7 +57,7 @@ function requestKitchenPrint(tableNum) {
 }
 
 // --- Sam ispis ---
-function printKitchenTicket(ko, ponovo) {
+function printKitchenTicket(ko, ponovo, dostava) {
     const esc = (typeof escapeHtml === 'function') ? escapeHtml : function(x) { return String(x == null ? '' : x); };
     let area = document.getElementById('printArea');
     if (!area) {
@@ -61,6 +74,11 @@ function printKitchenTicket(ko, ponovo) {
 
     let h = '';
     if (ponovo) h += '<div class="pt-ponovo">*** PONOVO ŠTAMPANO ***</div>';
+    // Ide IZNAD stola: kuhinja po tome odlučuje pakuje li u kutije ili na tanjir,
+    // pa mora da se vidi pre nego što se pročita išta drugo.
+    // Bez emoji-ja: termalne glave ih često odštampaju kao crnu mrlju ili
+    // prazan kvadrat. Na papiru je bitna reč, ne sličica.
+    if (dostava) h += '<div class="pt-dostava">DOSTAVA</div>';
     h += '<div class="pt-sto">' + esc(ko.tableName || ('STO ' + ko.tableNum)) + '</div>';
     h += '<div class="pt-linija"></div>';
     items.forEach(function(it) {

@@ -294,6 +294,10 @@
                 width: 100%;
             }
             .pt-ponovo { text-align: center; font-weight: bold; font-size: 13pt; margin-bottom: 4mm; }
+            .pt-dostava {
+                text-align: center; font-weight: bold; font-size: 24pt;
+                border: 3px solid #000; padding: 2mm; margin-bottom: 3mm; letter-spacing: 1mm;
+            }
             .pt-sto { font-size: 22pt; font-weight: bold; text-align: center; line-height: 1.1; }
             .pt-linija { border-top: 2px dashed #000; margin: 3mm 0; }
             .pt-stavka { display: flex; gap: 3mm; font-size: 16pt; font-weight: bold; margin-bottom: 2.5mm; line-height: 1.2; }

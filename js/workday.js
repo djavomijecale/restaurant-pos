@@ -918,6 +918,14 @@ async function _doCloseWorkday() {
         finalReport.coffee = coffeeCheck;
     }
 
+    // 🛵 Koliko je od prometa otišlo na dostavu. Oznaka dolazi sa stola i
+    // prelazi na račun pri naplati (vidi confirmPay).
+    const _dostave = realOrders.filter(function(o) { return o && o.isDelivery; });
+    finalReport.delivery = {
+        count: _dostave.length,
+        total: _dostave.reduce(function(s, o) { return s + (Number(o.tot) || 0); }, 0)
+    };
+
     // 🏠 Šta je ovaj konobar otkucao "na kuću" u ovoj smeni.
     // Ne ulazi u promet ni u pazar — ide u izveštaj samo kao informacija.
     if (typeof collectHouseOrdersForShift === 'function') {

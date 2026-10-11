@@ -266,6 +266,9 @@ function renderTableOrder(c) {
                 <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openTransferTable(${table.num})">🔄 Prebaci Sto</button>
                 <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openTransferWaiter(${table.num})">👤 Predaj Konobaru</button>
                 <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="requestKitchenPrint(${table.num})">🖨️ Štampaj za kuhinju</button>
+                <button class="btn" style="flex:1;min-width:120px;font-size:13px;background:${table.isDelivery ? '#FF9800' : '#2A2A4A'}" onclick="toggleDelivery(${table.num})">
+                    🛵 ${table.isDelivery ? 'DOSTAVA ✓' : 'Za dostavu'}
+                </button>
             </div>
         </div>`;
     }
@@ -496,6 +499,10 @@ function clearTable(tableNum) {
                 table.discountedItems = [];
             }
 
+            // 🛵 Kad sto ostane prazan, oznaka dostave se gasi — inače bi je
+            // nasledio sledeći gost na tom stolu.
+            if (!table.order.length) table.isDelivery = false;
+
             if (typeof markTableDirty === 'function') markTableDirty(tableNum);
             save();
 
@@ -677,7 +684,11 @@ async function confirmPay() {
         method:payMethod,
         createdBy: DB.konobarName || DB.currentUser.username,
         time:new Date().toISOString(),
-        isFiscal: !!window.isFiscalReceipt
+        isFiscal: !!window.isFiscalReceipt,
+        // 🛵 Oznaka se postavlja na stolu (dugme uz "Štampaj za kuhinju") i ovde
+        // prelazi na račun — promet dostave se inače ne bi mogao izdvojiti,
+        // jer kuhinjski papir ne zna ništa o novcu.
+        isDelivery: !!table.isDelivery
     };
 
     window._payInProgress = true;
@@ -745,6 +756,10 @@ async function confirmPay() {
         table.discountPercent = 0;
         table.discountedItems = [];
     }
+
+    // 🛵 Kad sto ostane prazan, oznaka dostave se gasi — inače bi je nasledio
+    // sledeći gost na tom stolu.
+    if (!table.order.length) table.isDelivery = false;
 
     // ✅ RACE FIX: Obeleži sto kao dirty da drugi uređaji ne vrate staru
     // narudžbinu (pre sync-a) i tako naplatu dupliciraju.
