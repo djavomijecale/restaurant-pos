@@ -265,6 +265,7 @@ function renderTableOrder(c) {
                 <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openSplitBill(${table.num})">✂️ Podeli Račun</button>
                 <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openTransferTable(${table.num})">🔄 Prebaci Sto</button>
                 <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="openTransferWaiter(${table.num})">👤 Predaj Konobaru</button>
+                <button class="btn btn-secondary" style="flex:1;min-width:120px;font-size:13px" onclick="requestKitchenPrint(${table.num})">🖨️ Štampaj za kuhinju</button>
             </div>
         </div>`;
     }

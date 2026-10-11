@@ -279,6 +279,29 @@
         .modal.show { display: flex; }
         .modal-content { background: #0F3460; padding: 32px; border-radius: 16px; max-width: 500px; width: 90%; }
         
+        /* 🖨️ Papir za kuhinju.
+           Na ekranu se ne vidi; pri štampi se sakrije CELA aplikacija i
+           ostane samo papir — inače bi izašao ceo ekran sa navigacijom. */
+        #printArea { display: none; }
+        @media print {
+            @page { size: 80mm auto; margin: 4mm; }
+            html, body { background: #FFF !important; margin: 0 !important; padding: 0 !important; }
+            body > * { display: none !important; }
+            #printArea {
+                display: block !important;
+                color: #000;
+                font-family: Arial, Helvetica, sans-serif;
+                width: 100%;
+            }
+            .pt-ponovo { text-align: center; font-weight: bold; font-size: 13pt; margin-bottom: 4mm; }
+            .pt-sto { font-size: 22pt; font-weight: bold; text-align: center; line-height: 1.1; }
+            .pt-linija { border-top: 2px dashed #000; margin: 3mm 0; }
+            .pt-stavka { display: flex; gap: 3mm; font-size: 16pt; font-weight: bold; margin-bottom: 2.5mm; line-height: 1.2; }
+            .pt-kol { min-width: 11mm; }
+            .pt-naziv { flex: 1; }
+            .pt-noga { font-size: 11pt; text-align: center; }
+        }
+
         /* Waiter role restrictions */
         body.waiter-role .dough-only {
             display: none !important;

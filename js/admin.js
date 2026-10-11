@@ -786,10 +786,8 @@ function renderSettings(c) {
                 </p>
             </div>
             
-            <label style="color:#E94560;font-weight:bold">IP Adresa štampača</label>
-            <input type="text" id="sip" value="${DB.settings.ip}">
-            <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Štampanje dostupno samo u Android verziji</p>
-            
+            ${renderPrintDeviceSetting()}
+
             ${typeof renderOctoposSettings === 'function' ? renderOctoposSettings() : ''}
             
             ${typeof renderEfakturaSettings === 'function' ? renderEfakturaSettings() : ''}
@@ -971,6 +969,45 @@ function renderSettings(c) {
                 <button class="btn" style="background:#E94560" onclick="resetAllData()">🗑️ Obriši Sve Podatke</button>
             </div>
         </div>`;
+}
+
+// ============================================
+// 🖨️ Štampanje za kuhinju
+//
+// Konobar kuca na kompjuteru sa štampačem, pa dugme štampa odmah na njemu.
+// Ovde je samo probna štampa — da se pri postavljanju vidi izlazi li papir
+// kako treba, bez čekanja na pravu porudžbinu.
+// ============================================
+function renderPrintDeviceSetting() {
+    return `<div style="border-top:2px solid #2A2A4A;margin:24px 0;padding-top:24px">
+                <h3 style="color:#FF9800;margin-bottom:16px">🖨️ Štampanje za kuhinju</h3>
+                <div style="background:#16213E;padding:16px;border-radius:8px;border-left:4px solid #FF9800;margin-bottom:16px">
+                    <p style="color:#B0B0B0;font-size:13px;line-height:1.7">
+                        Konobar na stolu pritisne <b style="color:#FFF">„🖨️ Štampaj za kuhinju"</b>
+                        i papir izlazi na štampaču ovog kompjutera.<br><br>
+                        Štampa se preko Windows štampača — štampač mora biti instaliran i
+                        <b style="color:#FFF">postavljen kao podrazumevani</b>.<br><br>
+                        Da ne iskače prozor za štampu svaki put, pokreni Chrome sa
+                        <code style="color:#FFD700">--kiosk-printing</code>.
+                    </p>
+                </div>
+                <button class="btn btn-secondary" onclick="testPrint()">🖨️ Probna štampa</button>
+            </div>`;
+}
+
+function testPrint() {
+    if (typeof printKitchenTicket !== 'function') return;
+    printKitchenTicket({
+        tableName: 'PROBA',
+        tableNum: 0,
+        orderedAt: new Date().toISOString(),
+        waiterName: DB.currentUser ? DB.currentUser.username : '',
+        items: [
+            { name: 'Margarita', qty: 2 },
+            { name: 'Prsuta sendvic', qty: 1 },
+            { name: 'Pomfrit', qty: 3 }
+        ]
+    }, false);
 }
 
 // ============================================
@@ -1417,7 +1454,9 @@ function saveSettings() {
     DB.settings.addr = document.getElementById('saddr').value;
     DB.settings.phone = document.getElementById('sphone').value;
     DB.settings.email = document.getElementById('semail').value;
-    DB.settings.ip = document.getElementById('sip').value;
+    // settings.ip je uklonjen — nije se koristio nigde, a web stranica ne može
+    // da otvori vezu ka mrežnom štampaču. Štampa ide kroz Windows štampač
+    // (vidi js/print.js). Stara vrednost se ne briše iz baze, samo se ne dira.
     save();
     showAlert('✅ Sačuvano!');
 }
