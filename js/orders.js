@@ -392,6 +392,8 @@ function delTableItem(tableNum, itemId, createdBy) {
             quantity: item.qty,
             tableNum: tableNum,
             tableName: table.name,
+            addedBy: item.createdBy || null,
+            addedAt: item.addedAt || null,     // kad je OTKUCAN (bez ovoga se gubi)
             removedBy: DB.konobarName || DB.currentUser.username,
             removedAt: new Date().toISOString(),
             reason: 'Uklonjeno iz narudžbine'
@@ -474,6 +476,8 @@ function clearTable(tableNum) {
                     quantity: item.qty,
                     tableNum: tableNum,
                     tableName: table.name,
+                    addedBy: item.createdBy || null,
+                    addedAt: item.addedAt || null,     // kad je OTKUCAN (bez ovoga se gubi)
                     removedBy: DB.konobarName || DB.currentUser.username,
                     removedAt: new Date().toISOString(),
                     reason: 'Očišćen ceo sto'
@@ -915,6 +919,21 @@ function renderRemoved(c) {
             
             items.forEach((item, idx) => {
                 const time = new Date(item.removedAt).toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'});
+
+                // Koliko je stavka stajala na stolu pre brisanja. Baš to razdvaja
+                // običnu grešku pri kucanju (obrisano za koji minut) od stavke koja
+                // je stajala ceo sat pa nestala. Starije stavke nemaju addedAt —
+                // tada se ćuti umesto da se izmišlja vreme.
+                let _zivot = '';
+                if (item.addedAt) {
+                    const uneto = new Date(item.addedAt);
+                    const min = Math.max(0, Math.round((new Date(item.removedAt) - uneto) / 60000));
+                    const trajanje = min < 60 ? min + ' min' : Math.floor(min / 60) + 'h ' + (min % 60) + 'min';
+                    const boja = min <= 2 ? '#4CAF50' : (min >= 30 ? '#E94560' : '#FF9800');
+                    _zivot = `<br><span style="white-space:nowrap">➕ uneto ${uneto.toLocaleTimeString('sr-RS', {hour: '2-digit', minute: '2-digit'})}` +
+                             `${item.addedBy && item.addedBy !== item.removedBy ? ' (' + item.addedBy + ')' : ''}</span>` +
+                             ` · <span style="color:${boja};white-space:nowrap">stajalo ${trajanje}</span>`;
+                }
                 h += `
                     <div class="card" style="cursor:default;margin-bottom:${idx === items.length - 1 ? '0' : '8px'}">
                         <div style="display:flex;justify-content:space-between;align-items:start">
@@ -925,10 +944,10 @@ function renderRemoved(c) {
                                         ${item.quantity}x
                                     </span>
                                 </div>
-                                <p style="color:#B0B0B0;font-size:13px">
-                                    🪑 ${item.tableName} · 
-                                    👤 ${item.removedBy} · 
-                                    🕐 ${time}
+                                <p style="color:#B0B0B0;font-size:13px;line-height:1.6">
+                                    <span style="white-space:nowrap">🪑 ${item.tableName}</span> ·
+                                    <span style="white-space:nowrap">👤 ${item.removedBy}</span> ·
+                                    <span style="white-space:nowrap">🗑️ obrisano ${time}</span>${_zivot}
                                 </p>
                             </div>
                             <div style="text-align:right">
