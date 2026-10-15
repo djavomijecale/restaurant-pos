@@ -1228,15 +1228,20 @@ function computeRebuiltShift(username, startISO, endISO, deposit) {
     const startHour = start.getHours(), endHour = end.getHours();
     const isFirstShift = startHour >= 8 && startHour < 14 && endHour >= 15 && endHour <= 17;
     const isSecondShift = startHour >= 14 && startHour < 20 && (endHour >= 22 || endHour < 7);
+
+    // 💳 Prenos na račun NE ulazi u osnovicu za bonus — konobar ga ne
+    // naplaćuje niti predaje, pa ne treba da mu diže bonus. Promet u
+    // izveštaju ostaje pun iznos; menja se samo ono od čega zavisi bonus.
+    const bonusRevenue = totalRevenue - wire;
     const cfg = (typeof getBonusSettings === 'function') ? getBonusSettings() : null;
     let bonusEarned = false, bonusAmount = 0, bonusReason = '';
     if (cfg && isFirstShift) {
-        if (totalRevenue >= cfg.firstShiftTier2Threshold) { bonusEarned = true; bonusAmount = cfg.firstShiftTier2Amount; bonusReason = 'Prva smena - prihod ≥ ' + cfg.firstShiftTier2Threshold.toLocaleString() + ' din.'; }
-        else if (totalRevenue >= cfg.firstShiftTier1Threshold) { bonusEarned = true; bonusAmount = cfg.firstShiftTier1Amount; bonusReason = 'Prva smena - prihod ≥ ' + cfg.firstShiftTier1Threshold.toLocaleString() + ' din.'; }
+        if (bonusRevenue >= cfg.firstShiftTier2Threshold) { bonusEarned = true; bonusAmount = cfg.firstShiftTier2Amount; bonusReason = 'Prva smena - prihod ≥ ' + cfg.firstShiftTier2Threshold.toLocaleString() + ' din. (bez prenosa na račun)'; }
+        else if (bonusRevenue >= cfg.firstShiftTier1Threshold) { bonusEarned = true; bonusAmount = cfg.firstShiftTier1Amount; bonusReason = 'Prva smena - prihod ≥ ' + cfg.firstShiftTier1Threshold.toLocaleString() + ' din. (bez prenosa na račun)'; }
     }
     if (cfg && isSecondShift) {
-        if (totalRevenue >= cfg.secondShiftTier2Threshold) { bonusEarned = true; bonusAmount = cfg.secondShiftTier2Amount; bonusReason = 'Druga smena - prihod ≥ ' + cfg.secondShiftTier2Threshold.toLocaleString() + ' din.'; }
-        else if (totalRevenue >= cfg.secondShiftTier1Threshold) { bonusEarned = true; bonusAmount = cfg.secondShiftTier1Amount; bonusReason = 'Druga smena - prihod ≥ ' + cfg.secondShiftTier1Threshold.toLocaleString() + ' din.'; }
+        if (bonusRevenue >= cfg.secondShiftTier2Threshold) { bonusEarned = true; bonusAmount = cfg.secondShiftTier2Amount; bonusReason = 'Druga smena - prihod ≥ ' + cfg.secondShiftTier2Threshold.toLocaleString() + ' din. (bez prenosa na račun)'; }
+        else if (bonusRevenue >= cfg.secondShiftTier1Threshold) { bonusEarned = true; bonusAmount = cfg.secondShiftTier1Amount; bonusReason = 'Druga smena - prihod ≥ ' + cfg.secondShiftTier1Threshold.toLocaleString() + ' din. (bez prenosa na račun)'; }
     }
 
     const dep = Number(deposit) || 0;

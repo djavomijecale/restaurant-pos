@@ -959,31 +959,36 @@ async function _doCloseWorkday() {
     let bonusReason = '';
 
     // Bonusi se čitaju iz postavki (admin može da menja u Postavke → Bonusi)
+
+    // 💳 Prenos na račun NE ulazi u osnovicu za bonus — konobar ga ne
+    // naplaćuje niti predaje, pa ne treba da mu diže bonus. Promet u
+    // izveštaju ostaje pun iznos; menja se samo ono od čega zavisi bonus.
+    const bonusRevenue = totalRevenue - wire;
     const bonusCfg = getBonusSettings();
 
     // PRVA SMENA: dve tier-a (manji prag → manji bonus, veći prag → veći bonus)
     if (isFirstShift) {
-        if (totalRevenue >= bonusCfg.firstShiftTier2Threshold) {
+        if (bonusRevenue >= bonusCfg.firstShiftTier2Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.firstShiftTier2Amount;
-            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier2Threshold.toLocaleString() + ' din.';
-        } else if (totalRevenue >= bonusCfg.firstShiftTier1Threshold) {
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier2Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
+        } else if (bonusRevenue >= bonusCfg.firstShiftTier1Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.firstShiftTier1Amount;
-            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier1Threshold.toLocaleString() + ' din.';
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier1Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
         }
     }
 
     // DRUGA SMENA (SVAKI DAN):
     if (isSecondShift) {
-        if (totalRevenue >= bonusCfg.secondShiftTier2Threshold) {
+        if (bonusRevenue >= bonusCfg.secondShiftTier2Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.secondShiftTier2Amount;
-            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier2Threshold.toLocaleString() + ' din.';
-        } else if (totalRevenue >= bonusCfg.secondShiftTier1Threshold) {
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier2Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
+        } else if (bonusRevenue >= bonusCfg.secondShiftTier1Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.secondShiftTier1Amount;
-            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier1Threshold.toLocaleString() + ' din.';
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier1Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
         }
     }
     
@@ -992,6 +997,10 @@ async function _doCloseWorkday() {
     }
     
     // Dodaj bonus u finalReport za email
+    // Osnovica za bonus ide u izveštaj: bez nje bi izgledalo da promet prelazi
+    // prag a bonusa nema, pa ne bi bilo jasno da je prenos izuzet.
+    finalReport.bonusRevenue = bonusRevenue;
+    finalReport.wireRevenue = wire;
     finalReport.bonusEarned = bonusEarned;
     finalReport.bonusAmount = bonusAmount;
     finalReport.bonusReason = bonusReason;
@@ -1206,28 +1215,33 @@ async function autoCloseWorkday(username, myWorkday) {
     let bonusReason = '';
 
     // Bonusi iz postavki (admin može da menja u Postavke → Bonusi)
+
+    // 💳 Prenos na račun NE ulazi u osnovicu za bonus — konobar ga ne
+    // naplaćuje niti predaje, pa ne treba da mu diže bonus. Promet u
+    // izveštaju ostaje pun iznos; menja se samo ono od čega zavisi bonus.
+    const bonusRevenue = totalRevenue - wire;
     const bonusCfg = getBonusSettings();
 
     if (isFirstShift) {
-        if (totalRevenue >= bonusCfg.firstShiftTier2Threshold) {
+        if (bonusRevenue >= bonusCfg.firstShiftTier2Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.firstShiftTier2Amount;
-            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier2Threshold.toLocaleString() + ' din.';
-        } else if (totalRevenue >= bonusCfg.firstShiftTier1Threshold) {
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier2Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
+        } else if (bonusRevenue >= bonusCfg.firstShiftTier1Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.firstShiftTier1Amount;
-            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier1Threshold.toLocaleString() + ' din.';
+            bonusReason = 'Prva smena - prihod ≥ ' + bonusCfg.firstShiftTier1Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
         }
     }
     if (isSecondShift) {
-        if (totalRevenue >= bonusCfg.secondShiftTier2Threshold) {
+        if (bonusRevenue >= bonusCfg.secondShiftTier2Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.secondShiftTier2Amount;
-            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier2Threshold.toLocaleString() + ' din.';
-        } else if (totalRevenue >= bonusCfg.secondShiftTier1Threshold) {
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier2Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
+        } else if (bonusRevenue >= bonusCfg.secondShiftTier1Threshold) {
             bonusEarned = true;
             bonusAmount = bonusCfg.secondShiftTier1Amount;
-            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier1Threshold.toLocaleString() + ' din.';
+            bonusReason = 'Druga smena - prihod ≥ ' + bonusCfg.secondShiftTier1Threshold.toLocaleString() + ' din. (bez prenosa na račun)';
         }
     }
     

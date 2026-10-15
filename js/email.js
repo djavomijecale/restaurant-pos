@@ -129,11 +129,20 @@ function buildShiftReportText(report) {
     lines.push('Satnica: ' + (report.hourlyRate || 350) + ' din/sat');
     lines.push('Plata: ' + (report.salary || 0).toLocaleString('sr-RS') + ' din');
     
+    // Osnovica za bonus je promet BEZ prenosa na račun. Bez ovog reda bi
+    // izgledalo da promet prelazi prag a bonusa nema.
+    if (report.wireRevenue > 0) {
+        lines.push('');
+        lines.push('Osnovica za bonus: ' + (report.bonusRevenue || 0).toLocaleString('sr-RS') + ' din');
+        lines.push('   (promet ' + (report.totalRevenue || 0).toLocaleString('sr-RS') +
+                   ' - prenos na račun ' + report.wireRevenue.toLocaleString('sr-RS') + ')');
+    }
+
     if (report.bonusEarned) {
         lines.push('🎁 BONUS: ' + (report.bonusAmount || 0).toLocaleString('sr-RS') + ' din');
         lines.push('   Razlog: ' + (report.bonusReason || ''));
     }
-    
+
     lines.push('');
 
     // 🏠 Sve što je otkucano "na kuću" u ovoj smeni. Ne ulazi u promet ni
