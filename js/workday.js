@@ -1001,6 +1001,16 @@ async function _doCloseWorkday() {
     // prag a bonusa nema, pa ne bi bilo jasno da je prenos izuzet.
     finalReport.bonusRevenue = bonusRevenue;
     finalReport.wireRevenue = wire;
+    // 🏦 Razbij prenos po platformi (Wolt / Glovo / Ostalo).
+    finalReport.wireBySource = realOrders
+        .filter(function(o) { return o.method === 'Wire'; })
+        .reduce(function(acc, o) {
+            var k = o.wireSource || 'Nije označeno';
+            if (!acc[k]) acc[k] = { count: 0, total: 0 };
+            acc[k].count++;
+            acc[k].total += (Number(o.tot) || 0);
+            return acc;
+        }, {});
     finalReport.bonusEarned = bonusEarned;
     finalReport.bonusAmount = bonusAmount;
     finalReport.bonusReason = bonusReason;

@@ -136,6 +136,17 @@ function buildShiftReportText(report) {
         lines.push('Osnovica za bonus: ' + (report.bonusRevenue || 0).toLocaleString('sr-RS') + ' din');
         lines.push('   (promet ' + (report.totalRevenue || 0).toLocaleString('sr-RS') +
                    ' - prenos na račun ' + report.wireRevenue.toLocaleString('sr-RS') + ')');
+        // Koliko nosi koja platforma — zbog toga se prenos i označava.
+        if (report.wireBySource) {
+            Object.keys(report.wireBySource)
+                .sort(function(a, b) { return report.wireBySource[b].total - report.wireBySource[a].total; })
+                .forEach(function(k) {
+                    var d = report.wireBySource[k];
+                    lines.push('   · ' + k + ': ' + d.count +
+                        (d.count === 1 ? ' račun' : ' računa') + ', ' +
+                        d.total.toLocaleString('sr-RS') + ' din');
+                });
+        }
     }
 
     if (report.bonusEarned) {

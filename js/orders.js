@@ -668,16 +668,31 @@ function renderPayment(c) {
         </div>
         <h3 style="text-align:center;margin:24px 0;color:#B0B0B0">Način plaćanja</h3>
         <div style="display:flex;gap:16px">
-            <div class="payment-option ${payMethod==='Cash'?'selected':''}" onclick="payMethod='Cash';render()">
+            <div class="payment-option ${payMethod==='Cash'?'selected':''}" onclick="payMethod='Cash';window.wireSource=null;render()">
                 <div style="font-size:48px">💵</div><h3>Cash</h3>
             </div>
-            <div class="payment-option ${payMethod==='Card'?'selected':''}" onclick="payMethod='Card';render()">
+            <div class="payment-option ${payMethod==='Card'?'selected':''}" onclick="payMethod='Card';window.wireSource=null;render()">
                 <div style="font-size:48px">💳</div><h3>Card</h3>
             </div>
             <div class="payment-option ${payMethod==='Wire'?'selected':''}" onclick="payMethod='Wire';render()">
                 <div style="font-size:48px">🏦</div><h3>Prenos</h3>
             </div>
         </div>
+        ${payMethod === 'Wire' ? `
+        <h3 style="text-align:center;margin:20px 0 12px;color:#B0B0B0">Odakle je prenos?</h3>
+        <div style="display:flex;gap:12px">
+            <div class="payment-option ${window.wireSource==='Wolt'?'selected':''}" style="padding:16px" onclick="window.wireSource='Wolt';render()">
+                <div style="font-size:34px">🛵</div><h3 style="font-size:17px">Wolt</h3>
+            </div>
+            <div class="payment-option ${window.wireSource==='Glovo'?'selected':''}" style="padding:16px" onclick="window.wireSource='Glovo';render()">
+                <div style="font-size:34px">🛵</div><h3 style="font-size:17px">Glovo</h3>
+            </div>
+            <div class="payment-option ${window.wireSource==='Ostalo'?'selected':''}" style="padding:16px" onclick="window.wireSource='Ostalo';render()">
+                <div style="font-size:34px">🏦</div><h3 style="font-size:17px">Ostalo</h3>
+            </div>
+        </div>
+        ${!window.wireSource ? '<p style="text-align:center;color:#FF9800;font-size:13px;margin-top:10px">Izaberi odakle je prenos da bi mogao da naplatiš.</p>' : ''}
+        ` : ''}
         ${typeof OCTOPOS_CONFIG !== 'undefined' && OCTOPOS_CONFIG.enabled ? `
         <div onclick="window.octoposSendThis=!window.octoposSendThis;render()" style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:16px;padding:12px;background:#16213E;border-radius:8px;cursor:pointer;border:2px solid ${window.octoposSendThis ? '#4CAF50' : '#2A2A4A'}">
             <div style="width:40px;height:22px;border-radius:11px;background:${window.octoposSendThis ? '#4CAF50' : '#555'};position:relative;transition:0.3s">
@@ -686,7 +701,7 @@ function renderPayment(c) {
             <span style="color:${window.octoposSendThis ? '#4CAF50' : '#888'};font-weight:bold;font-size:14px">🧾 Fiskalni račun</span>
         </div>
         ` : ''}
-        <button class="btn" style="margin-top:16px" ${!payMethod?'disabled':''} onclick="confirmPay()">Potvrdi</button>
+        <button class="btn" style="margin-top:16px" ${(!payMethod || (payMethod==='Wire' && !window.wireSource))?'disabled':''} onclick="confirmPay()">Potvrdi</button>
         <div style="display:flex;gap:12px;margin-top:12px">
             <button class="btn" style="flex:1;background:#E94560" onclick="showDebtModal()">📝 Zapiši na Dug</button>
             <button class="btn" style="flex:1;background:#FF9800" onclick="showHouseModal()">🏠 Kuća</button>
@@ -696,6 +711,12 @@ function renderPayment(c) {
 
 async function confirmPay() {
     if(!payMethod) return;
+    // 🏦 Prenos mora da nosi odakle je — inače se posle ne zna koliko nosi
+    // koja platforma, a razlika se više ne može rekonstruisati.
+    if (payMethod === 'Wire' && !window.wireSource) {
+        showAlert('Izaberi odakle je prenos — Wolt, Glovo ili Ostalo.');
+        return;
+    }
     // 🛡️ Poslednja brana: naplata bez otvorene smene nije dozvoljena
     if (typeof _waiterWithoutShift === 'function' && _waiterWithoutShift()) {
         showAlert('⚠️ Nemaš otvorenu smenu — naplata nije moguća!\n\nOtvori smenu (unesi depozit) pa naplati.');
@@ -748,6 +769,9 @@ async function confirmPay() {
         createdBy: DB.konobarName || DB.currentUser.username,
         time:new Date().toISOString(),
         isFiscal: !!window.isFiscalReceipt,
+        // 🏦 Odakle je prenos: Wolt / Glovo / Ostalo. Bez ovoga bi svi prenosi
+        // bili jedna gomila i ne bi se videlo koliko koja platforma nosi.
+        wireSource: payMethod === 'Wire' ? (window.wireSource || null) : null,
         // 🛵 Oznaka se postavlja na stolu (dugme uz "Štampaj za kuhinju") i ovde
         // prelazi na račun — promet dostave se inače ne bi mogao izdvojiti,
         // jer kuhinjski papir ne zna ništa o novcu.
@@ -895,6 +919,7 @@ function renderReceipt(c) {
 function newOrder() {
     DB.selectedTable = null;
     payMethod = '';
+    window.wireSource = null;          // 🏦 da sledeći račun ne nasledi Wolt/Glovo
     window.octoposSendThis = false;
     window.isFiscalReceipt = false;
     window._lastPayMethodForOcto = null;
