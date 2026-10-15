@@ -103,22 +103,92 @@ function computeDoughStock() {
     };
 }
 
-// Upiši novi popis (apsolutno stanje)
-function setDoughStocktake(big, small) {
+// Upiši apsolutno stanje.
+//
+// `jePopis` razdvaja PREBROJANO STANJE od obične korekcije (dopuna, otpis).
+// Bez te razlike bi svaka dopuna izgledala kao nov popis i zaključavanje
+// popisa po smeni se ne bi moglo sprovesti — zato se `countedAt` pomera
+// samo kad je stvarno prebrojano.
+function setDoughStocktake(big, small, jePopis) {
     if (!DB.settings) DB.settings = {};
+    const staro = DB.settings.doughStock || {};
     DB.settings.doughStock = {
         big: Math.round(Number(big) || 0),
         small: Math.round(Number(small) || 0),
         at: new Date().toISOString(),
-        by: DB.currentUser ? DB.currentUser.username : ''
+        by: DB.currentUser ? DB.currentUser.username : '',
+        countedAt: jePopis ? new Date().toISOString() : (staro.countedAt || null),
+        countedBy: jePopis ? (DB.currentUser ? DB.currentUser.username : '') : (staro.countedBy || null)
     };
     save();
 }
 
-// Dodaj napravljena testa (popis = trenutno + dodato)
+// Dodaj napravljena testa (stanje = trenutno + dodato)
 function addDough(bigDelta, smallDelta) {
     const s = computeDoughStock();
-    setDoughStocktake(s.big + (Number(bigDelta) || 0), s.small + (Number(smallDelta) || 0));
+    setDoughStocktake(s.big + (Number(bigDelta) || 0), s.small + (Number(smallDelta) || 0), false);
+}
+
+// ============================================
+// Popis se upisuje JEDNOM PO SMENI, na početku
+//
+// Kuvar prebroji zatečeno stanje kad se uloguje; posle toga mu je polje
+// zaključano. U toku smene stanje se menja samo kroz dopunu i otpis, pa
+// brojka ostaje proverljiva — da može da je prepravlja, "nema testa" ne bi
+// značilo ništa. Admin nije ograničen: bez toga pogrešan unos ostaje
+// pogrešan do kraja smene.
+// ============================================
+function kuvarShiftStart() {
+    try {
+        const ls = localStorage.getItem('kuvarLoginTime');
+        if (ls) return ls;
+    } catch (e) {}
+    const u = DB.currentUser ? DB.currentUser.username : null;
+    if (u && DB.workdays && DB.workdays[u] && DB.workdays[u].startTime) return DB.workdays[u].startTime;
+    return null;
+}
+
+function canWriteDoughStocktake() {
+    const role = DB.currentUser ? DB.currentUser.role : '';
+    if (role === 'admin') return true;                    // admin uvek može da ispravi
+    const st = (DB.settings && DB.settings.doughStock) || null;
+    if (!st || !st.countedAt) return true;                // nikad nije prebrojano
+    const pocetak = kuvarShiftStart();
+    if (!pocetak) return true;                            // nema smene — ne zaključavaj naslepo
+    return st.countedAt < pocetak;                        // popis je od pre ove smene
+}
+
+// --- Otpis ---
+const DOUGH_WRITEOFF_REASONS = ['Pokvarilo se', 'Palo na pod', 'Prekiselo / preraslo', 'Loše umešeno'];
+
+function writeOffDough(bigQty, smallQty, reason) {
+    const b = Math.max(0, Math.round(Number(bigQty) || 0));
+    const m = Math.max(0, Math.round(Number(smallQty) || 0));
+    if (!b && !m) return false;
+    const s = computeDoughStock();
+    setDoughStocktake(s.big - b, s.small - m, false);
+    if (!DB.settings.doughWriteOffs) DB.settings.doughWriteOffs = [];
+    DB.settings.doughWriteOffs.push({
+        at: new Date().toISOString(),
+        by: DB.currentUser ? DB.currentUser.username : '',
+        big: b, small: m,
+        reason: String(reason || '').trim() || 'Bez razloga'
+    });
+    if (DB.settings.doughWriteOffs.length > 200) {
+        DB.settings.doughWriteOffs = DB.settings.doughWriteOffs.slice(-200);
+    }
+    save();
+    return true;
+}
+
+// Otpisi u zadatom periodu (za ekran i za izveštaj smene).
+function doughWriteOffsBetween(fromISO, toISO) {
+    return ((DB.settings && DB.settings.doughWriteOffs) || []).filter(function(w) {
+        if (!w || !w.at) return false;
+        if (fromISO && w.at < fromISO) return false;
+        if (toISO && w.at > toISO) return false;
+        return true;
+    });
 }
 
 // --- Upozorenje konobaru kad testa nema (ne blokira) ---
@@ -198,22 +268,85 @@ function renderDough(c) {
             </div>
         </div>`;
 
-    // --- Popis (apsolutno stanje) ---
-    h += `<div style="background:#0F3460;padding:18px;border-radius:12px">
-            <h3 style="color:#FFD700;margin-bottom:4px;font-size:17px">📋 Upiši stanje (popis)</h3>
-            <p style="color:#888;font-size:12px;margin-bottom:12px">Prebroj i upiši koliko UKUPNO ima — ovo zamenjuje trenutno stanje.</p>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+    // --- Otpis ---
+    h += `<div style="background:#0F3460;padding:18px;border-radius:12px;margin-bottom:14px">
+            <h3 style="color:#E94560;margin-bottom:4px;font-size:17px">🗑️ Otpiši testa</h3>
+            <p style="color:#888;font-size:12px;margin-bottom:12px">Testa koja se ne mogu upotrebiti — skidaju se sa stanja uz razlog.</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
                 <div style="flex:1;min-width:110px">
-                    <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Velikih ukupno</label>
-                    <input type="number" id="doughSetBig" min="0" step="1" value="${s.has ? Math.max(0, s.big) : ''}" placeholder="0" style="width:100%;font-size:18px;text-align:center">
+                    <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Velikih</label>
+                    <input type="number" id="doughOffBig" min="0" step="1" placeholder="0" style="width:100%;font-size:18px;text-align:center">
                 </div>
                 <div style="flex:1;min-width:110px">
-                    <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Malih ukupno</label>
-                    <input type="number" id="doughSetSmall" min="0" step="1" value="${s.has ? Math.max(0, s.small) : ''}" placeholder="0" style="width:100%;font-size:18px;text-align:center">
+                    <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Malih</label>
+                    <input type="number" id="doughOffSmall" min="0" step="1" placeholder="0" style="width:100%;font-size:18px;text-align:center">
                 </div>
-                <button class="btn" style="flex:1;min-width:130px" onclick="doughSetSubmit()">📋 Upiši stanje</button>
             </div>
+            <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:6px">Razlog</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                ${DOUGH_WRITEOFF_REASONS.map(function(r) {
+                    const izabran = window._doughOffReason === r;
+                    return `<button class="btn" style="width:auto;flex:1;min-width:120px;font-size:13px;padding:10px;background:${izabran ? '#E94560' : '#16213E'}"
+                        onclick="window._doughOffReason=${JSON.stringify(r)};render()">${esc(r)}</button>`;
+                }).join('')}
+                <button class="btn" style="width:auto;flex:1;min-width:120px;font-size:13px;padding:10px;background:${window._doughOffReason === '__other' ? '#E94560' : '#16213E'}"
+                    onclick="window._doughOffReason='__other';render()">Ostalo…</button>
+            </div>
+            ${window._doughOffReason === '__other'
+                ? '<input type="text" id="doughOffText" placeholder="Upiši razlog" style="width:100%;margin-bottom:10px">'
+                : ''}
+            <button class="btn" style="background:#E94560" onclick="doughWriteOffSubmit()">🗑️ Otpiši</button>
         </div>`;
+
+    // --- Otpisi u ovoj smeni ---
+    const pocetakSmene = kuvarShiftStart();
+    const otpisi = doughWriteOffsBetween(pocetakSmene, null);
+    if (otpisi.length) {
+        const zbirB = otpisi.reduce(function(a, w) { return a + (w.big || 0); }, 0);
+        const zbirM = otpisi.reduce(function(a, w) { return a + (w.small || 0); }, 0);
+        h += `<div style="background:#16213E;padding:14px 16px;border-radius:12px;margin-bottom:14px">
+                <div style="color:#E94560;font-weight:bold;font-size:14px;margin-bottom:8px">
+                    Otpisano u ovoj smeni: ${zbirB} velikih · ${zbirM} malih
+                </div>`;
+        otpisi.slice().reverse().forEach(function(w) {
+            h += `<div style="color:#B0B0B0;font-size:12px;padding:3px 0;line-height:1.5">
+                    ${new Date(w.at).toLocaleTimeString('sr-RS', { hour: '2-digit', minute: '2-digit' })} ·
+                    ${w.big ? w.big + ' vel' : ''}${w.big && w.small ? ' + ' : ''}${w.small ? w.small + ' mal' : ''} ·
+                    <span style="color:#FFF">${esc(w.reason)}</span>
+                    ${w.by ? '· ' + esc(w.by) : ''}
+                  </div>`;
+        });
+        h += `</div>`;
+    }
+
+    // --- Popis: samo na početku smene (admin uvek) ---
+    if (canWriteDoughStocktake()) {
+        h += `<div style="background:#0F3460;padding:18px;border-radius:12px">
+                <h3 style="color:#FFD700;margin-bottom:4px;font-size:17px">📋 Upiši zatečeno stanje</h3>
+                <p style="color:#888;font-size:12px;margin-bottom:12px">
+                    Prebroj koliko UKUPNO ima i upiši. ${role === 'admin'
+                        ? 'Kao admin ovo možeš bilo kad.'
+                        : 'Ovo se upisuje jednom, na početku smene — posle se stanje menja samo dopunom i otpisom.'}
+                </p>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+                    <div style="flex:1;min-width:110px">
+                        <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Velikih ukupno</label>
+                        <input type="number" id="doughSetBig" min="0" step="1" value="${s.has ? Math.max(0, s.big) : ''}" placeholder="0" style="width:100%;font-size:18px;text-align:center">
+                    </div>
+                    <div style="flex:1;min-width:110px">
+                        <label style="color:#B0B0B0;font-size:12px;display:block;margin-bottom:4px">Malih ukupno</label>
+                        <input type="number" id="doughSetSmall" min="0" step="1" value="${s.has ? Math.max(0, s.small) : ''}" placeholder="0" style="width:100%;font-size:18px;text-align:center">
+                    </div>
+                    <button class="btn" style="flex:1;min-width:130px" onclick="doughSetSubmit()">📋 Upiši stanje</button>
+                </div>
+            </div>`;
+    } else {
+        const st = DB.settings.doughStock || {};
+        h += `<div style="background:#16213E;padding:14px 16px;border-radius:12px;color:#888;font-size:13px;line-height:1.6">
+                📋 Stanje je prebrojano na početku smene${st.countedBy ? ' (' + esc(st.countedBy) + ')' : ''}.
+                Dalje se menja samo dopunom i otpisom — tako brojka ostaje proverljiva.
+              </div>`;
+    }
 
     if (fromLogin && role === 'kuvar') {
         h += `<button class="btn" style="margin-top:18px;background:#FF9800" onclick="window._doughFromLogin=false;nav('kitchen')">✅ Gotovo — idi u kuhinju</button>`;
@@ -238,7 +371,38 @@ function doughSetSubmit() {
     if (bEl.value === '' && mEl.value === '') { showAlert('Unesi stanje (može i 0).'); return; }
     const b = parseInt(bEl.value) || 0;
     const m = parseInt(mEl.value) || 0;
-    setDoughStocktake(b, m);
+    // Brana i ovde, ne samo u prikazu — da se zaključano polje ne može zaobići.
+    if (!canWriteDoughStocktake()) {
+        showAlert('Stanje je već upisano na početku smene.\n\n' +
+                  'Dalje se menja samo dopunom i otpisom.');
+        render();
+        return;
+    }
+    setDoughStocktake(b, m, true);
     showAlert('✅ Stanje upisano: ' + b + ' velikih, ' + m + ' malih.');
     render();
+}
+
+function doughWriteOffSubmit() {
+    const b = parseInt((document.getElementById('doughOffBig') || {}).value) || 0;
+    const m = parseInt((document.getElementById('doughOffSmall') || {}).value) || 0;
+    if (b <= 0 && m <= 0) { showAlert('Unesi koliko testa otpisuješ.'); return; }
+
+    let razlog = window._doughOffReason;
+    if (!razlog) { showAlert('Izaberi razlog otpisa.'); return; }
+    if (razlog === '__other') {
+        razlog = ((document.getElementById('doughOffText') || {}).value || '').trim();
+        if (!razlog) { showAlert('Upiši razlog otpisa.'); return; }
+    }
+
+    showConfirm('🗑️ Otpis testa',
+        'Otpisuješ ' + (b ? b + ' velikih' : '') + (b && m ? ' i ' : '') + (m ? m + ' malih' : '') +
+        '.\n\nRazlog: ' + razlog + '\n\nOvo se skida sa stanja i ostaje zabeleženo.',
+        function(potvrda) {
+            if (!potvrda) return;
+            writeOffDough(b, m, razlog);
+            window._doughOffReason = null;
+            showAlert('🗑️ Otpisano.');
+            render();
+        });
 }

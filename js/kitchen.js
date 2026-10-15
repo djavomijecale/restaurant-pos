@@ -665,22 +665,39 @@ function closeKuvarShift(opts) {
         // Bonus za kuvare: konfigurabilan kroz Postavke → Bonusi
         const bonusAmount = earnedBonuses > 0 ? earnedBonuses * _closeBonusAmount : 0;
 
+        // 🍞 Otpisana testa u ovoj smeni — idu u istoriju i u izveštaj na mejl.
+        const doughOff = (typeof doughWriteOffsBetween === 'function')
+            ? doughWriteOffsBetween(loginTime || null, endTime)
+            : [];
+
         // Sacuvaj u istoriju
         if (!DB.workdayHistory) DB.workdayHistory = [];
-        DB.workdayHistory.push({
+        const kuvarReport = {
             user: username,
             role: 'kuvar',
             loginTime: loginTime || endTime,
             logoutTime: endTime,
+            startTime: loginTime || endTime,      // izveštaj na mejl čita ova imena
+            endTime: endTime,
             duration: duration,
             ordersProcessed: completedCount,
             totalOrders: shiftOrders.length,
             dishesCompleted: totalDishes,
             dishes: dishesList,
+            doughWriteOffs: doughOff,
             salary: salary,
             hourlyRate: hourlyRate,
+            bonusEarned: earnedBonuses > 0,
             bonusAmount: bonusAmount
-        });
+        };
+        DB.workdayHistory.push(kuvarReport);
+
+        // 📧 Kuvareva smena do sada nije slala izveštaj — a otpis testa i broj
+        // jela se vide samo ovde. Ne blokira zatvaranje ako mejl zakaže.
+        if (typeof sendShiftReportEmail === 'function' && DB.settings && DB.settings.reportEmails) {
+            try { sendShiftReportEmail(kuvarReport); }
+            catch (e) { console.error('📧 Greška pri slanju kuvarevog izveštaja:', e); }
+        }
 
         // ✅ Ukloni iz DB.workdays da admin više ne vidi kuvara kao aktivnog
         if (DB.workdays && DB.workdays[username]) {

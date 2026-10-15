@@ -11,7 +11,8 @@ function buildShiftReportText(report) {
     lines.push('  ' + restName + ' - Izveštaj Smene');
     lines.push('═══════════════════════════════════');
     lines.push('');
-    lines.push('Konobar: ' + (report.user || '?'));
+    var jeKuvar = report.role === 'kuvar';
+    lines.push((jeKuvar ? 'Kuvar: ' : 'Konobar: ') + (report.user || '?'));
     lines.push('Datum: ' + new Date(report.startTime).toLocaleDateString('sr-RS'));
     lines.push('Početak: ' + new Date(report.startTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}));
     lines.push('Kraj: ' + new Date(report.endTime).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}));
@@ -20,6 +21,68 @@ function buildShiftReportText(report) {
     var mins = report.duration % 60;
     lines.push('Trajanje: ' + hours + 'h ' + mins + 'min');
     lines.push('');
+
+    // Kuvar nema promet ni kasu — njegov izveštaj je o jelima i testu.
+    if (jeKuvar) {
+        lines.push('─────────────────────────────────');
+        lines.push('  KUHINJA');
+        lines.push('─────────────────────────────────');
+        lines.push('Porudžbina obrađeno: ' + (report.ordersProcessed || 0));
+        lines.push('Jela u smeni: ' + (report.dishesCompleted || 0));
+        if (report.dishes && report.dishes.length) {
+            report.dishes.forEach(function(d) {
+                lines.push('   ' + d.qty + 'x ' + d.name);
+            });
+        }
+        lines.push('');
+
+        lines.push('─────────────────────────────────');
+        lines.push('  🍞 OTPISANA TESTA');
+        lines.push('─────────────────────────────────');
+        var _wo = report.doughWriteOffs || [];
+        if (!_wo.length) {
+            lines.push('Nije otpisano nijedno testo.');
+        } else {
+            var _vel = 0, _mal = 0, _poRazlogu = {};
+            _wo.forEach(function(w) {
+                _vel += (w.big || 0); _mal += (w.small || 0);
+                var k = w.reason || 'Bez razloga';
+                if (!_poRazlogu[k]) _poRazlogu[k] = { big: 0, small: 0 };
+                _poRazlogu[k].big += (w.big || 0);
+                _poRazlogu[k].small += (w.small || 0);
+            });
+            lines.push('Ukupno: ' + _vel + ' velikih · ' + _mal + ' malih');
+            lines.push('');
+            Object.keys(_poRazlogu)
+                .sort(function(a, b) {
+                    return (_poRazlogu[b].big + _poRazlogu[b].small) - (_poRazlogu[a].big + _poRazlogu[a].small);
+                })
+                .forEach(function(k) {
+                    var d = _poRazlogu[k];
+                    lines.push('  ' + k + ': ' + d.big + ' vel · ' + d.small + ' mal');
+                });
+            lines.push('');
+            _wo.forEach(function(w, i) {
+                lines.push((i + 1) + '. ' +
+                    new Date(w.at).toLocaleTimeString('sr-RS', {hour:'2-digit', minute:'2-digit'}) +
+                    ' | ' + (w.big || 0) + ' vel, ' + (w.small || 0) + ' mal | ' + (w.reason || ''));
+            });
+        }
+        lines.push('');
+
+        lines.push('─────────────────────────────────');
+        lines.push('  PLATA');
+        lines.push('─────────────────────────────────');
+        lines.push('Satnica: ' + (report.hourlyRate || 350) + ' din/sat');
+        lines.push('Plata: ' + (report.salary || 0).toLocaleString('sr-RS') + ' din');
+        if (report.bonusAmount > 0) {
+            lines.push('🎁 BONUS: ' + report.bonusAmount.toLocaleString('sr-RS') + ' din');
+        }
+        lines.push('');
+        lines.push('═══════════════════════════════════');
+        return lines.join('\n');
+    }
+
     lines.push('─────────────────────────────────');
     lines.push('  FINANSIJSKI PREGLED');
     lines.push('─────────────────────────────────');
