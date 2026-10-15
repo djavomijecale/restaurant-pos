@@ -733,9 +733,25 @@ function closeKuvarShift(opts) {
         render();
     };
 
+    // Ako nešto pukne, dugme bi inače samo ćutalo i kuvar ne bi znao zašto
+    // smena neće da se zatvori. Zato se greška prikazuje.
+    const _sigurno = function(c) {
+        try { _nastavi(c); }
+        catch (e) {
+            console.error('🍳 Greška pri zatvaranju smene:', e);
+            showAlert('❌ Greška pri zatvaranju smene:\n\n' + (e && e.message ? e.message : e) +
+                      '\n\nSmena NIJE zatvorena. Pokaži ovu poruku adminu.');
+        }
+    };
+
     // Kad se zatvara zaboravljena smena sa ekrana za logovanje, kuvar je već
     // potvrdio tamo — ne pitamo ga dvaput.
-    if (opts && opts.skipConfirm) _nastavi(true);
-    else showConfirm('🍳 Završi Smenu', 'Da li želite da završite smenu?', _nastavi);
+    try {
+        if (opts && opts.skipConfirm) _sigurno(true);
+        else showConfirm('🍳 Završi Smenu', 'Da li želite da završite smenu?', _sigurno);
+    } catch (e) {
+        console.error('🍳 Greška pre potvrde:', e);
+        showAlert('❌ Ne mogu da otvorim potvrdu:\n\n' + (e && e.message ? e.message : e));
+    }
 }
 
