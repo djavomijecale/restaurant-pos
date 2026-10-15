@@ -89,6 +89,50 @@ function _sendItemToKitchen(table, menuItem) {
     console.log('✅ Nova kuhinjska porudžbina');
 }
 
+// Zatvori kuhinjske porudžbine stola kad su stavke otišle sa njega.
+//
+// Ranije ih ni naplata ni čišćenje stola nisu dirali, pa je porudžbina
+// ostajala otvorena: kuvar je i dalje video sto koji je odavno naplaćen, a
+// sledeća tura gostiju se dopisivala u istu porudžbinu.
+//
+// Dva načina, jer nije isto prodato i otkazano:
+//   'paid'    — hrana je prodata. Porudžbina se označava kao ZAVRŠENA, pa
+//               kuvaru uđe u broj jela (bonus) i ostane u istoriji.
+//   'cleared' — stavke su otkazane. Briše se samo ono što kuvar još nije uzeo
+//               u rad; 'preparing' i 'ready' se ne diraju jer je posao već
+//               urađen i kuvar treba da ih sam zatvori.
+function closeKitchenOrdersForTable(tableNum, username, nacin) {
+    if (!Array.isArray(DB.kitchenOrders)) return 0;
+    const sada = new Date().toISOString();
+    let pogodjene = 0;
+
+    if (nacin === 'cleared') {
+        const zaBrisanje = DB.kitchenOrders.filter(function(ko) {
+            if (!ko || ko.status !== 'pending') return false;
+            if (String(ko.tableNum) !== String(tableNum)) return false;
+            return !username || ko.waiterUsername === username;
+        });
+        if (!zaBrisanje.length) return 0;
+        const ids = new Set(zaBrisanje.map(function(k) { return k.id; }));
+        zaBrisanje.forEach(function(ko) {
+            if (typeof markDeleted === 'function') markDeleted('kitchenOrders', ko.id);
+        });
+        DB.kitchenOrders = DB.kitchenOrders.filter(function(ko) { return !ids.has(ko.id); });
+        return zaBrisanje.length;
+    }
+
+    DB.kitchenOrders.forEach(function(ko) {
+        if (!ko || ko.status === 'completed') return;
+        if (String(ko.tableNum) !== String(tableNum)) return;
+        if (username && ko.waiterUsername !== username) return;
+        ko.status = 'completed';
+        ko.completedAt = sada;
+        if (typeof markDirty === 'function') markDirty('kitchenOrders', ko.id);
+        pogodjene++;
+    });
+    return pogodjene;
+}
+
 function addToTable(itemId) {
     // 🛡️ Bez otvorene smene se ne kuca (inače nema zapisa o smeni, plate ni keša)
     if (typeof _waiterWithoutShift === 'function' && _waiterWithoutShift()) {
@@ -507,6 +551,12 @@ function clearTable(tableNum) {
                 table.order = [];
             }
 
+            // 🍳 Otkazane stavke se povlače i iz kuhinje — ali samo one koje
+            // kuvar još nije uzeo u rad, isto kao kad se ukloni jedna stavka.
+            if (typeof closeKitchenOrdersForTable === 'function') {
+                closeKitchenOrdersForTable(tableNum, isWaiter ? currentUsername : null, 'cleared');
+            }
+
             // 💸 Isto i pri čišćenju stola — popust ne sme da pretekne.
             table.discount = 0;
             table.discountPercent = 0;
@@ -765,6 +815,12 @@ async function confirmPay() {
         table.order = table.order.filter(item => item.createdBy !== currentUsername);
     } else {
         table.order = [];
+    }
+
+    // 🍳 Naplaćena hrana je skuvana i prodata — zatvori njenu kuhinjsku
+    // porudžbinu, da je kuvar ne vidi i da se sledeća tura ne dopisuje u nju.
+    if (typeof closeKitchenOrdersForTable === 'function') {
+        closeKitchenOrdersForTable(table.num, isWaiter ? currentUsername : null, 'paid');
     }
 
     // 💸 Popust se briše pri SVAKOJ naplati, ne samo kad naplaćuje admin.
