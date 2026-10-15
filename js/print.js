@@ -24,35 +24,48 @@ function toggleDelivery(tableNum) {
     render();
 }
 
-// Poslednja kuhinjska porudžbina za taj sto koja nije završena.
-function _latestKitchenOrderFor(tableNum, username) {
-    let naj = null;
-    (DB.kitchenOrders || []).forEach(function(ko) {
-        if (!ko || ko.status === 'completed') return;
-        if (String(ko.tableNum) !== String(tableNum)) return;
-        if (username && ko.waiterUsername !== username) return;
-        if (!naj || (ko.orderedAt || '') > (naj.orderedAt || '')) naj = ko;
-    });
-    return naj;
-}
-
 // --- Dugme kod konobara ---
+//
+// Papir se pravi od STOLA, ne od kuhinjske porudžbine.
+//
+// Kuhinjska porudžbina je zbir svega što je ikad otkucano u tu "turu": naplata
+// je ne zatvara, pa posle naplate ostaje otvorena i sledeća tura gostiju se
+// dopisuje u istu. Štampa po njoj je zato davala veće količine nego što na
+// stolu stvarno stoji (sto 10: na stolu 2 bekendeksa, na papiru 5).
+//
+// Sto je ono što konobar gleda kad pritisne dugme — pa to i treba da izađe.
 function requestKitchenPrint(tableNum) {
+    const table = (DB.tables || []).find(function(t) { return t.num === tableNum; });
+    if (!table) return;
+
     const username = DB.currentUser ? DB.currentUser.username : null;
-    const ko = _latestKitchenOrderFor(tableNum, username);
-    if (!ko) {
-        showAlert('Nema šta da se štampa.\n\nZa ovaj sto nema porudžbine za kuhinju — ' +
-                  'piće se ne šalje u kuhinju, a završene porudžbine se ne štampaju ponovo.');
+    const isWaiter = DB.currentUser &&
+        (DB.currentUser.role === 'konobar' || DB.currentUser.role === 'waiter');
+
+    // Samo hrana (piće ne ide u kuhinju) i samo svoje stavke ako je konobar.
+    const stavke = (table.order || []).filter(function(it) {
+        if (!it) return false;
+        if (isWaiter && it.createdBy && it.createdBy !== username) return false;
+        return typeof shouldSendToKitchen !== 'function' || shouldSendToKitchen(it);
+    });
+
+    if (!stavke.length) {
+        showAlert('Nema šta da se štampa.\n\nNa ovom stolu nema hrane — piće se ne šalje u kuhinju.');
         return;
     }
 
     // Drugi put je ponovna štampa — kuhinja mora da zna da to nije nova porudžbina.
-    const ponovo = !!ko.printedAt;
-    const table = (DB.tables || []).find(function(t) { return t.num === tableNum; });
-    printKitchenTicket(ko, ponovo, !!(table && table.isDelivery));
+    const ponovo = !!table.printedAt;
+    printKitchenTicket({
+        tableName: table.name,
+        tableNum: table.num,
+        orderedAt: new Date().toISOString(),
+        waiterName: DB.konobarName || username || '',
+        items: stavke.map(function(it) { return { name: it.name, qty: it.qty }; })
+    }, ponovo, !!table.isDelivery);
 
-    ko.printedAt = new Date().toISOString();
-    if (typeof markDirty === 'function') markDirty('kitchenOrders', ko.id);
+    table.printedAt = new Date().toISOString();
+    if (typeof markTableDirty === 'function') markTableDirty(table.num);
     save();
 }
 

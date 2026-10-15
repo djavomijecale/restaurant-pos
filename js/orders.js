@@ -514,7 +514,7 @@ function clearTable(tableNum) {
 
             // 🛵 Kad sto ostane prazan, oznaka dostave se gasi — inače bi je
             // nasledio sledeći gost na tom stolu.
-            if (!table.order.length) table.isDelivery = false;
+            if (!table.order.length) { table.isDelivery = false; table.printedAt = null; }
 
             if (typeof markTableDirty === 'function') markTableDirty(tableNum);
             save();
@@ -778,7 +778,7 @@ async function confirmPay() {
 
     // 🛵 Kad sto ostane prazan, oznaka dostave se gasi — inače bi je nasledio
     // sledeći gost na tom stolu.
-    if (!table.order.length) table.isDelivery = false;
+    if (!table.order.length) { table.isDelivery = false; table.printedAt = null; }
 
     // ✅ RACE FIX: Obeleži sto kao dirty da drugi uređaji ne vrate staru
     // narudžbinu (pre sync-a) i tako naplatu dupliciraju.
