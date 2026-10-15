@@ -275,6 +275,7 @@ function openWaiterModal(mode, username = null) {
     const passwordInput = document.getElementById('waiterPasswordInput');
     const roleInput = document.getElementById('waiterRoleInput');
     const hourlyRateInput = document.getElementById('waiterHourlyRateInput');
+    const langInput = document.getElementById('waiterLangInput');
     
     if(mode === 'add') {
         title.textContent = '+ Dodaj Osobu';
@@ -282,6 +283,7 @@ function openWaiterModal(mode, username = null) {
         passwordInput.value = '';
         roleInput.value = 'konobar'; // Default
         hourlyRateInput.value = '350'; // Default satnica
+        if (langInput) langInput.value = 'sr';
     } else if(mode === 'edit' && username) {
         const waiter = DB.users.find(u => u.username === username);
         if(waiter) {
@@ -290,6 +292,7 @@ function openWaiterModal(mode, username = null) {
             passwordInput.value = waiter.password;
             roleInput.value = waiter.role || 'konobar';
             hourlyRateInput.value = waiter.hourlyRate || 350; // Koristi postojeću ili default
+            if (langInput) langInput.value = waiter.lang || 'sr';
         }
     }
     
@@ -309,6 +312,8 @@ function saveWaiter() {
     const password = document.getElementById('waiterPasswordInput').value.trim();
     const role = document.getElementById('waiterRoleInput').value;
     const hourlyRate = parseFloat(document.getElementById('waiterHourlyRateInput').value) || 350;
+    // 🌍 Jezik radnikovih ekrana; vezan za korisnika, ne za ime naloga.
+    const lang = (document.getElementById('waiterLangInput') || {}).value || 'sr';
     
     const roleLabel = role === 'kuvar' ? 'kuvara' : 'konobara';
     
@@ -342,6 +347,7 @@ function saveWaiter() {
             waiter.password = password;
             waiter.role = role;
             waiter.hourlyRate = hourlyRate;
+            waiter.lang = lang;
             save();
             closeWaiterModal();
             render();
@@ -358,7 +364,8 @@ function saveWaiter() {
             username: username,
             password: password,
             role: role,
-            hourlyRate: hourlyRate
+            hourlyRate: hourlyRate,
+            lang: lang
         });
         
         save();

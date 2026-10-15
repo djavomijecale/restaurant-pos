@@ -88,6 +88,14 @@
                 </select>
                 <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Konobar: Stolovi i narudžbine | Kuvar: Kuhinja i nabavka</p>
             </div>
+            <div style="margin-bottom:16px">
+                <label style="color:#B0B0B0;display:block;margin-bottom:8px">🌍 Jezik aplikacije</label>
+                <select id="waiterLangInput" style="width:100%">
+                    <option value="sr">🇷🇸 Srpski</option>
+                    <option value="es">🇪🇸 Španski</option>
+                </select>
+                <p style="color:#B0B0B0;font-size:12px;margin-top:4px">💡 Radnikovi ekrani na izabranom jeziku. Prijava i izveštaji ostaju na srpskom.</p>
+            </div>
             <div style="margin-bottom:24px">
                 <label style="color:#B0B0B0;display:block;margin-bottom:8px">💰 Satnica (din/sat)</label>
                 <input type="number" id="waiterHourlyRateInput" placeholder="Npr: 350" value="350" min="0" step="10">
@@ -515,6 +523,7 @@
     <script src="js/cashbook.js"></script>
     <script src="js/history.js"></script>
     <script src="js/admin.js"></script>
+    <script src="js/i18n.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
